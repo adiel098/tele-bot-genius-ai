@@ -78,8 +78,7 @@ export async function startBot(botId: string, userId: string): Promise<{ success
       .update({
         runtime_status: 'running',
         container_id: dockerResult.containerId,
-        runtime_logs: logs.join('\n'),
-        last_activity: new Date().toISOString()
+        runtime_logs: logs.join('\n')
       })
       .eq('id', botId);
 
@@ -94,8 +93,7 @@ export async function startBot(botId: string, userId: string): Promise<{ success
       .from('bots')
       .update({
         runtime_status: 'error',
-        runtime_logs: logs.join('\n'),
-        last_activity: new Date().toISOString()
+        runtime_logs: logs.join('\n')
       })
       .eq('id', botId);
       
@@ -126,8 +124,7 @@ export async function stopBot(botId: string): Promise<{ success: boolean; logs: 
       .update({
         runtime_status: 'stopped',
         container_id: null,
-        runtime_logs: logs.join('\n'),
-        last_activity: new Date().toISOString()
+        runtime_logs: logs.join('\n')
       })
       .eq('id', botId);
 

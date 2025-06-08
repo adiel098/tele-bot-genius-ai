@@ -103,15 +103,14 @@ serve(async (req) => {
       
       console.log(`[${new Date().toISOString()}] Updating bot logs in database...`);
       
-      // Update bot logs and activity
+      // Update bot logs
       const currentLogs = bot.runtime_logs || '';
       const updatedLogs = currentLogs + '\n' + logEntry;
       
       await supabase
         .from('bots')
         .update({
-          runtime_logs: updatedLogs,
-          last_activity: new Date().toISOString()
+          runtime_logs: updatedLogs
         })
         .eq('id', botId);
 

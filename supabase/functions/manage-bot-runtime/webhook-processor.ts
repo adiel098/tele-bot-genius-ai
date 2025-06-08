@@ -41,8 +41,7 @@ export async function processWebhook(botId: string, webhookData: any, token: str
       await supabase
         .from('bots')
         .update({
-          runtime_logs: logs.join('\n'),
-          last_activity: new Date().toISOString()
+          runtime_logs: logs.join('\n')
         })
         .eq('id', botId);
       
@@ -61,8 +60,7 @@ export async function processWebhook(botId: string, webhookData: any, token: str
       await supabase
         .from('bots')
         .update({
-          runtime_logs: logs.join('\n'),
-          last_activity: new Date().toISOString()
+          runtime_logs: logs.join('\n')
         })
         .eq('id', botId);
       
@@ -99,8 +97,7 @@ export async function processWebhook(botId: string, webhookData: any, token: str
         .from('bots')
         .update({
           runtime_logs: logs.join('\n'),
-          runtime_status: 'error',
-          last_activity: new Date().toISOString()
+          runtime_status: 'error'
         })
         .eq('id', botId);
       
@@ -115,8 +112,7 @@ export async function processWebhook(botId: string, webhookData: any, token: str
       .from('bots')
       .update({
         runtime_logs: logs.join('\n'),
-        runtime_status: 'error',
-        last_activity: new Date().toISOString()
+        runtime_status: 'error'
       })
       .eq('id', botId);
     
