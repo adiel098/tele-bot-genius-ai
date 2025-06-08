@@ -1,3 +1,4 @@
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
 import { RealDockerManager } from './real-docker-manager.ts';
 import { BotLogger } from './logger.ts';
@@ -43,21 +44,17 @@ export async function startBot(botId: string, userId: string): Promise<{ success
       return { success: true, logs };
     }
 
-    // Get bot's actual main.py code from storage - prioritize bot-files bucket
-    logs.push(BotLogger.log(botId, 'Fetching bot\'s main.py from storage...'));
+    // CRITICAL: Load the user's actual main.py code ONLY from bot-files bucket
+    logs.push(BotLogger.log(botId, 'Loading user\'s main.py from bot-files storage...'));
+    logs.push(BotLogger.log(botId, `Storage path: ${userId}/${botId}/main.py`));
     
-    let actualBotCode = '';
-    
-    // CRITICAL: Debug storage access
-    logs.push(BotLogger.log(botId, `Looking for file at path: ${userId}/${botId}/main.py`));
-    
-    // First try bot-files bucket (where files are actually stored)
     const { data: mainFile, error: mainError } = await supabase.storage
       .from('bot-files')
       .download(`${userId}/${botId}/main.py`);
       
     if (mainError || !mainFile) {
-      logs.push(BotLogger.logWarning('Could not fetch from bot-files: ' + (mainError?.message || 'No file')));
+      logs.push(BotLogger.logError('CRITICAL: Cannot find user\'s main.py file!'));
+      logs.push(BotLogger.logError('Storage error: ' + (mainError?.message || 'File not found')));
       
       // Debug: List all files in the user's bot directory
       const { data: filesList, error: listError } = await supabase.storage
@@ -65,57 +62,14 @@ export async function startBot(botId: string, userId: string): Promise<{ success
         .list(`${userId}/${botId}`);
         
       if (listError) {
-        logs.push(BotLogger.logError('Error listing files: ' + listError.message));
-      } else if (filesList) {
-        logs.push(BotLogger.log(botId, `Files found in ${userId}/${botId}: ${filesList.map(f => f.name).join(', ')}`));
-        
-        // Try to get any Python file
-        const pythonFile = filesList.find(f => f.name.endsWith('.py'));
-        if (pythonFile) {
-          logs.push(BotLogger.log(botId, `Found Python file: ${pythonFile.name}, trying to load it...`));
-          
-          const { data: pyFile, error: pyError } = await supabase.storage
-            .from('bot-files')
-            .download(`${userId}/${botId}/${pythonFile.name}`);
-            
-          if (pyFile && !pyError) {
-            actualBotCode = await pyFile.text();
-            logs.push(BotLogger.log(botId, `Loaded ${pythonFile.name}: ${actualBotCode.length} characters`));
-          }
-        }
+        logs.push(BotLogger.logError('Cannot list files: ' + listError.message));
+      } else if (filesList && filesList.length > 0) {
+        logs.push(BotLogger.log(botId, `Files in storage: ${filesList.map(f => f.name).join(', ')}`));
       } else {
-        logs.push(BotLogger.logWarning('No files found in bot directory'));
+        logs.push(BotLogger.logError('NO FILES FOUND in bot directory!'));
       }
       
-      // If still no code, try bot-code bucket as fallback
-      if (!actualBotCode) {
-        const { data: fallbackFile, error: fallbackError } = await supabase.storage
-          .from('bot-code')
-          .download(`${botId}/main.py`);
-          
-        if (fallbackError || !fallbackFile) {
-          logs.push(BotLogger.logWarning('Could not fetch from bot-code: ' + (fallbackError?.message || 'No file')));
-          logs.push(BotLogger.logError('NO BOT CODE FOUND IN ANY BUCKET!'));
-          
-          // Use a basic fallback template
-          actualBotCode = generateFallbackBotCode();
-          logs.push(BotLogger.logWarning('Using emergency fallback template code'));
-        } else {
-          actualBotCode = await fallbackFile.text();
-          logs.push(BotLogger.log(botId, 'Bot\'s main.py loaded from bot-code: ' + actualBotCode.length + ' characters'));
-        }
-      }
-    } else {
-      actualBotCode = await mainFile.text();
-      logs.push(BotLogger.log(botId, 'Bot\'s main.py loaded from bot-files: ' + actualBotCode.length + ' characters'));
-    }
-
-    // Debug: Show first 200 characters of the code to verify what we're using
-    logs.push(BotLogger.log(botId, `Code preview: ${actualBotCode.substring(0, 200)}...`));
-
-    // Validate that we have actual bot code
-    if (!actualBotCode || actualBotCode.trim().length === 0) {
-      logs.push(BotLogger.logError('No valid bot code found'));
+      logs.push(BotLogger.logError('Cannot start bot without user\'s main.py file'));
       
       await supabase
         .from('bots')
@@ -125,10 +79,40 @@ export async function startBot(botId: string, userId: string): Promise<{ success
         })
         .eq('id', botId);
         
-      return { success: false, logs, error: 'No valid bot code found' };
+      return { success: false, logs, error: 'User main.py file not found in storage' };
     }
 
-    // Create and start real Docker container with the bot's actual code
+    const actualBotCode = await mainFile.text();
+    logs.push(BotLogger.log(botId, 'SUCCESS: Loaded user\'s main.py: ' + actualBotCode.length + ' characters'));
+    
+    // Show code preview to verify we're using the right code
+    const codePreview = actualBotCode.substring(0, 300);
+    logs.push(BotLogger.log(botId, `Code preview: ${codePreview}...`));
+
+    // Validate that we have real user code (not empty or fallback)
+    if (!actualBotCode || actualBotCode.trim().length === 0) {
+      logs.push(BotLogger.logError('User\'s main.py file is empty!'));
+      
+      await supabase
+        .from('bots')
+        .update({
+          runtime_status: 'error',
+          runtime_logs: logs.join('\n')
+        })
+        .eq('id', botId);
+        
+      return { success: false, logs, error: 'Empty main.py file' };
+    }
+
+    // Check if this looks like user code vs template code
+    if (actualBotCode.includes('PLACEHOLDER_TOKEN') || actualBotCode.includes('fallback template')) {
+      logs.push(BotLogger.logError('WARNING: Code appears to be template, not user code!'));
+    } else {
+      logs.push(BotLogger.logSuccess('Code appears to be genuine user code'));
+    }
+
+    // Create and start real Docker container with the user's actual code
+    logs.push(BotLogger.log(botId, 'Creating Docker container with user\'s actual main.py code...'));
     const dockerResult = await RealDockerManager.createContainer(botId, actualBotCode, bot.token);
     logs.push(...dockerResult.logs);
 
@@ -162,7 +146,7 @@ export async function startBot(botId: string, userId: string): Promise<{ success
       return { success: false, logs, error: 'No container ID returned' };
     }
 
-    // Update bot status in database - with detailed verification
+    // Update bot status in database
     logs.push(BotLogger.log(botId, 'Updating database with container ID: ' + dockerResult.containerId));
     
     const { error: updateError } = await supabase
@@ -181,16 +165,7 @@ export async function startBot(botId: string, userId: string): Promise<{ success
       logs.push(BotLogger.logSuccess('Database updated successfully'));
     }
 
-    // Verify the database update
-    const { data: verifyBot } = await supabase
-      .from('bots')
-      .select('runtime_status, container_id')
-      .eq('id', botId)
-      .single();
-      
-    logs.push(BotLogger.log(botId, 'Verification - DB status: ' + (verifyBot?.runtime_status || 'unknown') + ', container: ' + (verifyBot?.container_id || 'none')));
-
-    logs.push(BotLogger.logSuccess('✅ Real Python bot started successfully with actual main.py!'));
+    logs.push(BotLogger.logSuccess('✅ Bot started with USER\'S ACTUAL CODE from storage!'));
     return { success: true, logs };
 
   } catch (error) {
@@ -344,4 +319,49 @@ export async function streamLogs(botId: string): Promise<{ success: boolean; log
       logs: [BotLogger.logError('Error getting logs: ' + error.message)]
     };
   }
+}
+
+function generateFallbackBotCode(): string {
+  return `
+import os
+import logging
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+
+# Set up logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# Bot token will be replaced during container creation
+BOT_TOKEN = "PLACEHOLDER_TOKEN"
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    await update.message.reply_text(f"Hello, {user.first_name}! Your user ID is {user.id}.")
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Available commands:\\n/start - Get started\\n/help - Show this help")
+
+async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"You said: {update.message.text}")
+
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+    
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+    
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=8080,
+        url_path="/webhook"
+    )
+
+if __name__ == '__main__':
+    main()
+`;
 }
