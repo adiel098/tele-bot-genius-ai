@@ -1,9 +1,11 @@
 
 import { BotLogger } from './logger.ts';
 
-export class RealDockerManager {
-  private static runningContainers = new Map<string, string>(); // botId -> containerId
+// Global container tracking using a Map that persists across function calls
+const GLOBAL_CONTAINER_STATE = new Map<string, string>(); // botId -> containerId
 
+export class RealDockerManager {
+  
   static async createContainer(botId: string, code: string, token: string): Promise<{ success: boolean; logs: string[]; containerId?: string; error?: string }> {
     const logs: string[] = [];
     
@@ -38,7 +40,7 @@ CMD ["python", "bot.py"]`;
       await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate start time
       
       // Store container reference BEFORE generating startup logs
-      this.runningContainers.set(botId, containerId);
+      GLOBAL_CONTAINER_STATE.set(botId, containerId);
       
       // Simulate initial bot startup logs
       logs.push(BotLogger.logSection('CONTAINER STARTUP LOGS'));
@@ -87,7 +89,7 @@ CMD ["python", "bot.py"]`;
     try {
       logs.push(BotLogger.logSection('STOPPING REAL DOCKER CONTAINER'));
       
-      const containerId = this.runningContainers.get(botId);
+      const containerId = GLOBAL_CONTAINER_STATE.get(botId);
       if (!containerId) {
         logs.push(BotLogger.log(botId, 'No running container found'));
         logs.push(BotLogger.logSection('CONTAINER STOP COMPLETE'));
@@ -122,7 +124,7 @@ CMD ["python", "bot.py"]`;
       await new Promise(resolve => setTimeout(resolve, 300));
       
       // Remove from running containers
-      this.runningContainers.delete(botId);
+      GLOBAL_CONTAINER_STATE.delete(botId);
       
       logs.push(BotLogger.logSuccess(`Real Docker container ${containerId} stopped successfully`));
       logs.push(BotLogger.logSection('REAL CONTAINER STOP COMPLETE'));
@@ -136,7 +138,7 @@ CMD ["python", "bot.py"]`;
   }
 
   static getContainerStatus(botId: string): { isRunning: boolean; containerId?: string } {
-    const containerId = this.runningContainers.get(botId);
+    const containerId = GLOBAL_CONTAINER_STATE.get(botId);
     return {
       isRunning: !!containerId,
       containerId
@@ -144,11 +146,11 @@ CMD ["python", "bot.py"]`;
   }
 
   static getRunningContainers(): string[] {
-    return Array.from(this.runningContainers.keys());
+    return Array.from(GLOBAL_CONTAINER_STATE.keys());
   }
 
   static async getContainerLogs(botId: string): Promise<string[]> {
-    const containerId = this.runningContainers.get(botId);
+    const containerId = GLOBAL_CONTAINER_STATE.get(botId);
     if (!containerId) {
       return [
         BotLogger.logSection('CONTAINER STATUS'),

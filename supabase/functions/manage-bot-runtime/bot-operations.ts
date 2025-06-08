@@ -1,3 +1,4 @@
+
 import { startTelegramBot, stopTelegramBot, getBotLogs } from './bot-executor.ts';
 import { 
   getBotData, 
@@ -10,6 +11,11 @@ import {
 import { LoggingUtils } from './logging-utils.ts';
 import { ProcessManager } from './process-manager.ts';
 import { BotLogger } from './logger.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
+
+const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 export async function startBotOperation(botId: string, userId: string): Promise<{ success: boolean; logs: string[]; containerId?: string }> {
   const startTime = Date.now();
