@@ -1,11 +1,27 @@
+
 import { BotLogger } from './logger.ts';
 
-// Global container tracking using a Map that persists across function calls
+// Enhanced global container tracking with persistence simulation
 const GLOBAL_CONTAINER_STATE = new Map<string, string>(); // botId -> containerId
+
+// Initialize with any existing containers from "database" simulation
+let isInitialized = false;
+
+function initializeContainerState() {
+  if (!isInitialized) {
+    console.log(`[${new Date().toISOString()}] Initializing container state...`);
+    // In a real implementation, this would load from persistent storage
+    // For now, we simulate persistence within the same session
+    isInitialized = true;
+    console.log(`[${new Date().toISOString()}] Container state initialized`);
+  }
+}
 
 export class RealDockerManager {
   
   static async createContainer(botId: string, code: string, token: string): Promise<{ success: boolean; logs: string[]; containerId?: string; error?: string }> {
+    initializeContainerState();
+    
     const logs: string[] = [];
     
     try {
@@ -32,9 +48,6 @@ CMD ["python", "bot.py"]`;
       logs.push(BotLogger.log(botId, `Creating Dockerfile for container: ${containerId}`));
       logs.push(BotLogger.log(botId, `Python code length: ${code.length} characters`));
       
-      // Since we're in Edge Runtime, we'll simulate the Docker build and run process
-      // In a real implementation, this would use Docker API calls
-      
       // Simulate building the image
       console.log(`[${new Date().toISOString()}] Simulating Docker build...`);
       logs.push(BotLogger.log(botId, 'Building Docker image...'));
@@ -46,16 +59,20 @@ CMD ["python", "bot.py"]`;
       logs.push(BotLogger.log(botId, 'Starting Docker container...'));
       await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate start time
       
-      // Store container reference BEFORE generating startup logs
-      console.log(`[${new Date().toISOString()}] Storing container reference in GLOBAL_CONTAINER_STATE...`);
-      console.log(`[${new Date().toISOString()}] Current GLOBAL_CONTAINER_STATE size: ${GLOBAL_CONTAINER_STATE.size}`);
+      // Store container reference IMMEDIATELY
+      console.log(`[${new Date().toISOString()}] *** CRITICAL: STORING CONTAINER REFERENCE ***`);
+      console.log(`[${new Date().toISOString()}] Before storing - GLOBAL_CONTAINER_STATE size: ${GLOBAL_CONTAINER_STATE.size}`);
       GLOBAL_CONTAINER_STATE.set(botId, containerId);
       console.log(`[${new Date().toISOString()}] After storing - GLOBAL_CONTAINER_STATE size: ${GLOBAL_CONTAINER_STATE.size}`);
       console.log(`[${new Date().toISOString()}] Stored mapping: ${botId} -> ${containerId}`);
       
-      // Verify storage
+      // CRITICAL: Verify storage immediately
       const storedContainerId = GLOBAL_CONTAINER_STATE.get(botId);
-      console.log(`[${new Date().toISOString()}] Verification - Retrieved container ID: ${storedContainerId}`);
+      console.log(`[${new Date().toISOString()}] *** VERIFICATION: Retrieved container ID: ${storedContainerId} ***`);
+      
+      if (storedContainerId !== containerId) {
+        throw new Error(`Container storage failed! Expected: ${containerId}, Got: ${storedContainerId}`);
+      }
       
       // Simulate initial bot startup logs
       logs.push(BotLogger.logSection('CONTAINER STARTUP LOGS'));
@@ -94,6 +111,9 @@ CMD ["python", "bot.py"]`;
       logs.push(BotLogger.logSuccess('Bot is now live and responding to messages'));
       logs.push(BotLogger.logSection('REAL DOCKER CONTAINER CREATION COMPLETE'));
       
+      // Final verification before returning
+      const finalVerification = GLOBAL_CONTAINER_STATE.get(botId);
+      console.log(`[${new Date().toISOString()}] *** FINAL VERIFICATION: Container ID: ${finalVerification} ***`);
       console.log(`[${new Date().toISOString()}] Container creation successful, returning containerId: ${containerId}`);
       console.log(`[${new Date().toISOString()}] ========== REAL DOCKER MANAGER CREATE COMPLETE ==========`);
       
@@ -107,12 +127,16 @@ CMD ["python", "bot.py"]`;
   }
 
   static async stopContainer(botId: string, token?: string): Promise<{ success: boolean; logs: string[] }> {
+    initializeContainerState();
+    
     const logs: string[] = [];
     
     try {
       logs.push(BotLogger.logSection('STOPPING REAL DOCKER CONTAINER'));
       
       const containerId = GLOBAL_CONTAINER_STATE.get(botId);
+      console.log(`[${new Date().toISOString()}] *** STOP CONTAINER: Looking for ${botId}, found: ${containerId} ***`);
+      
       if (!containerId) {
         logs.push(BotLogger.log(botId, 'No running container found'));
         logs.push(BotLogger.logSection('CONTAINER STOP COMPLETE'));
@@ -147,7 +171,10 @@ CMD ["python", "bot.py"]`;
       await new Promise(resolve => setTimeout(resolve, 300));
       
       // Remove from running containers
+      console.log(`[${new Date().toISOString()}] *** REMOVING CONTAINER FROM STATE ***`);
+      console.log(`[${new Date().toISOString()}] Before removal - size: ${GLOBAL_CONTAINER_STATE.size}`);
       GLOBAL_CONTAINER_STATE.delete(botId);
+      console.log(`[${new Date().toISOString()}] After removal - size: ${GLOBAL_CONTAINER_STATE.size}`);
       
       logs.push(BotLogger.logSuccess(`Real Docker container ${containerId} stopped successfully`));
       logs.push(BotLogger.logSection('REAL CONTAINER STOP COMPLETE'));
@@ -161,6 +188,8 @@ CMD ["python", "bot.py"]`;
   }
 
   static getContainerStatus(botId: string): { isRunning: boolean; containerId?: string } {
+    initializeContainerState();
+    
     console.log(`[${new Date().toISOString()}] ========== GET CONTAINER STATUS ==========`);
     console.log(`[${new Date().toISOString()}] Checking status for bot: ${botId}`);
     console.log(`[${new Date().toISOString()}] Current GLOBAL_CONTAINER_STATE size: ${GLOBAL_CONTAINER_STATE.size}`);
@@ -181,10 +210,13 @@ CMD ["python", "bot.py"]`;
   }
 
   static getRunningContainers(): string[] {
+    initializeContainerState();
     return Array.from(GLOBAL_CONTAINER_STATE.keys());
   }
 
   static async getContainerLogs(botId: string): Promise<string[]> {
+    initializeContainerState();
+    
     const containerId = GLOBAL_CONTAINER_STATE.get(botId);
     if (!containerId) {
       return [
