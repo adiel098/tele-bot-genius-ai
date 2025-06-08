@@ -31,7 +31,9 @@ export async function generateBotCode(prompt: string): Promise<BotCodeResponse> 
         ".env.example": "BOT_TOKEN=your_bot_token_here"
       },
       "explanation": "Brief explanation of the bot structure and features"
-    }`;
+    }
+    
+    CRITICAL: Return ONLY the JSON object, no markdown code blocks, no additional text.`;
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -61,19 +63,47 @@ export async function generateBotCode(prompt: string): Promise<BotCodeResponse> 
 
   console.log('Generated content received from OpenAI');
 
+  // Clean the response - remove markdown code blocks if present
+  let cleanedContent = generatedContent.trim();
+  
+  // Remove markdown code blocks
+  if (cleanedContent.startsWith('```json')) {
+    cleanedContent = cleanedContent.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+  } else if (cleanedContent.startsWith('```')) {
+    cleanedContent = cleanedContent.replace(/^```\s*/, '').replace(/\s*```$/, '');
+  }
+  
+  // Remove any leading/trailing whitespace
+  cleanedContent = cleanedContent.trim();
+
+  console.log('Cleaned content:', cleanedContent.substring(0, 200) + '...');
+
   // Parse the JSON response from GPT
   try {
-    return JSON.parse(generatedContent);
+    return JSON.parse(cleanedContent);
   } catch (error) {
     console.error('Failed to parse GPT response as JSON:', error);
     console.log('Raw response:', generatedContent);
-    // Fallback: create a simple structure
+    console.log('Cleaned content:', cleanedContent);
+    
+    // Enhanced fallback: try to extract JSON from the response
+    const jsonMatch = cleanedContent.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        console.log('Attempting to parse extracted JSON...');
+        return JSON.parse(jsonMatch[0]);
+      } catch (extractError) {
+        console.error('Failed to parse extracted JSON:', extractError);
+      }
+    }
+    
+    // Final fallback: create a simple structure
     return {
       files: {
-        "main.py": generatedContent,
+        "main.py": `# Generated bot code\n# Original prompt: ${prompt}\n\n${cleanedContent}`,
         "requirements.txt": "python-telegram-bot==20.7\nrequests==2.31.0"
       },
-      explanation: "Generated bot code"
+      explanation: "Generated bot code (fallback due to parsing error)"
     };
   }
 }
