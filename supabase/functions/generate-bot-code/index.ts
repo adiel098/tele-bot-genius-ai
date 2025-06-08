@@ -22,11 +22,36 @@ serve(async (req) => {
   try {
     const { botId, prompt, token } = await req.json();
 
+    console.log('Received request:', { botId, hasPrompt: !!prompt, hasToken: !!token });
+
     if (!openAIApiKey) {
+      console.error('OpenAI API key not configured');
       throw new Error('OpenAI API key not configured');
     }
 
+    if (!botId || !prompt || !token) {
+      console.error('Missing required parameters:', { botId, hasPrompt: !!prompt, hasToken: !!token });
+      throw new Error('Missing required parameters: botId, prompt, and token are required');
+    }
+
     console.log('Generating bot code for bot:', botId);
+
+    // Fetch existing conversation history
+    const { data: existingBot, error: fetchError } = await supabase
+      .from('bots')
+      .select('conversation_history')
+      .eq('id', botId)
+      .single();
+
+    if (fetchError) {
+      console.error('Error fetching bot:', fetchError);
+      throw new Error(`Failed to fetch bot: ${fetchError.message}`);
+    }
+
+    let conversationHistory = [];
+    if (existingBot?.conversation_history && Array.isArray(existingBot.conversation_history)) {
+      conversationHistory = existingBot.conversation_history;
+    }
 
     // System prompt for generating Telegram bot code
     const systemPrompt = `You are an expert Python developer specialized in creating Telegram bots. 
@@ -46,7 +71,7 @@ serve(async (req) => {
     {
       "files": {
         "main.py": "# Main bot code here",
-        "requirements.txt": "python-telegram-bot==20.7\nrequests==2.31.0",
+        "requirements.txt": "python-telegram-bot==20.7\\nrequests==2.31.0",
         "config.py": "# Configuration file",
         "handlers.py": "# Message handlers",
         ".env.example": "BOT_TOKEN=your_bot_token_here"
@@ -72,13 +97,15 @@ serve(async (req) => {
     });
 
     if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.statusText}`);
+      const errorText = await response.text();
+      console.error('OpenAI API error:', response.status, errorText);
+      throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
     const generatedContent = data.choices[0].message.content;
 
-    console.log('Generated content:', generatedContent);
+    console.log('Generated content received from OpenAI');
 
     // Parse the JSON response from GPT
     let botCode;
@@ -86,6 +113,7 @@ serve(async (req) => {
       botCode = JSON.parse(generatedContent);
     } catch (error) {
       console.error('Failed to parse GPT response as JSON:', error);
+      console.log('Raw response:', generatedContent);
       // Fallback: create a simple structure
       botCode = {
         files: {
@@ -96,30 +124,37 @@ serve(async (req) => {
       };
     }
 
+    // Create updated conversation history
+    const updatedHistory = [
+      ...conversationHistory,
+      {
+        role: 'user',
+        content: prompt,
+        timestamp: new Date().toISOString()
+      },
+      {
+        role: 'assistant',
+        content: `I've generated a complete Telegram bot for you! Here's what I created:\n\n${botCode.explanation}`,
+        timestamp: new Date().toISOString(),
+        files: botCode.files
+      }
+    ];
+
     // Update bot in database with generated code and conversation
     const { error: updateError } = await supabase
       .from('bots')
       .update({
         status: 'active',
-        conversation_history: [
-          {
-            role: 'user',
-            content: prompt,
-            timestamp: new Date().toISOString()
-          },
-          {
-            role: 'assistant',
-            content: `I've generated a complete Telegram bot for you! Here's what I created:\n\n${botCode.explanation}`,
-            timestamp: new Date().toISOString(),
-            files: botCode.files
-          }
-        ]
+        conversation_history: updatedHistory
       })
       .eq('id', botId);
 
     if (updateError) {
+      console.error('Database update error:', updateError);
       throw new Error(`Database update error: ${updateError.message}`);
     }
+
+    console.log('Bot updated successfully');
 
     return new Response(JSON.stringify({
       success: true,
