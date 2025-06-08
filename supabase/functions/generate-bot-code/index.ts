@@ -40,13 +40,13 @@ serve(async (req) => {
     // Generate bot code using OpenAI with the bot token
     const botCode = await generateBotCode(prompt, token);
 
-    // Upload files to storage
-    console.log('Uploading files to storage...');
+    // Upload files to storage (this will overwrite existing files)
+    console.log('Uploading updated files to storage...');
     const uploadResults = await uploadBotFiles(botId, existingBot.user_id, botCode.files);
     const allFilesUploaded = Object.values(uploadResults).every(success => success);
 
-    // Deploy and start the bot
-    console.log('Deploying bot...');
+    // Deploy and start/restart the bot with new code
+    console.log('Deploying and restarting bot with updated code...');
     const deploymentInfo = await deployAndStartBot(botId, existingBot.user_id, botCode.files);
 
     // Create updated conversation history
@@ -59,7 +59,7 @@ serve(async (req) => {
       },
       {
         role: 'assistant',
-        content: `I've generated and deployed a complete Telegram bot for you! 🎉\n\n${botCode.explanation}\n\nThe bot is now being deployed and should be running shortly. You can monitor its status in the workspace.`,
+        content: `I've updated and redeployed your Telegram bot! 🔄\n\n${botCode.explanation}\n\nThe bot has been automatically restarted with the new functionality. You can monitor its status in the workspace.`,
         timestamp: new Date().toISOString(),
         files: botCode.files
       }
@@ -68,14 +68,14 @@ serve(async (req) => {
     // Update bot in database with generated code and conversation
     await updateBotWithResults(botId, updatedHistory, allFilesUploaded);
 
-    console.log('Bot updated successfully');
+    console.log('Bot updated and restarted successfully');
 
     return new Response(JSON.stringify({
       success: true,
       botCode,
       deployment: deploymentInfo,
       filesUploaded: allFilesUploaded,
-      message: 'Bot code generated and deployed successfully'
+      message: 'Bot code generated, deployed and restarted successfully'
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

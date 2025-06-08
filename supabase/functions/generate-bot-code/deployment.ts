@@ -28,11 +28,12 @@ export async function deployAndStartBot(botId: string, userId: string, files: Re
     // Get bot data
     const { data: bot } = await supabase
       .from('bots')
-      .select('name, deployment_type')
+      .select('name, deployment_type, runtime_status')
       .eq('id', botId)
       .single();
 
     const botName = bot?.name || 'AI Bot';
+    const currentRuntimeStatus = bot?.runtime_status;
 
     // Check deployment type preference
     const deploymentType = bot?.deployment_type || 'kubernetes';
@@ -80,49 +81,119 @@ export async function deployAndStartBot(botId: string, userId: string, files: Re
         })
         .eq('id', botId);
 
-      // Auto-start the bot using Deno runtime
-      setTimeout(async () => {
-        try {
-          console.log(`Auto-starting bot ${botId} in Deno runtime`);
-          
-          const { data: runtimeData, error: runtimeError } = await supabase.functions.invoke('manage-bot-runtime', {
-            body: {
-              action: 'start',
-              botId,
-              userId
-            }
-          });
+      // If bot was running before, restart it with new code
+      if (currentRuntimeStatus === 'running' || currentRuntimeStatus === 'starting') {
+        console.log(`Bot was running, initiating restart with new code...`);
+        
+        setTimeout(async () => {
+          try {
+            // First stop the existing bot
+            console.log(`Stopping existing bot ${botId} before restart...`);
+            const { error: stopError } = await supabase.functions.invoke('manage-bot-runtime', {
+              body: {
+                action: 'stop',
+                botId
+              }
+            });
 
-          if (runtimeError) {
-            console.error('Failed to auto-start bot:', runtimeError);
+            if (stopError) {
+              console.error('Failed to stop bot before restart:', stopError);
+            }
+
+            // Wait for stop to complete
+            await new Promise(resolve => setTimeout(resolve, 3000));
+
+            // Then start with new code
+            console.log(`Starting bot ${botId} with updated code...`);
+            const { data: runtimeData, error: runtimeError } = await supabase.functions.invoke('manage-bot-runtime', {
+              body: {
+                action: 'start',
+                botId,
+                userId
+              }
+            });
+
+            if (runtimeError) {
+              console.error('Failed to restart bot with new code:', runtimeError);
+              await supabase
+                .from('bots')
+                .update({
+                  runtime_status: 'error',
+                  runtime_logs: `[${new Date().toISOString()}] Deployment completed but failed to restart: ${runtimeError.message}\n`
+                })
+                .eq('id', botId);
+            } else if (runtimeData?.success) {
+              console.log('Bot restarted successfully with new code');
+              await supabase
+                .from('bots')
+                .update({
+                  runtime_logs: `[${new Date().toISOString()}] Bot restarted successfully with updated code\n`
+                })
+                .eq('id', botId);
+            }
+
+          } catch (error) {
+            console.error('Failed to restart bot with new code:', error);
             await supabase
               .from('bots')
               .update({
                 runtime_status: 'error',
-                runtime_logs: `[${new Date().toISOString()}] Deployment completed but failed to start: ${runtimeError.message}\n`
+                runtime_logs: `[${new Date().toISOString()}] Deployment completed but failed to restart: ${error.message}\n`
               })
               .eq('id', botId);
-          } else if (runtimeData?.success) {
-            console.log('Bot auto-start initiated successfully');
           }
+        }, 2000);
 
-        } catch (error) {
-          console.error('Failed to auto-start bot:', error);
-          await supabase
-            .from('bots')
-            .update({
-              runtime_status: 'error',
-              runtime_logs: `[${new Date().toISOString()}] Deployment completed but failed to start: ${error.message}\n`
-            })
-            .eq('id', botId);
-        }
-      }, 2000);
+        return { 
+          executionId: execution.id, 
+          deploymentType: 'deno',
+          restartInitiated: true 
+        };
+      } else {
+        // Bot wasn't running, just auto-start it
+        setTimeout(async () => {
+          try {
+            console.log(`Auto-starting bot ${botId} with new code`);
+            
+            const { data: runtimeData, error: runtimeError } = await supabase.functions.invoke('manage-bot-runtime', {
+              body: {
+                action: 'start',
+                botId,
+                userId
+              }
+            });
 
-      return { 
-        executionId: execution.id, 
-        deploymentType: 'deno',
-        autoStartInitiated: true 
-      };
+            if (runtimeError) {
+              console.error('Failed to auto-start bot:', runtimeError);
+              await supabase
+                .from('bots')
+                .update({
+                  runtime_status: 'error',
+                  runtime_logs: `[${new Date().toISOString()}] Deployment completed but failed to start: ${runtimeError.message}\n`
+                })
+                .eq('id', botId);
+            } else if (runtimeData?.success) {
+              console.log('Bot auto-start initiated successfully');
+            }
+
+          } catch (error) {
+            console.error('Failed to auto-start bot:', error);
+            await supabase
+              .from('bots')
+              .update({
+                runtime_status: 'error',
+                runtime_logs: `[${new Date().toISOString()}] Deployment completed but failed to start: ${error.message}\n`
+              })
+              .eq('id', botId);
+          }
+        }, 2000);
+
+        return { 
+          executionId: execution.id, 
+          deploymentType: 'deno',
+          autoStartInitiated: true 
+        };
+      }
     }
 
   } catch (error) {
