@@ -1,4 +1,3 @@
-
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
 import { RealDockerManager } from './real-docker-manager.ts';
 import { BotLogger } from './logger.ts';
@@ -49,33 +48,70 @@ export async function startBot(botId: string, userId: string): Promise<{ success
     
     let actualBotCode = '';
     
+    // CRITICAL: Debug storage access
+    logs.push(BotLogger.log(botId, `Looking for file at path: ${userId}/${botId}/main.py`));
+    
     // First try bot-files bucket (where files are actually stored)
     const { data: mainFile, error: mainError } = await supabase.storage
       .from('bot-files')
-      .download(userId + '/' + botId + '/main.py');
+      .download(`${userId}/${botId}/main.py`);
       
     if (mainError || !mainFile) {
       logs.push(BotLogger.logWarning('Could not fetch from bot-files: ' + (mainError?.message || 'No file')));
       
-      // Try bot-code bucket as fallback
-      const { data: fallbackFile, error: fallbackError } = await supabase.storage
-        .from('bot-code')
-        .download(botId + '/main.py');
+      // Debug: List all files in the user's bot directory
+      const { data: filesList, error: listError } = await supabase.storage
+        .from('bot-files')
+        .list(`${userId}/${botId}`);
         
-      if (fallbackError || !fallbackFile) {
-        logs.push(BotLogger.logWarning('Could not fetch from bot-code: ' + (fallbackError?.message || 'No file')));
-        logs.push(BotLogger.log(botId, 'Using fallback template code'));
+      if (listError) {
+        logs.push(BotLogger.logError('Error listing files: ' + listError.message));
+      } else if (filesList) {
+        logs.push(BotLogger.log(botId, `Files found in ${userId}/${botId}: ${filesList.map(f => f.name).join(', ')}`));
         
-        // Use a basic fallback template
-        actualBotCode = generateFallbackBotCode();
+        // Try to get any Python file
+        const pythonFile = filesList.find(f => f.name.endsWith('.py'));
+        if (pythonFile) {
+          logs.push(BotLogger.log(botId, `Found Python file: ${pythonFile.name}, trying to load it...`));
+          
+          const { data: pyFile, error: pyError } = await supabase.storage
+            .from('bot-files')
+            .download(`${userId}/${botId}/${pythonFile.name}`);
+            
+          if (pyFile && !pyError) {
+            actualBotCode = await pyFile.text();
+            logs.push(BotLogger.log(botId, `Loaded ${pythonFile.name}: ${actualBotCode.length} characters`));
+          }
+        }
       } else {
-        actualBotCode = await fallbackFile.text();
-        logs.push(BotLogger.log(botId, 'Bot\'s main.py loaded from bot-code: ' + actualBotCode.length + ' characters'));
+        logs.push(BotLogger.logWarning('No files found in bot directory'));
+      }
+      
+      // If still no code, try bot-code bucket as fallback
+      if (!actualBotCode) {
+        const { data: fallbackFile, error: fallbackError } = await supabase.storage
+          .from('bot-code')
+          .download(`${botId}/main.py`);
+          
+        if (fallbackError || !fallbackFile) {
+          logs.push(BotLogger.logWarning('Could not fetch from bot-code: ' + (fallbackError?.message || 'No file')));
+          logs.push(BotLogger.logError('NO BOT CODE FOUND IN ANY BUCKET!'));
+          
+          // Use a basic fallback template
+          actualBotCode = generateFallbackBotCode();
+          logs.push(BotLogger.logWarning('Using emergency fallback template code'));
+        } else {
+          actualBotCode = await fallbackFile.text();
+          logs.push(BotLogger.log(botId, 'Bot\'s main.py loaded from bot-code: ' + actualBotCode.length + ' characters'));
+        }
       }
     } else {
       actualBotCode = await mainFile.text();
       logs.push(BotLogger.log(botId, 'Bot\'s main.py loaded from bot-files: ' + actualBotCode.length + ' characters'));
     }
+
+    // Debug: Show first 200 characters of the code to verify what we're using
+    logs.push(BotLogger.log(botId, `Code preview: ${actualBotCode.substring(0, 200)}...`));
 
     // Validate that we have actual bot code
     if (!actualBotCode || actualBotCode.trim().length === 0) {
@@ -191,7 +227,8 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = "PLACEHOLDER_TOKEN"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 Hello! I'm your AI bot created with BotFactory!")
+    user = update.effective_user
+    await update.message.reply_text(f"Hello, {user.first_name}! Your user ID is {user.id}.")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Available commands:\\n/start - Get started\\n/help - Show this help")
@@ -213,8 +250,7 @@ def main():
     )
 
 if __name__ == '__main__':
-    main()
-`;
+    main();
 }
 
 export async function stopBot(botId: string): Promise<{ success: boolean; logs: string[] }> {
