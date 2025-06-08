@@ -34,29 +34,29 @@ export async function deployAndStartBot(botId: string, userId: string, files: Re
     const botName = bot?.name || 'AI Bot';
     const currentRuntimeStatus = bot?.runtime_status;
 
-    console.log(`Deploying bot ${botId} using Deno runtime`);
+    console.log(`Deploying bot ${botId} using Docker container`);
     
     // Update bot status to preparing
     await supabase
       .from('bots')
       .update({
         runtime_status: 'preparing',
-        runtime_logs: `[${new Date().toISOString()}] Preparing bot deployment...\n[${new Date().toISOString()}] Files uploaded to storage\n[${new Date().toISOString()}] Generated code ready for execution\n[${new Date().toISOString()}] Code validation: ${Object.keys(files).join(', ')}\n`,
+        runtime_logs: `[${new Date().toISOString()}] Preparing Docker container deployment...\n[${new Date().toISOString()}] Files uploaded to storage\n[${new Date().toISOString()}] Generated code ready for containerization\n[${new Date().toISOString()}] Code validation: ${Object.keys(files).join(', ')}\n[${new Date().toISOString()}] Creating isolated environment with dependencies\n`,
         last_restart: new Date().toISOString(),
         deployment_config: {
-          type: 'deno',
-          runtime: 'edge-function'
+          type: 'docker',
+          runtime: 'docker-container'
         }
       })
       .eq('id', botId);
 
     // Start bot asynchronously to avoid timeout issues
-    console.log(`Scheduling bot ${botId} for auto-start with generated code...`);
+    console.log(`Scheduling bot ${botId} for Docker container startup...`);
     
-    // Use a very short timeout to avoid gateway timeout
+    // Use a short timeout to avoid gateway timeout
     setTimeout(async () => {
       try {
-        console.log(`Auto-starting bot ${botId} with generated code`);
+        console.log(`Auto-starting bot ${botId} in Docker container`);
         
         // First stop any existing instance
         if (currentRuntimeStatus === 'running' || currentRuntimeStatus === 'starting') {
@@ -90,7 +90,7 @@ export async function deployAndStartBot(botId: string, userId: string, files: Re
         }
 
         // Start the bot with timeout protection
-        console.log(`Starting bot ${botId} with generated code...`);
+        console.log(`Starting bot ${botId} in Docker container...`);
         
         try {
           const { data: runtimeData, error: runtimeError } = await Promise.race([
@@ -107,20 +107,21 @@ export async function deployAndStartBot(botId: string, userId: string, files: Re
           ]) as any;
 
           if (runtimeError) {
-            console.error('Failed to start bot with generated code:', runtimeError);
+            console.error('Failed to start bot in Docker container:', runtimeError);
             await supabase
               .from('bots')
               .update({
                 runtime_status: 'error',
-                runtime_logs: `[${new Date().toISOString()}] Deployment completed but failed to start bot with generated code\n[${new Date().toISOString()}] Error: ${runtimeError.message}\n[${new Date().toISOString()}] This usually means there's a syntax error in the generated code\n`
+                runtime_logs: `[${new Date().toISOString()}] Deployment completed but failed to start Docker container\n[${new Date().toISOString()}] Error: ${runtimeError.message}\n[${new Date().toISOString()}] This usually means there's an issue with container creation or code execution\n`
               })
               .eq('id', botId);
           } else if (runtimeData?.success) {
-            console.log('Bot started successfully with generated code');
+            console.log('Bot started successfully in Docker container');
             await supabase
               .from('bots')
               .update({
-                runtime_logs: `[${new Date().toISOString()}] Bot restarted successfully with generated code\n[${new Date().toISOString()}] Bot is now running with the latest AI-generated functionality\n`
+                runtime_logs: `[${new Date().toISOString()}] Bot started successfully in Docker container\n[${new Date().toISOString()}] Bot is now running with isolated dependencies\n[${new Date().toISOString()}] Container ID: ${runtimeData.containerId || 'Generated'}\n`,
+                container_id: runtimeData.containerId
               })
               .eq('id', botId);
           } else {
@@ -128,7 +129,7 @@ export async function deployAndStartBot(botId: string, userId: string, files: Re
             await supabase
               .from('bots')
               .update({
-                runtime_logs: `[${new Date().toISOString()}] Bot start completed with warnings\n[${new Date().toISOString()}] Check logs for more details\n`
+                runtime_logs: `[${new Date().toISOString()}] Bot start completed with warnings\n[${new Date().toISOString()}] Check Docker container logs for more details\n`
               })
               .eq('id', botId);
           }
@@ -139,18 +140,18 @@ export async function deployAndStartBot(botId: string, userId: string, files: Re
             .from('bots')
             .update({
               runtime_status: 'error',
-              runtime_logs: `[${new Date().toISOString()}] Failed to start bot with generated code: ${startError.message}\n[${new Date().toISOString()}] Common causes: Syntax errors in generated code, invalid token, or network issues\n`
+              runtime_logs: `[${new Date().toISOString()}] Failed to start bot in Docker container: ${startError.message}\n[${new Date().toISOString()}] Common causes: Container creation issues, dependency conflicts, or network problems\n`
             })
             .eq('id', botId);
         }
 
       } catch (error) {
-        console.error('Failed in auto-start process:', error);
+        console.error('Failed in Docker container startup process:', error);
         await supabase
           .from('bots')
           .update({
             runtime_status: 'error',
-            runtime_logs: `[${new Date().toISOString()}] Auto-start failed: ${error.message}\n`
+            runtime_logs: `[${new Date().toISOString()}] Docker container startup failed: ${error.message}\n`
           })
           .eq('id', botId);
       }
@@ -158,18 +159,18 @@ export async function deployAndStartBot(botId: string, userId: string, files: Re
 
     return { 
       executionId: execution.id, 
-      deploymentType: 'deno',
+      deploymentType: 'docker',
       autoStartScheduled: true 
     };
 
   } catch (error) {
-    console.error('Deployment failed:', error);
+    console.error('Docker deployment failed:', error);
     
     await supabase
       .from('bots')
       .update({
         runtime_status: 'error',
-        runtime_logs: `[${new Date().toISOString()}] Deployment failed: ${error.message}\n`
+        runtime_logs: `[${new Date().toISOString()}] Docker deployment failed: ${error.message}\n`
       })
       .eq('id', botId);
 

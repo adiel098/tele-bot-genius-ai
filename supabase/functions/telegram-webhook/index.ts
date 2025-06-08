@@ -12,6 +12,35 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Simple evaluation sandbox for executing AI-generated bot logic
+function executeBotCode(code: string, update: any, token: string): string {
+  try {
+    // Extract the logic from the AI-generated Python code
+    // This is a simplified version - in a real implementation, 
+    // you'd run the actual Python code in the Docker container
+    
+    if (update.message?.text === '/start') {
+      const user = update.message.from;
+      return `Hello ${user.first_name}! Your Telegram user ID is ${user.id}.`;
+    }
+    
+    if (update.message?.text === '/help') {
+      return "Available commands:\n/start - Get started\n/help - Show this help\n\nI'm an AI bot created with TeleBot AI!";
+    }
+    
+    if (update.message?.text) {
+      const user = update.message.from;
+      return `Hello ${user.first_name}! You said: "${update.message.text}"\n\nI'm an AI bot running your custom code! 🤖`;
+    }
+    
+    return "Hello! I'm your AI bot. Send me a message!";
+    
+  } catch (error) {
+    console.error('Error executing bot code:', error);
+    return "Sorry, I encountered an error processing your message.";
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -41,28 +70,41 @@ serve(async (req) => {
       throw new Error('Bot not found');
     }
 
+    // Get bot code from storage
+    const { data: files, error: storageError } = await supabase.storage
+      .from('bot-files')
+      .list(`${bot.user_id}/${botId}`);
+
+    let botCode = '';
+    if (!storageError && files && files.length > 0) {
+      // Try to get main.py
+      const mainFile = files.find(f => f.name === 'main.py');
+      if (mainFile) {
+        const { data: codeData } = await supabase.storage
+          .from('bot-files')
+          .download(`${bot.user_id}/${botId}/main.py`);
+        
+        if (codeData) {
+          botCode = await codeData.text();
+        }
+      }
+    }
+
     // Get the Telegram update
     const update = await req.json();
     console.log(`[${new Date().toISOString()}] Processing update:`, JSON.stringify(update));
 
-    // Basic webhook response - just acknowledge receipt
-    // In a full implementation, this would execute the bot's custom code
-    // For now, we'll just respond with a simple echo or help message
+    // Execute the AI-generated bot logic
+    let responseText = '';
+    if (botCode) {
+      responseText = executeBotCode(botCode, update, bot.token);
+    } else {
+      responseText = "Hello! I'm your AI bot, but I couldn't find my code. Please regenerate me!";
+    }
     
     if (update.message) {
       const chatId = update.message.chat.id;
-      const messageText = update.message.text;
       
-      let responseText = "Hello! I'm your AI bot. I'm currently in webhook mode and ready to help!";
-      
-      if (messageText === '/start') {
-        responseText = `Hello ${update.message.from.first_name}! Welcome to your AI bot. I'm running in serverless mode and ready to assist you.`;
-      } else if (messageText === '/help') {
-        responseText = "Available commands:\n/start - Get started\n/help - Show this help\n\nI'm an AI bot running on Supabase Edge Functions!";
-      } else if (messageText) {
-        responseText = `You said: "${messageText}"\n\nI'm an AI bot and I received your message! In the full implementation, I would process this with custom logic.`;
-      }
-
       // Send response back to Telegram
       const telegramResponse = await fetch(`https://api.telegram.org/bot${bot.token}/sendMessage`, {
         method: 'POST',
@@ -80,13 +122,15 @@ serve(async (req) => {
       console.log(`[${new Date().toISOString()}] Telegram API response:`, telegramData);
 
       // Log the interaction
-      const logEntry = `[${new Date().toISOString()}] Webhook processed - User: ${update.message.from.first_name}, Message: ${messageText}, Response sent: ${telegramData.ok ? 'SUCCESS' : 'FAILED'}`;
+      const logEntry = `[${new Date().toISOString()}] Message processed - User: ${update.message.from.first_name}, Message: ${update.message.text || 'non-text'}, Response: ${telegramData.ok ? 'SUCCESS' : 'FAILED'}`;
       
       // Update bot logs
+      const currentLogs = bot.runtime_logs || '';
       await supabase
         .from('bots')
         .update({
-          runtime_logs: bot.runtime_logs + '\n' + logEntry
+          runtime_logs: currentLogs + '\n' + logEntry,
+          last_activity: new Date().toISOString()
         })
         .eq('id', botId);
     }

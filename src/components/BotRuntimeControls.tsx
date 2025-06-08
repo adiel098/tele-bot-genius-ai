@@ -37,7 +37,7 @@ const BotRuntimeControls = ({ botId, userId, runtimeStatus, containerId, onStatu
         const actionEmoji = action === 'restart' ? '🔄' : '📋';
         toast({
           title: `${actionEmoji} ${action === 'restart' ? 'Bot restart initiated!' : 'Logs refreshed!'}`,
-          description: action === 'restart' ? 'Bot is restarting with latest code' : 'Latest container logs retrieved',
+          description: action === 'restart' ? 'Bot is restarting in Docker container' : 'Latest Docker container logs retrieved',
         });
       } else {
         throw new Error(data.error || 'Operation failed');

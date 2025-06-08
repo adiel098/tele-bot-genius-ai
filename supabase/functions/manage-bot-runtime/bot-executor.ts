@@ -1,27 +1,31 @@
 
 import { BotLogger } from './logger.ts';
-import { startWebhookBot, stopWebhookBot, getWebhookBotLogs } from './webhook-bot-executor.ts';
+import { startDockerBot, stopDockerBot, getDockerBotLogs } from './docker-executor.ts';
 
-export async function startTelegramBot(botId: string, token: string, code: string): Promise<{ success: boolean; logs: string[]; error?: string; errorType?: string }> {
+export async function startTelegramBot(botId: string, token: string, code: string): Promise<{ success: boolean; logs: string[]; error?: string; errorType?: string; containerId?: string }> {
   const logs: string[] = [];
   
   try {
     logs.push(BotLogger.logSection(`STARTING TELEGRAM BOT ${botId}`));
-    logs.push(BotLogger.log('', 'Using webhook-based execution (Supabase Edge Runtime compatible)'));
+    logs.push(BotLogger.log('', 'Using Docker container execution for isolated environments'));
     
-    // Use webhook-based bot execution instead of subprocess
-    const result = await startWebhookBot(botId, token, code);
+    // Use Docker-based bot execution
+    const result = await startDockerBot(botId, token, code);
     logs.push(...result.logs);
     
     if (result.success) {
-      logs.push(BotLogger.logSuccess('Bot started successfully with webhook configuration'));
-      return { success: true, logs };
+      logs.push(BotLogger.logSuccess('Bot started successfully in Docker container'));
+      return { 
+        success: true, 
+        logs,
+        containerId: result.containerId 
+      };
     } else {
       return { 
         success: false, 
         logs, 
-        error: result.error || 'Failed to start webhook bot',
-        errorType: result.errorType || 'webhook_error'
+        error: result.error || 'Failed to start Docker bot',
+        errorType: result.errorType || 'docker_error'
       };
     }
     
@@ -39,16 +43,15 @@ export async function startTelegramBot(botId: string, token: string, code: strin
   }
 }
 
-export function stopTelegramBot(botId: string): { success: boolean; logs: string[] } {
-  return stopWebhookBot(botId, ''); // Token will be fetched from database in the manager
+export function stopTelegramBot(botId: string): Promise<{ success: boolean; logs: string[] }> {
+  return stopDockerBot(botId);
 }
 
-export function getBotLogs(botId: string): string[] {
-  return getWebhookBotLogs(botId);
+export function getBotLogs(botId: string): Promise<string[]> {
+  return getDockerBotLogs(botId);
 }
 
 export function listActiveBots(): string[] {
-  // In webhook mode, all configured bots are considered "active"
-  // as they respond to webhook calls when messages arrive
+  // This would normally query Docker to get running containers
   return [];
 }
