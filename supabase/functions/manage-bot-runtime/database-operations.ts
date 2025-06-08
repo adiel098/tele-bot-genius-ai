@@ -1,4 +1,3 @@
-
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -49,16 +48,15 @@ export async function getBotFiles(userId: string, botId: string): Promise<string
 export async function updateBotStatus(botId: string, status: string, logs: string[], containerId?: string) {
   const updateData: any = {
     runtime_status: status,
-    runtime_logs: logs.join('\n')
+    runtime_logs: logs.join('\n'),
+    last_restart: new Date().toISOString()
   };
 
-  if (status === 'running') {
-    updateData.last_restart = new Date().toISOString();
-    if (containerId) {
-      updateData.container_id = containerId;
-    }
-  } else if (status === 'stopped') {
-    // Clear container_id when bot is stopped
+  // Only set container_id when actually running
+  if (status === 'running' && containerId) {
+    updateData.container_id = containerId;
+  } else if (status === 'stopped' || status === 'error') {
+    // Clear container_id when not running
     updateData.container_id = null;
   }
 

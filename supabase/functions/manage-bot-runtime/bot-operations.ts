@@ -1,4 +1,3 @@
-
 import { startTelegramBot, stopTelegramBot, getBotLogs } from './bot-executor.ts';
 import { 
   getBotData, 
@@ -41,17 +40,17 @@ export async function startBotOperation(botId: string, userId: string): Promise<
     LoggingUtils.logCompletion('BOT START', duration, result.success);
 
     if (result.success) {
-      // Update bot status with container info
+      // Update bot status with container info - ONLY set to 'running' if actually started
       await updateBotStatus(botId, 'running', result.logs || [], result.containerId);
       
       // Create execution record
       await createBotExecution(botId, userId, 'running', result.logs || []);
       
-      console.log(`[${new Date().toISOString()}] Bot marked as running with container: ${result.containerId}`);
+      console.log(`[${new Date().toISOString()}] Bot marked as RUNNING with container: ${result.containerId}`);
     } else {
-      // Update bot status to error
+      // If start failed, mark as error
       await updateBotStatus(botId, 'error', result.logs || []);
-      console.log(`[${new Date().toISOString()}] Bot marked as error`);
+      console.log(`[${new Date().toISOString()}] Bot marked as ERROR due to start failure`);
     }
 
     return result;
@@ -60,7 +59,7 @@ export async function startBotOperation(botId: string, userId: string): Promise<
     const duration = Date.now() - startTime;
     LoggingUtils.logError('BOT START', duration, error);
     
-    // Update bot status to error
+    // Update bot status to error on exception
     await updateBotStatus(botId, 'error', [`Error starting bot: ${error.message}`]);
     
     throw error;
@@ -95,7 +94,7 @@ export async function stopBotOperation(botId: string): Promise<{ success: boolea
     const duration = Date.now() - startTime;
     LoggingUtils.logCompletion('BOT STOP', duration, result.success);
 
-    // Update bot status - clear container_id when stopped
+    // ALWAYS update to stopped after stop operation - clear container_id
     await updateBotStatus(botId, 'stopped', result.logs || []);
 
     // Update execution status if exists
@@ -103,7 +102,7 @@ export async function stopBotOperation(botId: string): Promise<{ success: boolea
       await updateExecutionStatus(execution.id, 'stopped', result.logs || []);
     }
 
-    console.log(`[${new Date().toISOString()}] Bot marked as stopped`);
+    console.log(`[${new Date().toISOString()}] Bot marked as STOPPED`);
     
     return result;
 
@@ -116,7 +115,6 @@ export async function stopBotOperation(botId: string): Promise<{ success: boolea
     
     console.log(`[${new Date().toISOString()}] Bot marked as error during stop`);
     
-    // Return a safe result even if there was an error
     return { 
       success: false, 
       logs: [
