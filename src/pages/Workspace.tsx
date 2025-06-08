@@ -118,17 +118,28 @@ const Workspace = () => {
     setIsGenerating(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('generate-bot-code', {
-        body: {
+      // Make a direct fetch call with proper headers
+      const response = await fetch(`https://efhwjkhqbbucvedgznba.functions.supabase.co/generate-bot-code`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVmaHdqa2hxYmJ1Y3ZlZGd6bmJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU5MzEzMjUsImV4cCI6MjA2MTUwNzMyNX0.kvUFs7psZ9acIJee4QIF2-zECdR4aTzvBKrYsV2v_fk'
+        },
+        body: JSON.stringify({
           botId: bot.id,
           prompt: newMessage,
           token: bot.token
-        }
+        })
       });
 
-      if (error) {
-        throw new Error(error.message || 'Failed to generate bot code');
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Function call failed:', response.status, errorText);
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
+
+      const data = await response.json();
 
       if (data.success) {
         // Refresh bot data to get updated conversation
@@ -153,7 +164,7 @@ const Workspace = () => {
       console.error('Error:', error);
       toast({
         title: "Error",
-        description: "Failed to generate bot code. Please try again.",
+        description: `Failed to generate bot code: ${error.message}`,
         variant: "destructive",
       });
     } finally {
