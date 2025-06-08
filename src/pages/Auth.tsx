@@ -36,14 +36,14 @@ const Auth = () => {
         const { error } = await signIn(email, password);
         if (error) {
           toast({
-            title: "שגיאת התחברות",
+            title: "Login Error",
             description: error.message,
             variant: "destructive",
           });
         } else {
           toast({
-            title: "התחברת בהצלחה! 🎉",
-            description: "מועבר לדשבורד...",
+            title: "Successfully logged in! 🎉",
+            description: "Redirecting to dashboard...",
           });
           navigate("/dashboard");
         }
@@ -51,21 +51,21 @@ const Auth = () => {
         const { error } = await signUp(email, password, fullName);
         if (error) {
           toast({
-            title: "שגיאת הרשמה",
+            title: "Registration Error",
             description: error.message,
             variant: "destructive",
           });
         } else {
           toast({
-            title: "נרשמת בהצלחה! 🎉",
-            description: "בדוק את האימייל שלך לאימות החשבון",
+            title: "Successfully registered! 🎉",
+            description: "Check your email to verify your account",
           });
         }
       }
     } catch (error) {
       toast({
-        title: "שגיאה",
-        description: "משהו השתבש. נסה שוב.",
+        title: "Error",
+        description: "Something went wrong. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -92,21 +92,21 @@ const Auth = () => {
       <Card className="w-full max-w-md mt-16">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold">
-            {isLogin ? "התחברות" : "הרשמה"}
+            {isLogin ? "Sign In" : "Sign Up"}
           </CardTitle>
           <p className="text-gray-600">
-            {isLogin ? "התחבר לחשבון שלך" : "צור חשבון חדש"}
+            {isLogin ? "Sign in to your account" : "Create a new account"}
           </p>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             {!isLogin && (
               <div className="space-y-2">
-                <Label htmlFor="fullName">שם מלא</Label>
+                <Label htmlFor="fullName">Full Name</Label>
                 <Input
                   id="fullName"
                   type="text"
-                  placeholder="השם המלא שלך"
+                  placeholder="Your full name"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   required={!isLogin}
@@ -115,7 +115,7 @@ const Auth = () => {
             )}
             
             <div className="space-y-2">
-              <Label htmlFor="email">אימייל</Label>
+              <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
                 type="email"
@@ -127,7 +127,7 @@ const Auth = () => {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="password">סיסמה</Label>
+              <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
                 type="password"
@@ -143,7 +143,7 @@ const Auth = () => {
               className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700"
               disabled={loading}
             >
-              {loading ? "טוען..." : isLogin ? "התחבר" : "הירשם"}
+              {loading ? "Loading..." : isLogin ? "Sign In" : "Sign Up"}
             </Button>
           </form>
           
@@ -153,7 +153,7 @@ const Auth = () => {
               onClick={() => setIsLogin(!isLogin)}
               className="text-blue-600 hover:underline"
             >
-              {isLogin ? "אין לך חשבון? הירשם כאן" : "יש לך חשבון? התחבר כאן"}
+              {isLogin ? "Don't have an account? Sign up here" : "Already have an account? Sign in here"}
             </button>
           </div>
         </CardContent>
