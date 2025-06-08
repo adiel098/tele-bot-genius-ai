@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -6,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Send, Download, Play, Square, Settings } from "lucide-react";
+import { ArrowLeft, Send, Download, Play, Square, Settings, FileText, X, MessageSquare } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -63,6 +64,8 @@ const Workspace = () => {
   const [newMessage, setNewMessage] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [selectedFile, setSelectedFile] = useState<{ name: string; content: string } | null>(null);
+  const [viewMode, setViewMode] = useState<'chat' | 'code'>('chat');
 
   // Fetch bot data
   useEffect(() => {
@@ -206,6 +209,16 @@ const Workspace = () => {
     });
   };
 
+  const openFile = (filename: string, content: string) => {
+    setSelectedFile({ name: filename, content });
+    setViewMode('code');
+  };
+
+  const closeFile = () => {
+    setSelectedFile(null);
+    setViewMode('chat');
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center">
@@ -254,6 +267,12 @@ const Workspace = () => {
             </div>
           </div>
           <div className="flex items-center space-x-2">
+            {viewMode === 'code' && (
+              <Button onClick={closeFile} variant="outline" size="sm">
+                <MessageSquare className="h-4 w-4 mr-2" />
+                Back to Chat
+              </Button>
+            )}
             <Button variant="outline" size="sm">
               <Settings className="h-4 w-4 mr-2" />
               Settings
@@ -273,157 +292,184 @@ const Workspace = () => {
       </div>
 
       <div className="flex h-[calc(100vh-73px)]">
-        {/* Chat Panel */}
-        <div className="flex-1 flex flex-col">
-          <div className="flex-1 p-6">
-            <Card className="h-full flex flex-col">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <span>🤖</span>
-                  AI Assistant
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex-1 flex flex-col">
-                <ScrollArea className="flex-1 pr-4">
-                  <div className="space-y-4">
-                    {messages.map((message, index) => (
-                      <div
-                        key={index}
-                        className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                      >
-                        <div
-                          className={`max-w-[80%] rounded-lg p-3 ${
-                            message.role === 'user'
-                              ? 'bg-blue-500 text-white'
-                              : 'bg-gray-100 text-gray-900'
-                          }`}
-                        >
-                          <p className="whitespace-pre-wrap">{message.content}</p>
-                          {message.files && (
-                            <div className="mt-2 pt-2 border-t border-gray-300">
-                              <p className="text-sm font-medium mb-1">Generated Files:</p>
-                              <div className="flex flex-wrap gap-1">
-                                {Object.keys(message.files).map((filename) => (
-                                  <Badge key={filename} variant="outline" className="text-xs">
-                                    {filename}
-                                  </Badge>
-                                ))}
+        {viewMode === 'chat' ? (
+          <>
+            {/* Chat Panel */}
+            <div className="flex-1 flex flex-col">
+              <div className="flex-1 p-6">
+                <Card className="h-full flex flex-col">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <span>🤖</span>
+                      AI Assistant
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex-1 flex flex-col">
+                    <ScrollArea className="flex-1 pr-4">
+                      <div className="space-y-4">
+                        {messages.map((message, index) => (
+                          <div
+                            key={index}
+                            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                          >
+                            <div
+                              className={`max-w-[80%] rounded-lg p-3 ${
+                                message.role === 'user'
+                                  ? 'bg-blue-500 text-white'
+                                  : 'bg-gray-100 text-gray-900'
+                              }`}
+                            >
+                              <p className="whitespace-pre-wrap">{message.content}</p>
+                              {message.files && (
+                                <div className="mt-2 pt-2 border-t border-gray-300">
+                                  <p className="text-sm font-medium mb-1">Generated Files:</p>
+                                  <div className="flex flex-wrap gap-1">
+                                    {Object.keys(message.files).map((filename) => (
+                                      <Badge key={filename} variant="outline" className="text-xs">
+                                        {filename}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              <p className="text-xs opacity-70 mt-1">
+                                {new Date(message.timestamp).toLocaleTimeString()}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                        {isGenerating && (
+                          <div className="flex justify-start">
+                            <div className="bg-gray-100 rounded-lg p-3">
+                              <div className="flex items-center space-x-2">
+                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100"></div>
+                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200"></div>
+                                <span className="text-sm text-gray-600 ml-2">Generating code...</span>
                               </div>
                             </div>
-                          )}
-                          <p className="text-xs opacity-70 mt-1">
-                            {new Date(message.timestamp).toLocaleTimeString()}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                    {isGenerating && (
-                      <div className="flex justify-start">
-                        <div className="bg-gray-100 rounded-lg p-3">
-                          <div className="flex items-center space-x-2">
-                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100"></div>
-                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200"></div>
-                            <span className="text-sm text-gray-600 ml-2">Generating code...</span>
                           </div>
-                        </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                </ScrollArea>
-                <div className="mt-4 flex space-x-2">
-                  <Textarea
-                    placeholder="Ask me to modify the bot or add new features..."
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        sendMessage();
-                      }
-                    }}
-                    className="flex-1"
-                    rows={2}
-                  />
-                  <Button onClick={sendMessage} disabled={!newMessage.trim() || isGenerating}>
-                    <Send className="h-4 w-4" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        {/* Side Panel */}
-        <div className="w-96 border-l border-gray-200 bg-white">
-          <Tabs defaultValue="files" className="h-full flex flex-col">
-            <TabsList className="grid w-full grid-cols-2 mx-4 mt-4">
-              <TabsTrigger value="files">Files</TabsTrigger>
-              <TabsTrigger value="logs">Logs</TabsTrigger>
-            </TabsList>
-            
-            <TabsContent value="files" className="flex-1 p-4">
-              <Card className="h-full">
-                <CardHeader>
-                  <CardTitle className="text-sm">Generated Files</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ScrollArea className="h-[400px]">
-                    {Object.keys(latestFiles).length > 0 ? (
-                      <div className="space-y-2">
-                        {Object.entries(latestFiles).map(([filename, content]) => (
-                          <Card key={filename} className="p-3">
-                            <div className="flex items-center justify-between mb-2">
-                              <h4 className="font-medium text-sm">{filename}</h4>
-                              <Badge variant="outline" className="text-xs">
-                                {typeof content === 'string' ? content.length : 0} chars
-                              </Badge>
-                            </div>
-                            <ScrollArea className="h-32">
-                              <pre className="text-xs text-gray-600 font-mono whitespace-pre-wrap">
-                                {typeof content === 'string' ? (
-                                  <>
-                                    {content.substring(0, 500)}
-                                    {content.length > 500 && '...'}
-                                  </>
-                                ) : (
-                                  'Invalid file content'
-                                )}
-                              </pre>
-                            </ScrollArea>
-                          </Card>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center text-gray-500 py-8">
-                        <p>No files generated yet</p>
-                        <p className="text-sm">Chat with the AI to generate bot code</p>
-                      </div>
-                    )}
-                  </ScrollArea>
-                </CardContent>
-              </Card>
-            </TabsContent>
-            
-            <TabsContent value="logs" className="flex-1 p-4">
-              <Card className="h-full">
-                <CardHeader>
-                  <CardTitle className="text-sm">Bot Logs</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ScrollArea className="h-[400px]">
-                    <div className="space-y-2 text-sm font-mono">
-                      <div className="text-green-600">[INFO] Bot initialized</div>
-                      <div className="text-blue-600">[DEBUG] Loading configuration</div>
-                      <div className="text-green-600">[INFO] Bot code generated successfully</div>
-                      <div className="text-yellow-600">[WARN] Bot not deployed yet</div>
+                    </ScrollArea>
+                    <div className="mt-4 flex space-x-2">
+                      <Textarea
+                        placeholder="Ask me to modify the bot or add new features..."
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            sendMessage();
+                          }
+                        }}
+                        className="flex-1"
+                        rows={2}
+                      />
+                      <Button onClick={sendMessage} disabled={!newMessage.trim() || isGenerating}>
+                        <Send className="h-4 w-4" />
+                      </Button>
                     </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+
+            {/* Side Panel */}
+            <div className="w-96 border-l border-gray-200 bg-white">
+              <Tabs defaultValue="files" className="h-full flex flex-col">
+                <TabsList className="grid w-full grid-cols-2 mx-4 mt-4">
+                  <TabsTrigger value="files">Files</TabsTrigger>
+                  <TabsTrigger value="logs">Logs</TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="files" className="flex-1 p-4">
+                  <Card className="h-full">
+                    <CardHeader>
+                      <CardTitle className="text-sm">Generated Files</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ScrollArea className="h-[400px]">
+                        {Object.keys(latestFiles).length > 0 ? (
+                          <div className="space-y-2">
+                            {Object.entries(latestFiles).map(([filename, content]) => (
+                              <div
+                                key={filename}
+                                className="p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                                onClick={() => typeof content === 'string' && openFile(filename, content)}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center space-x-2">
+                                    <FileText className="h-4 w-4 text-blue-600" />
+                                    <span className="font-medium text-sm">{filename}</span>
+                                  </div>
+                                  <Badge variant="outline" className="text-xs">
+                                    {typeof content === 'string' ? content.length : 0} chars
+                                  </Badge>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1">Click to view</p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-center text-gray-500 py-8">
+                            <FileText className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                            <p>No files generated yet</p>
+                            <p className="text-sm">Chat with the AI to generate bot code</p>
+                          </div>
+                        )}
+                      </ScrollArea>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+                
+                <TabsContent value="logs" className="flex-1 p-4">
+                  <Card className="h-full">
+                    <CardHeader>
+                      <CardTitle className="text-sm">Bot Logs</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ScrollArea className="h-[400px]">
+                        <div className="space-y-2 text-sm font-mono">
+                          <div className="text-green-600">[INFO] Bot initialized</div>
+                          <div className="text-blue-600">[DEBUG] Loading configuration</div>
+                          <div className="text-green-600">[INFO] Bot code generated successfully</div>
+                          <div className="text-yellow-600">[WARN] Bot not deployed yet</div>
+                        </div>
+                      </ScrollArea>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              </Tabs>
+            </div>
+          </>
+        ) : (
+          /* Code Viewer */
+          <div className="flex-1 flex flex-col">
+            <div className="bg-white border-b border-gray-200 px-6 py-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <FileText className="h-5 w-5 text-blue-600" />
+                  <h2 className="font-semibold text-gray-900">{selectedFile?.name}</h2>
+                </div>
+                <Button onClick={closeFile} variant="outline" size="sm">
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="flex-1 p-6">
+              <Card className="h-full">
+                <CardContent className="p-6 h-full">
+                  <ScrollArea className="h-full">
+                    <pre className="text-sm font-mono whitespace-pre-wrap break-words">
+                      {selectedFile?.content}
+                    </pre>
                   </ScrollArea>
                 </CardContent>
               </Card>
-            </TabsContent>
-          </Tabs>
-        </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
