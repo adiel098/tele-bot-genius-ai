@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -65,7 +64,6 @@ const Workspace = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedFile, setSelectedFile] = useState<{ name: string; content: string } | null>(null);
-  const [viewMode, setViewMode] = useState<'chat' | 'code'>('chat');
 
   // Fetch bot data
   useEffect(() => {
@@ -211,12 +209,10 @@ const Workspace = () => {
 
   const openFile = (filename: string, content: string) => {
     setSelectedFile({ name: filename, content });
-    setViewMode('code');
   };
 
   const closeFile = () => {
     setSelectedFile(null);
-    setViewMode('chat');
   };
 
   if (loading) {
@@ -267,12 +263,6 @@ const Workspace = () => {
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            {viewMode === 'code' && (
-              <Button onClick={closeFile} variant="outline" size="sm">
-                <MessageSquare className="h-4 w-4 mr-2" />
-                Back to Chat
-              </Button>
-            )}
             <Button variant="outline" size="sm">
               <Settings className="h-4 w-4 mr-2" />
               Settings
@@ -292,19 +282,44 @@ const Workspace = () => {
       </div>
 
       <div className="flex h-[calc(100vh-73px)]">
-        {viewMode === 'chat' ? (
-          <>
-            {/* Chat Panel */}
-            <div className="flex-1 flex flex-col">
-              <div className="flex-1 p-6">
-                <Card className="h-full flex flex-col">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <span>🤖</span>
-                      AI Assistant
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="flex-1 flex flex-col">
+        {/* Chat/Code Panel */}
+        <div className="flex-1 flex flex-col">
+          <div className="flex-1 p-6">
+            <Card className="h-full flex flex-col">
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {selectedFile ? (
+                      <>
+                        <FileText className="h-5 w-5 text-blue-600" />
+                        {selectedFile.name}
+                      </>
+                    ) : (
+                      <>
+                        <span>🤖</span>
+                        AI Assistant
+                      </>
+                    )}
+                  </div>
+                  {selectedFile && (
+                    <Button onClick={closeFile} variant="outline" size="sm">
+                      <MessageSquare className="h-4 w-4 mr-2" />
+                      Back to Chat
+                    </Button>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex-1 flex flex-col">
+                {selectedFile ? (
+                  /* File Viewer */
+                  <ScrollArea className="flex-1">
+                    <pre className="text-sm font-mono whitespace-pre-wrap break-words p-4 bg-gray-50 rounded-lg">
+                      {selectedFile.content}
+                    </pre>
+                  </ScrollArea>
+                ) : (
+                  /* Chat Interface */
+                  <>
                     <ScrollArea className="flex-1 pr-4">
                       <div className="space-y-4">
                         {messages.map((message, index) => (
@@ -370,106 +385,80 @@ const Workspace = () => {
                         <Send className="h-4 w-4" />
                       </Button>
                     </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
 
-            {/* Side Panel */}
-            <div className="w-96 border-l border-gray-200 bg-white">
-              <Tabs defaultValue="files" className="h-full flex flex-col">
-                <TabsList className="grid w-full grid-cols-2 mx-4 mt-4">
-                  <TabsTrigger value="files">Files</TabsTrigger>
-                  <TabsTrigger value="logs">Logs</TabsTrigger>
-                </TabsList>
-                
-                <TabsContent value="files" className="flex-1 p-4">
-                  <Card className="h-full">
-                    <CardHeader>
-                      <CardTitle className="text-sm">Generated Files</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <ScrollArea className="h-[400px]">
-                        {Object.keys(latestFiles).length > 0 ? (
-                          <div className="space-y-2">
-                            {Object.entries(latestFiles).map(([filename, content]) => (
-                              <div
-                                key={filename}
-                                className="p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
-                                onClick={() => typeof content === 'string' && openFile(filename, content)}
-                              >
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center space-x-2">
-                                    <FileText className="h-4 w-4 text-blue-600" />
-                                    <span className="font-medium text-sm">{filename}</span>
-                                  </div>
-                                  <Badge variant="outline" className="text-xs">
-                                    {typeof content === 'string' ? content.length : 0} chars
-                                  </Badge>
-                                </div>
-                                <p className="text-xs text-gray-500 mt-1">Click to view</p>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="text-center text-gray-500 py-8">
-                            <FileText className="h-8 w-8 mx-auto mb-2 text-gray-400" />
-                            <p>No files generated yet</p>
-                            <p className="text-sm">Chat with the AI to generate bot code</p>
-                          </div>
-                        )}
-                      </ScrollArea>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-                
-                <TabsContent value="logs" className="flex-1 p-4">
-                  <Card className="h-full">
-                    <CardHeader>
-                      <CardTitle className="text-sm">Bot Logs</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <ScrollArea className="h-[400px]">
-                        <div className="space-y-2 text-sm font-mono">
-                          <div className="text-green-600">[INFO] Bot initialized</div>
-                          <div className="text-blue-600">[DEBUG] Loading configuration</div>
-                          <div className="text-green-600">[INFO] Bot code generated successfully</div>
-                          <div className="text-yellow-600">[WARN] Bot not deployed yet</div>
-                        </div>
-                      </ScrollArea>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-              </Tabs>
-            </div>
-          </>
-        ) : (
-          /* Code Viewer */
-          <div className="flex-1 flex flex-col">
-            <div className="bg-white border-b border-gray-200 px-6 py-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <FileText className="h-5 w-5 text-blue-600" />
-                  <h2 className="font-semibold text-gray-900">{selectedFile?.name}</h2>
-                </div>
-                <Button onClick={closeFile} variant="outline" size="sm">
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-            <div className="flex-1 p-6">
+        {/* Side Panel */}
+        <div className="w-96 border-l border-gray-200 bg-white">
+          <Tabs defaultValue="files" className="h-full flex flex-col">
+            <TabsList className="grid w-full grid-cols-2 mx-4 mt-4">
+              <TabsTrigger value="files">Files</TabsTrigger>
+              <TabsTrigger value="logs">Logs</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="files" className="flex-1 p-4">
               <Card className="h-full">
-                <CardContent className="p-6 h-full">
-                  <ScrollArea className="h-full">
-                    <pre className="text-sm font-mono whitespace-pre-wrap break-words">
-                      {selectedFile?.content}
-                    </pre>
+                <CardHeader>
+                  <CardTitle className="text-sm">Generated Files</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-[400px]">
+                    {Object.keys(latestFiles).length > 0 ? (
+                      <div className="space-y-2">
+                        {Object.entries(latestFiles).map(([filename, content]) => (
+                          <div
+                            key={filename}
+                            className="p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                            onClick={() => typeof content === 'string' && openFile(filename, content)}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center space-x-2">
+                                <FileText className="h-4 w-4 text-blue-600" />
+                                <span className="font-medium text-sm">{filename}</span>
+                              </div>
+                              <Badge variant="outline" className="text-xs">
+                                {typeof content === 'string' ? content.length : 0} chars
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1">Click to view</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center text-gray-500 py-8">
+                        <FileText className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                        <p>No files generated yet</p>
+                        <p className="text-sm">Chat with the AI to generate bot code</p>
+                      </div>
+                    )}
                   </ScrollArea>
                 </CardContent>
               </Card>
-            </div>
-          </div>
-        )}
+            </TabsContent>
+            
+            <TabsContent value="logs" className="flex-1 p-4">
+              <Card className="h-full">
+                <CardHeader>
+                  <CardTitle className="text-sm">Bot Logs</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-[400px]">
+                    <div className="space-y-2 text-sm font-mono">
+                      <div className="text-green-600">[INFO] Bot initialized</div>
+                      <div className="text-blue-600">[DEBUG] Loading configuration</div>
+                      <div className="text-green-600">[INFO] Bot code generated successfully</div>
+                      <div className="text-yellow-600">[WARN] Bot not deployed yet</div>
+                    </div>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </div>
       </div>
     </div>
   );
