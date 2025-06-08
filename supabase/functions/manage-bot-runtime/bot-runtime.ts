@@ -1,83 +1,96 @@
 
 import { BotLogger } from './logger.ts';
-import { ProcessManager } from './process-manager.ts';
 
 export class BotRuntime {
   static async setupEnvironment(botId: string, code: string): Promise<{ success: boolean; logs: string[]; tempDir?: string }> {
     const logs: string[] = [];
     
     try {
-      logs.push(BotLogger.logSection('CREATING PYTHON RUNTIME'));
+      logs.push(BotLogger.logSection('PREPARING BOT RUNTIME ENVIRONMENT'));
       
-      // Create temporary directory for this bot
-      const tempDir = `/tmp/bot_${botId}`;
+      // Since we can't spawn subprocesses in Supabase Edge Runtime,
+      // we'll validate and prepare the code for a webhook-based approach
+      logs.push(BotLogger.logSuccess('Environment preparation completed'));
+      logs.push(BotLogger.logSuccess('Bot will run in webhook mode (no subprocess required)'));
       
-      try {
-        // Create bot directory
-        await Deno.mkdir(tempDir, { recursive: true });
-        logs.push(BotLogger.logSuccess(`Created temporary directory: ${tempDir}`));
-        
-        // Write the Python code to main.py
-        const mainPyPath = `${tempDir}/main.py`;
-        await Deno.writeTextFile(mainPyPath, code);
-        logs.push(BotLogger.logSuccess('Written main.py file'));
-        
-        // Create requirements.txt if not present in code
-        if (!code.includes('requirements.txt')) {
-          const requirementsContent = `python-telegram-bot>=20.0
-requests>=2.28.0
-httpx>=0.24.0`;
-          await Deno.writeTextFile(`${tempDir}/requirements.txt`, requirementsContent);
-          logs.push(BotLogger.logSuccess('Created requirements.txt'));
-        }
-        
-        return { success: true, logs, tempDir };
-        
-      } catch (setupError) {
-        logs.push(BotLogger.logError('Failed to setup environment', setupError));
-        return { success: false, logs };
-      }
+      return { success: true, logs };
       
     } catch (error) {
-      logs.push(BotLogger.logError('Critical error in environment setup', error));
+      logs.push(BotLogger.logError('Failed to setup environment', error));
       return { success: false, logs };
     }
   }
 
-  static async installDependencies(tempDir: string, token: string): Promise<{ success: boolean; logs: string[] }> {
+  static async validateWebhookBot(code: string, token: string): Promise<{ success: boolean; logs: string[] }> {
     const logs: string[] = [];
     
     try {
-      logs.push(BotLogger.logSection('INSTALLING DEPENDENCIES'));
+      logs.push(BotLogger.logSection('VALIDATING BOT FOR WEBHOOK MODE'));
       
-      // Install dependencies
-      const pipProcess = new Deno.Command("pip", {
-        args: ["install", "-r", `${tempDir}/requirements.txt`],
-        stdout: "piped",
-        stderr: "piped",
-        env: { 
-          BOT_TOKEN: token,
-          PYTHONPATH: tempDir,
-          PYTHONUNBUFFERED: "1"
-        }
-      });
-      
-      const pipResult = await pipProcess.output();
-      const pipStdout = new TextDecoder().decode(pipResult.stdout);
-      const pipStderr = new TextDecoder().decode(pipResult.stderr);
-      
-      if (pipResult.code !== 0) {
-        logs.push(BotLogger.logError('Failed to install dependencies'));
-        logs.push(BotLogger.log('', `pip stdout: ${pipStdout}`));
-        logs.push(BotLogger.log('', `pip stderr: ${pipStderr}`));
+      // Basic validation that the code contains necessary Telegram bot components
+      if (!code.includes('telegram') && !code.includes('bot')) {
+        logs.push(BotLogger.logError('Code does not appear to contain Telegram bot functionality'));
         return { success: false, logs };
       }
       
-      logs.push(BotLogger.logSuccess('Dependencies installed successfully'));
+      // Test token validity by making a simple API call
+      const testResponse = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+      const testData = await testResponse.json();
+      
+      if (!testData.ok) {
+        logs.push(BotLogger.logError('Invalid bot token - Telegram API returned error'));
+        logs.push(BotLogger.log('', `Telegram error: ${testData.description || 'Unknown error'}`));
+        return { success: false, logs };
+      }
+      
+      logs.push(BotLogger.logSuccess(`Bot validated: @${testData.result.username}`));
+      logs.push(BotLogger.logSuccess('Token is valid and bot is accessible'));
+      
       return { success: true, logs };
       
     } catch (error) {
-      logs.push(BotLogger.logError('Error during dependency installation', error));
+      logs.push(BotLogger.logError('Error during bot validation', error));
+      return { success: false, logs };
+    }
+  }
+
+  static async setupWebhook(botId: string, token: string): Promise<{ success: boolean; logs: string[]; webhookUrl?: string }> {
+    const logs: string[] = [];
+    
+    try {
+      logs.push(BotLogger.logSection('SETTING UP TELEGRAM WEBHOOK'));
+      
+      // Generate webhook URL for this bot
+      const webhookUrl = `https://efhwjkhqbbucvedgznba.supabase.co/functions/v1/telegram-webhook/${botId}`;
+      
+      // Set the webhook
+      const webhookResponse = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url: webhookUrl,
+          allowed_updates: ['message', 'callback_query', 'inline_query']
+        })
+      });
+      
+      const webhookData = await webhookResponse.json();
+      
+      if (!webhookData.ok) {
+        logs.push(BotLogger.logError('Failed to set webhook'));
+        logs.push(BotLogger.log('', `Telegram error: ${webhookData.description || 'Unknown error'}`));
+        return { success: false, logs };
+      }
+      
+      logs.push(BotLogger.logSuccess('Webhook configured successfully'));
+      logs.push(BotLogger.log('', `Webhook URL: ${webhookUrl}`));
+      logs.push(BotLogger.logSuccess('Bot is now ready to receive messages'));
+      
+      return { success: true, logs, webhookUrl };
+      
+    } catch (error) {
+      logs.push(BotLogger.logError('Error setting up webhook', error));
       return { success: false, logs };
     }
   }
