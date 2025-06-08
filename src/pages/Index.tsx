@@ -17,6 +17,18 @@ const Index = () => {
   const [prompt, setPrompt] = useState("");
   const [isCreating, setIsCreating] = useState(false);
 
+  // Template prompts
+  const templates = {
+    support: "Create a customer support bot that can answer frequently asked questions, collect customer information, and create support tickets. The bot should have a friendly tone, be able to escalate to human agents when needed, and handle common inquiries about products, orders, and account issues. Include welcome messages and help commands.",
+    ecommerce: "Build an e-commerce bot that can help customers browse products, check order status, process returns, and provide product recommendations. The bot should integrate with inventory systems, handle payment inquiries, and assist with the shopping experience from product discovery to post-purchase support.",
+    news: "Develop a news and updates bot that can deliver daily news summaries, send breaking news alerts, and allow users to subscribe to specific topics or categories. The bot should be able to fetch news from reliable sources and present information in a clear, engaging format.",
+    custom: "Create a custom bot tailored to your specific needs. Describe the functionality, user interactions, commands, and any special features you want your bot to have. Be as detailed as possible about how users should interact with your bot."
+  };
+
+  const handleTemplateClick = (templateKey: keyof typeof templates) => {
+    setPrompt(templates[templateKey]);
+  };
+
   const validateToken = () => {
     if (!token.trim()) {
       toast({
@@ -40,7 +52,13 @@ const Index = () => {
   };
 
   const handleCreateBot = async () => {
+    // Check if user is authenticated first
     if (!user) {
+      toast({
+        title: "Authentication Required",
+        description: "Please sign in to create a bot",
+        variant: "destructive"
+      });
       navigate("/auth");
       return;
     }
@@ -264,16 +282,32 @@ const Index = () => {
           <div className="mt-12">
             <p className="text-center text-gray-600 mb-6">Popular bot templates:</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Button variant="outline" className="h-auto p-4 text-left flex-col items-start space-y-2">
+              <Button 
+                variant="outline" 
+                className="h-auto p-4 text-left flex-col items-start space-y-2"
+                onClick={() => handleTemplateClick('support')}
+              >
                 <span className="font-medium">Customer Support Bot</span>
               </Button>
-              <Button variant="outline" className="h-auto p-4 text-left flex-col items-start space-y-2">
+              <Button 
+                variant="outline" 
+                className="h-auto p-4 text-left flex-col items-start space-y-2"
+                onClick={() => handleTemplateClick('ecommerce')}
+              >
                 <span className="font-medium">E-commerce Bot</span>
               </Button>
-              <Button variant="outline" className="h-auto p-4 text-left flex-col items-start space-y-2">
+              <Button 
+                variant="outline" 
+                className="h-auto p-4 text-left flex-col items-start space-y-2"
+                onClick={() => handleTemplateClick('news')}
+              >
                 <span className="font-medium">News & Updates Bot</span>
               </Button>
-              <Button variant="outline" className="h-auto p-4 text-left flex-col items-start space-y-2">
+              <Button 
+                variant="outline" 
+                className="h-auto p-4 text-left flex-col items-start space-y-2"
+                onClick={() => handleTemplateClick('custom')}
+              >
                 <span className="font-medium">Custom Bot</span>
               </Button>
             </div>
