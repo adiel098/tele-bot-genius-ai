@@ -46,46 +46,63 @@ export async function startTelegramBot(botId: string, token: string, code: strin
 
     // Execute bot code by creating a dynamic module
     try {
-      // Clean the code to remove any variable declarations that might conflict
+      // More aggressive cleaning of the code
       let cleanCode = code
+        // Remove all import statements
         .replace(/import\s+.*?from\s+['"].*?['"];?\s*/g, '')
-        .replace(/from\s+['"]grammy['"]/, '')
-        .replace(/import\s*\{\s*Bot\s*\}/, '// Bot is already available')
-        // Remove any bot variable declarations to prevent conflicts
+        .replace(/import\s*\{.*?\}\s*from\s*['"].*?['"];?\s*/g, '')
+        .replace(/from\s+['"]grammy['"];?\s*/g, '')
+        // Remove any bot variable declarations
         .replace(/const\s+bot\s*=.*?;/g, '')
         .replace(/let\s+bot\s*=.*?;/g, '')
-        .replace(/var\s+bot\s*=.*?;/g, '');
+        .replace(/var\s+bot\s*=.*?;/g, '')
+        // Remove Bot constructor calls
+        .replace(/new\s+Bot\s*\(.*?\);?/g, '')
+        // Remove any standalone 'bot' references that might be declarations
+        .replace(/^\s*bot\s*=/gm, 'botInstance =')
+        // Replace any remaining 'bot.' with 'botInstance.'
+        .replace(/\bbot\./g, 'botInstance.')
+        // Remove any bot.start() calls since we handle that
+        .replace(/botInstance\.start\s*\(.*?\);?\s*/g, '');
 
-      // Wrap the code to use the provided bot instance
-      const wrappedCode = `
-        // Bot instance is provided as 'botInstance' parameter
-        (function(botInstance, console, Bot) {
+      logs.push(`[${new Date().toISOString()}] Cleaned code for execution`);
+      logs.push(`[${new Date().toISOString()}] Code preview: ${cleanCode.substring(0, 200)}...`);
+
+      // Create a safe execution environment
+      const executionCode = `
+        try {
           ${cleanCode}
-        })
+          return { success: true, message: 'Bot code executed successfully' };
+        } catch (error) {
+          return { success: false, error: error.message };
+        }
       `;
 
-      // Create and execute the function
-      const botFunction = new Function('return ' + wrappedCode)();
+      // Execute the code in a function context
+      const executeFunction = new Function('botInstance', 'console', 'Bot', executionCode);
+      const result = executeFunction(botInstance, customConsole, Bot);
       
-      // Execute bot code with the bot instance, custom console, and Bot constructor
-      botFunction(botInstance, customConsole, Bot);
+      if (result && !result.success) {
+        throw new Error(`Code execution failed: ${result.error}`);
+      }
       
       logs.push(`[${new Date().toISOString()}] Bot code executed successfully`);
       
     } catch (codeError) {
       logs.push(`[${new Date().toISOString()}] Error executing bot code: ${codeError.message}`);
+      logs.push(`[${new Date().toISOString()}] Code that failed: ${code.substring(0, 500)}...`);
       
-      // Fallback: create a simple echo bot if the custom code fails
-      logs.push(`[${new Date().toISOString()}] Falling back to simple echo bot`);
-      
-      botInstance.on('message:text', (ctx) => {
-        customConsole.log(`Received message: ${ctx.message.text}`);
-        ctx.reply(`Echo: ${ctx.message.text}`);
-      });
+      // Only fall back to echo bot if absolutely necessary
+      logs.push(`[${new Date().toISOString()}] Creating basic bot handlers as fallback`);
       
       botInstance.command('start', (ctx) => {
         customConsole.log('Start command received');
-        ctx.reply('Hello! I am your AI bot. Send me any message and I will echo it back.');
+        ctx.reply('Hello! I am your bot. There is an issue with the original code, but I am still here to help.');
+      });
+      
+      botInstance.on('message:text', (ctx) => {
+        customConsole.log(`Received message: ${ctx.message.text}`);
+        ctx.reply(`I received your message: "${ctx.message.text}". There is a technical issue with the original code, but I am working on it.`);
       });
     }
     

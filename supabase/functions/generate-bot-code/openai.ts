@@ -20,17 +20,19 @@ export async function generateBotCode(prompt: string, botToken: string): Promise
 
 IMPORTANT RULES:
 1. Generate code that works in Deno runtime environment
-2. Do NOT declare any variables named 'bot' - the bot instance is provided as 'botInstance'
-3. Do NOT use import statements - all necessary objects will be provided
+2. Do NOT use any import statements - all necessary objects will be provided
+3. Do NOT declare any variables named 'bot' - the bot instance is provided as 'botInstance'
 4. Write code that can be executed within a function wrapper
 5. Use only basic JavaScript/TypeScript syntax
 6. The bot token will be automatically injected
+7. ALL responses and messages should be in ENGLISH
 
 Generate a complete Telegram bot based on the user's request. The bot should:
-- Handle the /start command with a welcome message
-- Respond to user messages appropriately based on the prompt
+- Handle the /start command with a welcome message in English
+- Respond to user messages appropriately based on the prompt in English
 - Include error handling
 - Log important events to console
+- Use professional, friendly English language for all user interactions
 
 Format your response as a JSON object with:
 {
@@ -39,7 +41,7 @@ Format your response as a JSON object with:
     "requirements.txt": "grammy",
     ".env": "BOT_TOKEN=${botToken}"
   },
-  "explanation": "Brief explanation of what the bot does"
+  "explanation": "Brief explanation of what the bot does in English"
 }
 
 Write the bot code in the main.py file (it will be executed as JavaScript despite the .py extension). 
@@ -51,7 +53,7 @@ EXAMPLE CODE STRUCTURE (use botInstance, not bot):
 // Handle start command
 botInstance.command('start', (ctx) => {
   console.log('User started the bot');
-  ctx.reply('Welcome! I am your AI assistant.');
+  ctx.reply('Welcome! I am your AI assistant. How can I help you today?');
 });
 
 // Handle text messages
@@ -60,10 +62,11 @@ botInstance.on('message:text', (ctx) => {
   console.log('Received message:', userMessage);
   
   // Your bot logic here
-  ctx.reply('Your response here');
+  ctx.reply('Thank you for your message! Here is my response...');
 });
 
-Remember: NO variable declarations like 'const bot = ...', use the provided botInstance parameter directly.`;
+Remember: NO variable declarations like 'const bot = ...', use the provided botInstance parameter directly.
+ALL user-facing messages must be in English.`;
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
