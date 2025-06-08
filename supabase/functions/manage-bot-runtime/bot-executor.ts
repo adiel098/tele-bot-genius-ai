@@ -64,6 +64,10 @@ export async function startTelegramBot(botId: string, token: string, code: strin
 
     // Execute bot code by creating a dynamic module
     logs.push(`[${new Date().toISOString()}] Executing bot code...`);
+    logs.push(`[${new Date().toISOString()}] Code length: ${code.length} characters`);
+    
+    let codeExecutedSuccessfully = false;
+    
     try {
       // More aggressive cleaning of the code
       let cleanCode = code
@@ -85,6 +89,7 @@ export async function startTelegramBot(botId: string, token: string, code: strin
         .replace(/botInstance\.start\s*\(.*?\);?\s*/g, '');
 
       logs.push(`[${new Date().toISOString()}] Code cleaned for execution`);
+      logs.push(`[${new Date().toISOString()}] Cleaned code preview: ${cleanCode.substring(0, 200)}...`);
 
       // Create a safe execution environment
       const executionCode = `
@@ -92,7 +97,7 @@ export async function startTelegramBot(botId: string, token: string, code: strin
           ${cleanCode}
           return { success: true, message: 'Bot code executed successfully' };
         } catch (error) {
-          return { success: false, error: error.message };
+          return { success: false, error: error.message, stack: error.stack };
         }
       `;
 
@@ -101,26 +106,28 @@ export async function startTelegramBot(botId: string, token: string, code: strin
       const result = executeFunction(botInstance, customConsole, Bot);
       
       if (result && !result.success) {
+        logs.push(`[${new Date().toISOString()}] Code execution failed: ${result.error}`);
+        if (result.stack) {
+          logs.push(`[${new Date().toISOString()}] Stack trace: ${result.stack}`);
+        }
         throw new Error(`Code execution failed: ${result.error}`);
       }
       
       logs.push(`[${new Date().toISOString()}] Bot code executed successfully`);
+      codeExecutedSuccessfully = true;
       
     } catch (codeError) {
       logs.push(`[${new Date().toISOString()}] Error executing bot code: ${codeError.message}`);
+      logs.push(`[${new Date().toISOString()}] Will NOT use fallback handlers - bot needs proper code`);
       
-      // Create basic bot handlers as fallback
-      logs.push(`[${new Date().toISOString()}] Creating basic bot handlers as fallback`);
-      
-      botInstance.command('start', (ctx) => {
-        customConsole.log('Start command received');
-        ctx.reply('Hello! I am your bot. There is an issue with the original code, but I am still here to help.');
-      });
-      
-      botInstance.on('message:text', (ctx) => {
-        customConsole.log(`Received message: ${ctx.message.text}`);
-        ctx.reply(`I received your message: "${ctx.message.text}". There is a technical issue with the original code, but I am working on it.`);
-      });
+      // Don't create fallback handlers - return error instead
+      return { success: false, logs };
+    }
+    
+    // Only proceed if code executed successfully
+    if (!codeExecutedSuccessfully) {
+      logs.push(`[${new Date().toISOString()}] ERROR: Bot code did not execute successfully`);
+      return { success: false, logs };
     }
     
     // Store the bot instance BEFORE starting to prevent race conditions
@@ -150,7 +157,7 @@ export async function startTelegramBot(botId: string, token: string, code: strin
         )
       ]);
       
-      logs.push(`[${new Date().toISOString()}] Bot started successfully and listening for messages`);
+      logs.push(`[${new Date().toISOString()}] Bot started successfully with generated code`);
       return { success: true, logs };
       
     } catch (startError) {

@@ -41,7 +41,7 @@ export async function deployAndStartBot(botId: string, userId: string, files: Re
       .from('bots')
       .update({
         runtime_status: 'preparing',
-        runtime_logs: `[${new Date().toISOString()}] Preparing bot deployment...\n[${new Date().toISOString()}] Files uploaded to storage\n[${new Date().toISOString()}] Bot ready for execution\n`,
+        runtime_logs: `[${new Date().toISOString()}] Preparing bot deployment...\n[${new Date().toISOString()}] Files uploaded to storage\n[${new Date().toISOString()}] Generated code ready for execution\n[${new Date().toISOString()}] Code validation: ${Object.keys(files).join(', ')}\n`,
         last_restart: new Date().toISOString(),
         deployment_config: {
           type: 'deno',
@@ -51,12 +51,12 @@ export async function deployAndStartBot(botId: string, userId: string, files: Re
       .eq('id', botId);
 
     // Start bot asynchronously to avoid timeout issues
-    console.log(`Scheduling bot ${botId} for auto-start...`);
+    console.log(`Scheduling bot ${botId} for auto-start with generated code...`);
     
     // Use a very short timeout to avoid gateway timeout
     setTimeout(async () => {
       try {
-        console.log(`Auto-starting bot ${botId} with new code`);
+        console.log(`Auto-starting bot ${botId} with generated code`);
         
         // First stop any existing instance
         if (currentRuntimeStatus === 'running' || currentRuntimeStatus === 'starting') {
@@ -90,7 +90,7 @@ export async function deployAndStartBot(botId: string, userId: string, files: Re
         }
 
         // Start the bot with timeout protection
-        console.log(`Starting bot ${botId} with updated code...`);
+        console.log(`Starting bot ${botId} with generated code...`);
         
         try {
           const { data: runtimeData, error: runtimeError } = await Promise.race([
@@ -102,29 +102,35 @@ export async function deployAndStartBot(botId: string, userId: string, files: Re
               }
             }),
             new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Start timeout')), 15000)
+              setTimeout(() => reject(new Error('Start timeout')), 20000)
             )
           ]) as any;
 
           if (runtimeError) {
-            console.error('Failed to start bot with new code:', runtimeError);
+            console.error('Failed to start bot with generated code:', runtimeError);
             await supabase
               .from('bots')
               .update({
                 runtime_status: 'error',
-                runtime_logs: `[${new Date().toISOString()}] Deployment completed but failed to start: ${runtimeError.message}\n`
+                runtime_logs: `[${new Date().toISOString()}] Deployment completed but failed to start bot with generated code\n[${new Date().toISOString()}] Error: ${runtimeError.message}\n[${new Date().toISOString()}] This usually means there's a syntax error in the generated code\n`
               })
               .eq('id', botId);
           } else if (runtimeData?.success) {
-            console.log('Bot started successfully with new code');
+            console.log('Bot started successfully with generated code');
             await supabase
               .from('bots')
               .update({
-                runtime_logs: `[${new Date().toISOString()}] Bot restarted successfully with updated code\n`
+                runtime_logs: `[${new Date().toISOString()}] Bot restarted successfully with generated code\n[${new Date().toISOString()}] Bot is now running with the latest AI-generated functionality\n`
               })
               .eq('id', botId);
           } else {
             console.log('Bot start completed but with issues');
+            await supabase
+              .from('bots')
+              .update({
+                runtime_logs: `[${new Date().toISOString()}] Bot start completed with warnings\n[${new Date().toISOString()}] Check logs for more details\n`
+              })
+              .eq('id', botId);
           }
 
         } catch (startError) {
@@ -133,7 +139,7 @@ export async function deployAndStartBot(botId: string, userId: string, files: Re
             .from('bots')
             .update({
               runtime_status: 'error',
-              runtime_logs: `[${new Date().toISOString()}] Deployment completed but failed to start: ${startError.message}\n`
+              runtime_logs: `[${new Date().toISOString()}] Failed to start bot with generated code: ${startError.message}\n[${new Date().toISOString()}] Common causes: Syntax errors in generated code, invalid token, or network issues\n`
             })
             .eq('id', botId);
         }
