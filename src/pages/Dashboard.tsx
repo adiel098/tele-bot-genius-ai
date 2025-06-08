@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 interface Bot {
   id: string;
   name: string;
-  status: "creating" | "active" | "error" | "stopped";
+  status: string;
   token: string;
   conversation_history: any[];
   created_at: string;
@@ -177,8 +177,11 @@ const Dashboard = () => {
                 <BotCard 
                   key={bot.id} 
                   bot={{
-                    ...bot,
+                    id: bot.id,
+                    name: bot.name,
+                    status: bot.status as "running" | "stopped" | "error" | "deploying",
                     description: "בוט AI מותאם אישית",
+                    createdAt: bot.created_at,
                     messagesHandled: bot.conversation_history?.length || 0,
                     lastActivity: "לפני דקות ספורות",
                   }} 
