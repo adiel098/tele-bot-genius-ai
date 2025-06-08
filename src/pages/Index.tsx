@@ -7,6 +7,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import BotCreationProgress from "@/components/BotCreationProgress";
 
 const Index = () => {
   const { user } = useAuth();
@@ -15,6 +16,7 @@ const Index = () => {
   const [token, setToken] = useState("");
   const [prompt, setPrompt] = useState("");
   const [isCreating, setIsCreating] = useState(false);
+  const [creationStep, setCreationStep] = useState(0);
 
   // Template prompts
   const templates = {
@@ -74,8 +76,10 @@ const Index = () => {
     }
 
     setIsCreating(true);
+    setCreationStep(0);
 
     try {
+      // Step 1: Analyzing requirements
       const { data, error } = await supabase
         .from('bots')
         .insert({
@@ -104,7 +108,9 @@ const Index = () => {
         return;
       }
 
-      // Generate bot code using the AI engine
+      setCreationStep(1);
+
+      // Step 2: Generate bot code using the AI engine
       const response = await fetch('https://efhwjkhqbbucvedgznba.functions.supabase.co/generate-bot-code', {
         method: 'POST',
         headers: {
@@ -117,12 +123,18 @@ const Index = () => {
         }),
       });
 
+      setCreationStep(2);
+      
+      // Simulate environment preparation
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      setCreationStep(3);
+
       const result = await response.json();
 
       if (result.success) {
         toast({
-          title: "Bot Created Successfully! 🎉",
-          description: "Your bot is now active and ready to use",
+          title: "הבוט נוצר בהצלחה! 🎉",
+          description: "הבוט שלך פעיל ומוכן לשימוש",
         });
         navigate(`/workspace/${data.id}`);
       } else {
@@ -132,43 +144,42 @@ const Index = () => {
     } catch (error) {
       console.error('Error:', error);
       toast({
-        title: "Error",
-        description: "An unexpected error occurred. Please try again.",
+        title: "שגיאה",
+        description: "אירעה שגיאה בלתי צפויה. אנא נסה שוב.",
         variant: "destructive"
       });
     } finally {
       setIsCreating(false);
+      setCreationStep(0);
     }
   };
 
   if (isCreating) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center">
-        <div className="text-center max-w-md mx-auto">
-          <div className="w-16 h-16 mx-auto mb-6 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center animate-pulse">
-            <span className="text-white text-2xl">🤖</span>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center p-6">
+        <div className="text-center max-w-4xl mx-auto">
+          {/* Header */}
+          <div className="mb-12">
+            <div className="w-24 h-24 mx-auto mb-6 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center shadow-lg animate-pulse">
+              <span className="text-white text-4xl">🤖</span>
+            </div>
+            <h2 className="text-4xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+              יוצר את הבוט שלך...
+            </h2>
+            <p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed">
+              הذكاء الاصطناعي שלנו מייצר את קוד הבוט, מכין את הסביבה ומכין הכל לפריסה.
+            </p>
           </div>
-          <h2 className="text-2xl font-bold mb-4">Creating Your Bot...</h2>
-          <p className="text-gray-600 mb-6">
-            Our AI is generating your bot code, preparing the environment, and getting everything ready for deployment.
-          </p>
-          <div className="space-y-2 text-sm text-gray-500">
-            <div className="flex items-center justify-center space-x-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              <span>Analyzing requirements</span>
-            </div>
-            <div className="flex items-center justify-center space-x-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              <span>Generating code</span>
-            </div>
-            <div className="flex items-center justify-center space-x-2">
-              <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
-              <span>Preparing environment</span>
-            </div>
-            <div className="flex items-center justify-center space-x-2">
-              <div className="w-2 h-2 bg-gray-300 rounded-full"></div>
-              <span>Deploying bot</span>
-            </div>
+
+          {/* Progress Component */}
+          <BotCreationProgress currentStep={creationStep} />
+
+          {/* Fun fact while waiting */}
+          <div className="mt-12 p-6 bg-white/50 backdrop-blur-sm rounded-xl border border-blue-100">
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">💡 עובדה מעניינת</h3>
+            <p className="text-gray-600">
+              הבוט שלך נבנה עם טכנולוגיות מתקדמות כולל Python, Telegram Bot API ו-Docker לפריסה מאובטחת
+            </p>
           </div>
         </div>
       </div>
