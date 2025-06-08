@@ -43,8 +43,8 @@ export async function startTelegramBot(botId: string, token: string, code: strin
   }
 }
 
-export function stopTelegramBot(botId: string): Promise<{ success: boolean; logs: string[] }> {
-  return stopDockerBot(botId);
+export function stopTelegramBot(botId: string, token?: string): Promise<{ success: boolean; logs: string[] }> {
+  return stopDockerBot(botId, token);
 }
 
 export function getBotLogs(botId: string): Promise<string[]> {

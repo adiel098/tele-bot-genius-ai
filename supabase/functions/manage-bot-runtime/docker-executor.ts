@@ -9,6 +9,7 @@ export async function startDockerBot(botId: string, token: string, code: string)
   try {
     logs.push(BotLogger.logSection(`STARTING DOCKER BOT ${botId}`));
     logs.push(BotLogger.log(botId, `Bot ID: ${botId}`));
+    logs.push(BotLogger.log('', `Token provided: ${token ? 'YES' : 'NO'}`));
     logs.push(BotLogger.log('', `Token length: ${token ? token.length : 'undefined'} characters`));
     logs.push(BotLogger.log('', `Code provided: ${code ? 'YES' : 'NO'}`));
     logs.push(BotLogger.log('', `Code length: ${code ? code.length : 0} characters`));
@@ -59,7 +60,7 @@ export async function startDockerBot(botId: string, token: string, code: string)
     }
 
     logs.push(BotLogger.logSection('DOCKER BOT STARTUP COMPLETE'));
-    logs.push(BotLogger.logSuccess('Bot is running in isolated Docker container'));
+    logs.push(BotLogger.logSuccess('Bot is running in isolated Docker container with webhook integration'));
 
     return { 
       success: true, 
@@ -81,8 +82,8 @@ export async function startDockerBot(botId: string, token: string, code: string)
   }
 }
 
-export async function stopDockerBot(botId: string): Promise<{ success: boolean; logs: string[] }> {
-  return await DockerManager.stopContainer(botId);
+export async function stopDockerBot(botId: string, token?: string): Promise<{ success: boolean; logs: string[] }> {
+  return await DockerManager.stopContainer(botId, token);
 }
 
 export async function getDockerBotLogs(botId: string): Promise<string[]> {
