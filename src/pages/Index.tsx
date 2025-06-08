@@ -82,7 +82,7 @@ const Index = () => {
       } = await supabase.from('bots').insert({
         user_id: user.id,
         name: "AI Bot",
-        telegram_token: token, // Save token in telegram_token field
+        token: token, // Use the existing token field
         status: 'creating',
         conversation_history: [{
           role: 'user',

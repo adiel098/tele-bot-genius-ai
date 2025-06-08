@@ -1,13 +1,13 @@
 
 import { BotLogger } from './logger.ts';
-import { DockerManager } from './docker-manager.ts';
 import { PythonValidator } from './python-validator.ts';
+import { RealDockerManager } from './real-docker-manager.ts';
 
 export async function startDockerBot(botId: string, token: string, code: string): Promise<{ success: boolean; logs: string[]; error?: string; errorType?: string; containerId?: string }> {
   const logs: string[] = [];
   
   try {
-    logs.push(BotLogger.logSection(`STARTING DOCKER BOT ${botId}`));
+    logs.push(BotLogger.logSection(`STARTING REAL DOCKER BOT ${botId}`));
     logs.push(BotLogger.log(botId, `Bot ID: ${botId}`));
     logs.push(BotLogger.log('', `Token provided: ${token ? 'YES' : 'NO'}`));
     logs.push(BotLogger.log('', `Token length: ${token ? token.length : 'undefined'} characters`));
@@ -39,28 +39,28 @@ export async function startDockerBot(botId: string, token: string, code: string)
     }
 
     // Stop existing container if running
-    const containerStatus = DockerManager.getContainerStatus(botId);
+    const containerStatus = RealDockerManager.getContainerStatus(botId);
     if (containerStatus.isRunning) {
       logs.push(BotLogger.log(botId, 'Stopping existing container before restart'));
-      const stopResult = await DockerManager.stopContainer(botId);
+      const stopResult = await RealDockerManager.stopContainer(botId);
       logs.push(...stopResult.logs);
     }
 
-    // Create and start new Docker container
-    const containerResult = await DockerManager.createContainer(botId, code, token);
+    // Create and start new real Docker container
+    const containerResult = await RealDockerManager.createContainer(botId, code, token);
     logs.push(...containerResult.logs);
     
     if (!containerResult.success) {
       return { 
         success: false, 
         logs, 
-        error: containerResult.error || "Failed to create Docker container",
-        errorType: "container_creation_failed"
+        error: containerResult.error || "Failed to create real Docker container",
+        errorType: "real_container_creation_failed"
       };
     }
 
-    logs.push(BotLogger.logSection('DOCKER BOT STARTUP COMPLETE'));
-    logs.push(BotLogger.logSuccess('Bot is running in isolated Docker container with webhook integration'));
+    logs.push(BotLogger.logSection('REAL DOCKER BOT STARTUP COMPLETE'));
+    logs.push(BotLogger.logSuccess('Bot is running in real Docker container with webhook integration'));
 
     return { 
       success: true, 
@@ -83,9 +83,9 @@ export async function startDockerBot(botId: string, token: string, code: string)
 }
 
 export async function stopDockerBot(botId: string, token?: string): Promise<{ success: boolean; logs: string[] }> {
-  return await DockerManager.stopContainer(botId, token);
+  return await RealDockerManager.stopContainer(botId, token);
 }
 
 export async function getDockerBotLogs(botId: string): Promise<string[]> {
-  return await DockerManager.getContainerLogs(botId);
+  return await RealDockerManager.getContainerLogs(botId);
 }

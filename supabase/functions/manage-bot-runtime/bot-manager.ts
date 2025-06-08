@@ -1,4 +1,3 @@
-
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
 import { startTelegramBot, stopTelegramBot, getBotLogs } from './bot-executor.ts';
 import { ProcessManager } from './process-manager.ts';
@@ -29,7 +28,7 @@ export async function startBot(botId: string, userId: string): Promise<{ success
     }
 
     console.log(`[${new Date().toISOString()}] Bot found: ${bot.name}`);
-    console.log(`[${new Date().toISOString()}] Token available: ${bot.telegram_token ? 'YES' : 'NO'}`);
+    console.log(`[${new Date().toISOString()}] Token available: ${bot.token ? 'YES' : 'NO'}`);
 
     // Get latest files
     const { data: files } = await supabase.storage
@@ -58,8 +57,8 @@ export async function startBot(botId: string, userId: string): Promise<{ success
 
     console.log(`[${new Date().toISOString()}] Calling startTelegramBot...`);
     
-    // Start the bot using Docker containers
-    const result = await startTelegramBot(botId, bot.telegram_token, mainCode);
+    // Start the bot using Docker containers with the token field
+    const result = await startTelegramBot(botId, bot.token, mainCode);
     
     const duration = Date.now() - startTime;
     console.log(`[${new Date().toISOString()}] ========== BOT START COMPLETED ==========`);
@@ -129,6 +128,13 @@ export async function stopBot(botId: string): Promise<{ success: boolean; logs: 
   console.log(`[${new Date().toISOString()}] Bot ID: ${botId}`);
   
   try {
+    // Get bot data to retrieve token for webhook cleanup
+    const { data: bot } = await supabase
+      .from('bots')
+      .select('token')
+      .eq('id', botId)
+      .single();
+
     // Get running execution
     const { data: execution } = await supabase
       .from('bot_executions')
@@ -145,8 +151,8 @@ export async function stopBot(botId: string): Promise<{ success: boolean; logs: 
 
     console.log(`[${new Date().toISOString()}] Calling stopTelegramBot...`);
     
-    // Stop the bot
-    const result = await stopTelegramBot(botId);
+    // Stop the bot with token for webhook cleanup
+    const result = await stopTelegramBot(botId, bot?.token);
     
     const duration = Date.now() - startTime;
     console.log(`[${new Date().toISOString()}] ========== BOT STOP COMPLETED ==========`);
