@@ -12,56 +12,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Enhanced bot logic execution that mimics the Python code behavior
-function executeBotLogic(code: string, update: any, token: string): string {
-  console.log(`[${new Date().toISOString()}] Executing bot logic for update:`, JSON.stringify(update));
-  
-  try {
-    const message = update.message;
-    if (!message) {
-      console.log(`[${new Date().toISOString()}] No message in update, ignoring`);
-      return '';
-    }
-
-    const user = message.from;
-    const text = message.text;
-    
-    console.log(`[${new Date().toISOString()}] Processing message: "${text}" from user: ${user.first_name} (${user.username})`);
-
-    // Handle /start command specifically
-    if (text === '/start') {
-      const userNickname = user.username || user.first_name || 'Friend';
-      const userId = user.id;
-      const response = `Hello ${userNickname}! Your user ID is ${userId}.`;
-      console.log(`[${new Date().toISOString()}] /start command detected, responding: "${response}"`);
-      return response;
-    }
-    
-    // Handle /help command
-    if (text === '/help') {
-      const response = "Available commands:\n/start - Get started\n/help - Show this help\n\nI'm an AI bot created with BotFactory! 🤖";
-      console.log(`[${new Date().toISOString()}] /help command detected`);
-      return response;
-    }
-    
-    // Handle other text messages
-    if (text && text.length > 0) {
-      const userNickname = user.username || user.first_name || 'Friend';
-      const response = `Hello ${userNickname}! You said: "${text}"\n\nI'm an AI bot running your custom code! 🤖\n\nTry these commands:\n/start - Get your user info\n/help - Show available commands`;
-      console.log(`[${new Date().toISOString()}] Regular message detected, responding with greeting`);
-      return response;
-    }
-    
-    // Fallback for other message types
-    console.log(`[${new Date().toISOString()}] Non-text message or unknown format`);
-    return "Hello! I'm your AI bot. Send me a text message or try /start! 🤖";
-    
-  } catch (error) {
-    console.error(`[${new Date().toISOString()}] Error executing bot logic:`, error);
-    return "Sorry, I encountered an error processing your message. Please try again!";
-  }
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -98,85 +48,58 @@ serve(async (req) => {
     console.log(`[${new Date().toISOString()}] Bot found: ${bot.name}`);
     console.log(`[${new Date().toISOString()}] Bot status: ${bot.status}`);
     console.log(`[${new Date().toISOString()}] Runtime status: ${bot.runtime_status}`);
+    console.log(`[${new Date().toISOString()}] Container ID: ${bot.container_id}`);
 
-    // Get bot code from storage
-    console.log(`[${new Date().toISOString()}] Fetching bot code from storage...`);
-    const { data: files, error: storageError } = await supabase.storage
-      .from('bot-files')
-      .list(`${bot.user_id}/${botId}`);
-
-    let botCode = '';
-    if (!storageError && files && files.length > 0) {
-      console.log(`[${new Date().toISOString()}] Found ${files.length} files in storage`);
+    // Check if bot is running
+    if (bot.runtime_status !== 'running' || !bot.container_id) {
+      console.error(`[${new Date().toISOString()}] Bot is not running. Status: ${bot.runtime_status}, Container: ${bot.container_id}`);
       
-      // Try to get main.py
-      const mainFile = files.find(f => f.name === 'main.py');
-      if (mainFile) {
-        console.log(`[${new Date().toISOString()}] Loading main.py file...`);
-        const { data: codeData, error: downloadError } = await supabase.storage
-          .from('bot-files')
-          .download(`${bot.user_id}/${botId}/main.py`);
+      // Still respond to Telegram to avoid errors
+      const update = await req.json();
+      if (update.message) {
+        const chatId = update.message.chat.id;
+        const errorMessage = "Sorry, I'm currently offline. Please contact the bot administrator.";
         
-        if (!downloadError && codeData) {
-          botCode = await codeData.text();
-          console.log(`[${new Date().toISOString()}] Bot code loaded, length: ${botCode.length} characters`);
-        } else {
-          console.error(`[${new Date().toISOString()}] Error downloading main.py:`, downloadError);
-        }
-      } else {
-        console.error(`[${new Date().toISOString()}] main.py file not found in storage`);
+        await fetch(`https://api.telegram.org/bot${bot.token}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: errorMessage
+          })
+        });
       }
-    } else {
-      console.error(`[${new Date().toISOString()}] Error listing files or no files found:`, storageError);
+      
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    // Get the Telegram update
-    const update = await req.json();
-    console.log(`[${new Date().toISOString()}] Telegram update received:`, JSON.stringify(update));
-
-    // Execute the bot logic
-    let responseText = '';
-    if (botCode && botCode.length > 0) {
-      console.log(`[${new Date().toISOString()}] Executing bot logic with loaded code...`);
-      responseText = executeBotLogic(botCode, update, bot.token);
-    } else {
-      console.log(`[${new Date().toISOString()}] No bot code found, using fallback response`);
-      responseText = "Hello! I'm your AI bot, but I couldn't find my code. Please regenerate me in BotFactory!";
-    }
+    // Forward the webhook to the bot's Docker container
+    console.log(`[${new Date().toISOString()}] Forwarding webhook to container...`);
     
-    console.log(`[${new Date().toISOString()}] Generated response: "${responseText}"`);
-    
-    if (update.message && responseText) {
-      const chatId = update.message.chat.id;
+    try {
+      // Call the manage-bot-runtime function to handle the webhook processing
+      const webhookData = await req.json();
       
-      console.log(`[${new Date().toISOString()}] Sending response to Telegram API...`);
-      console.log(`[${new Date().toISOString()}] Chat ID: ${chatId}`);
-      console.log(`[${new Date().toISOString()}] Response text: "${responseText}"`);
-      
-      // Send response back to Telegram
-      const telegramResponse = await fetch(`https://api.telegram.org/bot${bot.token}/sendMessage`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: responseText,
-          parse_mode: 'HTML'
-        })
+      const { data: processResult, error: processError } = await supabase.functions.invoke('manage-bot-runtime', {
+        body: {
+          action: 'process_webhook',
+          botId: botId,
+          webhookData: webhookData,
+          token: bot.token
+        }
       });
 
-      const telegramData = await telegramResponse.json();
-      console.log(`[${new Date().toISOString()}] Telegram API response:`, JSON.stringify(telegramData));
-
-      if (telegramData.ok) {
-        console.log(`[${new Date().toISOString()}] ✓ Message sent successfully to Telegram`);
-      } else {
-        console.error(`[${new Date().toISOString()}] ✗ Telegram API error:`, telegramData);
+      if (processError) {
+        console.error(`[${new Date().toISOString()}] Error processing webhook:`, processError);
+        throw processError;
       }
 
+      console.log(`[${new Date().toISOString()}] Webhook processed successfully:`, processResult);
+
       // Log the interaction in bot's runtime logs
-      const logEntry = `[${new Date().toISOString()}] WEBHOOK: User ${update.message.from.first_name} (${update.message.from.username || 'no username'}) sent: "${update.message.text || 'non-text'}" | Response: "${telegramData.ok ? 'SUCCESS' : 'FAILED'}" | Error: ${telegramData.ok ? 'none' : JSON.stringify(telegramData)}`;
+      const logEntry = `[${new Date().toISOString()}] WEBHOOK: Processed update from ${webhookData.message?.from?.first_name || 'Unknown'} - Status: ${processResult?.success ? 'SUCCESS' : 'FAILED'}`;
       
       console.log(`[${new Date().toISOString()}] Updating bot logs in database...`);
       
@@ -193,8 +116,25 @@ serve(async (req) => {
         .eq('id', botId);
 
       console.log(`[${new Date().toISOString()}] Bot logs updated in database`);
-    } else {
-      console.log(`[${new Date().toISOString()}] No message to respond to or empty response`);
+
+    } catch (containerError) {
+      console.error(`[${new Date().toISOString()}] Error forwarding to container:`, containerError);
+      
+      // Fallback: respond directly if container communication fails
+      const update = await req.json();
+      if (update.message) {
+        const chatId = update.message.chat.id;
+        const fallbackMessage = "I'm experiencing technical difficulties. Please try again later.";
+        
+        await fetch(`https://api.telegram.org/bot${bot.token}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: fallbackMessage
+          })
+        });
+      }
     }
 
     console.log(`[${new Date().toISOString()}] ========== WEBHOOK PROCESSING COMPLETE ==========`);
