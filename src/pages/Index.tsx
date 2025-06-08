@@ -8,11 +8,14 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import BotCreationProgress from "@/components/BotCreationProgress";
-
 const Index = () => {
-  const { user } = useAuth();
+  const {
+    user
+  } = useAuth();
   const navigate = useNavigate();
-  const { toast } = useToast();
+  const {
+    toast
+  } = useToast();
   const [token, setToken] = useState("");
   const [prompt, setPrompt] = useState("");
   const [isCreating, setIsCreating] = useState(false);
@@ -25,11 +28,9 @@ const Index = () => {
     news: "Develop a news and updates bot that can deliver daily news summaries, send breaking news alerts, and allow users to subscribe to specific topics or categories. The bot should be able to fetch news from reliable sources and present information in a clear, engaging format.",
     custom: "Create a custom bot tailored to your specific needs. Describe the functionality, user interactions, commands, and any special features you want your bot to have. Be as detailed as possible about how users should interact with your bot."
   };
-
   const handleTemplateClick = (templateKey: keyof typeof templates) => {
     setPrompt(templates[templateKey]);
   };
-
   const validateToken = () => {
     if (!token.trim()) {
       toast({
@@ -39,7 +40,6 @@ const Index = () => {
       });
       return false;
     }
-    
     if (!token.match(/^\d+:[A-Za-z0-9_-]+$/)) {
       toast({
         title: "Invalid Token",
@@ -48,10 +48,8 @@ const Index = () => {
       });
       return false;
     }
-    
     return true;
   };
-
   const handleCreateBot = async () => {
     // Check if user is authenticated first
     if (!user) {
@@ -63,9 +61,7 @@ const Index = () => {
       navigate("/auth");
       return;
     }
-
     if (!validateToken()) return;
-
     if (!prompt.trim()) {
       toast({
         title: "Description Required",
@@ -74,30 +70,24 @@ const Index = () => {
       });
       return;
     }
-
     setIsCreating(true);
     setCreationStep(0);
-
     try {
       // Step 1: Analyzing requirements
-      const { data, error } = await supabase
-        .from('bots')
-        .insert({
-          user_id: user.id,
-          name: "AI Bot",
-          token: token,
-          status: 'creating',
-          conversation_history: [
-            {
-              role: 'user',
-              content: prompt,
-              timestamp: new Date().toISOString()
-            }
-          ]
-        })
-        .select()
-        .single();
-
+      const {
+        data,
+        error
+      } = await supabase.from('bots').insert({
+        user_id: user.id,
+        name: "AI Bot",
+        token: token,
+        status: 'creating',
+        conversation_history: [{
+          role: 'user',
+          content: prompt,
+          timestamp: new Date().toISOString()
+        }]
+      }).select().single();
       if (error) {
         console.error('Error creating bot:', error);
         toast({
@@ -107,40 +97,35 @@ const Index = () => {
         });
         return;
       }
-
       setCreationStep(1);
 
       // Step 2: Generate bot code using the AI engine
       const response = await fetch('https://efhwjkhqbbucvedgznba.functions.supabase.co/generate-bot-code', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           botId: data.id,
           prompt: prompt,
           token: token
-        }),
+        })
       });
-
       setCreationStep(2);
-      
+
       // Simulate environment preparation
       await new Promise(resolve => setTimeout(resolve, 2000));
       setCreationStep(3);
-
       const result = await response.json();
-
       if (result.success) {
         toast({
           title: "הבוט נוצר בהצלחה! 🎉",
-          description: "הבוט שלך פעיל ומוכן לשימוש",
+          description: "הבוט שלך פעיל ומוכן לשימוש"
         });
         navigate(`/workspace/${data.id}`);
       } else {
         throw new Error(result.error || 'Failed to generate bot code');
       }
-      
     } catch (error) {
       console.error('Error:', error);
       toast({
@@ -153,10 +138,8 @@ const Index = () => {
       setCreationStep(0);
     }
   };
-
   if (isCreating) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center p-6">
+    return <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center p-6">
         <div className="text-center max-w-4xl mx-auto">
           {/* Header */}
           <div className="mb-12">
@@ -182,12 +165,9 @@ const Index = () => {
             </p>
           </div>
         </div>
-      </div>
-    );
+      </div>;
   }
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+  return <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       {/* Navigation */}
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-lg border-b border-blue-100">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
@@ -201,15 +181,12 @@ const Index = () => {
           </div>
           
           <div className="flex items-center space-x-4">
-            {user ? (
-              <Link to="/dashboard">
+            {user ? <Link to="/dashboard">
                 <Button className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white">
                   Dashboard
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
-              </Link>
-            ) : (
-              <>
+              </Link> : <>
                 <Link to="/auth">
                   <Button variant="outline">Sign In</Button>
                 </Link>
@@ -219,8 +196,7 @@ const Index = () => {
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </Link>
-              </>
-            )}
+              </>}
           </div>
         </div>
       </nav>
@@ -235,11 +211,7 @@ const Index = () => {
               with AI Magic
             </span>
           </h1>
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
-            Describe your bot idea in plain English and watch our AI create, deploy, and manage 
-            a powerful Telegram bot for you. Real-time monitoring, automatic fixes, and endless 
-            possibilities.
-          </p>
+          
         </div>
 
         {/* Bot Creation Form */}
@@ -251,20 +223,8 @@ const Index = () => {
                 <label htmlFor="token" className="block text-sm font-medium text-gray-700">
                   Telegram Bot Token
                 </label>
-                <Input
-                  id="token"
-                  placeholder="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz"
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
-                  className="font-mono text-sm"
-                />
-                <p className="text-sm text-gray-500">
-                  Get your token from{" "}
-                  <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                    @BotFather
-                  </a>{" "}
-                  on Telegram
-                </p>
+                <Input id="token" placeholder="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz" value={token} onChange={e => setToken(e.target.value)} className="font-mono text-sm" />
+                
               </div>
 
               {/* Prompt Input */}
@@ -272,25 +232,12 @@ const Index = () => {
                 <label htmlFor="prompt" className="block text-sm font-medium text-gray-700">
                   How can TeleBot AI help you today?
                 </label>
-                <Textarea
-                  id="prompt"
-                  placeholder="I want to create a customer support bot that can answer frequently asked questions, collect customer information, and create support tickets. Include welcome messages and handoff to human agents when needed..."
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  rows={6}
-                  className="resize-none"
-                />
-                <p className="text-sm text-gray-500">
-                  Be as detailed as possible. Include features, commands, and how users should interact with your bot.
-                </p>
+                <Textarea id="prompt" placeholder="I want to create a customer support bot that can answer frequently asked questions, collect customer information, and create support tickets. Include welcome messages and handoff to human agents when needed..." value={prompt} onChange={e => setPrompt(e.target.value)} rows={6} className="resize-none" />
+                
               </div>
 
               {/* Create Button */}
-              <Button 
-                onClick={handleCreateBot}
-                className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white py-3 text-lg"
-                size="lg"
-              >
+              <Button onClick={handleCreateBot} className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white py-3 text-lg" size="lg">
                 Create Your First Bot
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
@@ -299,55 +246,28 @@ const Index = () => {
 
           {/* Quick Options */}
           <div className="mt-8 text-center">
-            <p className="text-gray-600 mb-4">or import from</p>
-            <div className="flex justify-center space-x-4">
-              <Button variant="outline" size="sm" className="text-gray-600">
-                📱 Figma
-              </Button>
-              <Button variant="outline" size="sm" className="text-gray-600">
-                🐙 GitHub
-              </Button>
-            </div>
+            
+            
           </div>
 
           {/* Example Options */}
           <div className="mt-12">
             <p className="text-center text-gray-600 mb-6">Popular bot templates:</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Button 
-                variant="outline" 
-                className="h-auto p-4 text-left flex-col items-start space-y-2"
-                onClick={() => handleTemplateClick('support')}
-              >
+              <Button variant="outline" className="h-auto p-4 text-left flex-col items-start space-y-2" onClick={() => handleTemplateClick('support')}>
                 <span className="font-medium">Customer Support Bot</span>
               </Button>
-              <Button 
-                variant="outline" 
-                className="h-auto p-4 text-left flex-col items-start space-y-2"
-                onClick={() => handleTemplateClick('ecommerce')}
-              >
+              <Button variant="outline" className="h-auto p-4 text-left flex-col items-start space-y-2" onClick={() => handleTemplateClick('ecommerce')}>
                 <span className="font-medium">E-commerce Bot</span>
               </Button>
-              <Button 
-                variant="outline" 
-                className="h-auto p-4 text-left flex-col items-start space-y-2"
-                onClick={() => handleTemplateClick('news')}
-              >
+              <Button variant="outline" className="h-auto p-4 text-left flex-col items-start space-y-2" onClick={() => handleTemplateClick('news')}>
                 <span className="font-medium">News & Updates Bot</span>
               </Button>
-              <Button 
-                variant="outline" 
-                className="h-auto p-4 text-left flex-col items-start space-y-2"
-                onClick={() => handleTemplateClick('custom')}
-              >
-                <span className="font-medium">Custom Bot</span>
-              </Button>
+              
             </div>
           </div>
         </div>
       </div>
-    </div>
-  );
+    </div>;
 };
-
 export default Index;
