@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -84,7 +83,13 @@ const Index = () => {
           name: "AI Bot",
           token: token,
           status: 'creating',
-          conversation_history: []
+          conversation_history: [
+            {
+              role: 'user',
+              content: prompt,
+              timestamp: new Date().toISOString()
+            }
+          ]
         })
         .select()
         .single();
@@ -99,14 +104,30 @@ const Index = () => {
         return;
       }
 
-      // Simulate bot creation process
-      setTimeout(() => {
+      // Generate bot code using the AI engine
+      const response = await fetch('https://efhwjkhqbbucvedgznba.functions.supabase.co/generate-bot-code', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          botId: data.id,
+          prompt: prompt,
+          token: token
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
         toast({
           title: "Bot Created Successfully! 🎉",
           description: "Your bot is now active and ready to use",
         });
-        navigate("/dashboard");
-      }, 3000);
+        navigate(`/workspace/${data.id}`);
+      } else {
+        throw new Error(result.error || 'Failed to generate bot code');
+      }
       
     } catch (error) {
       console.error('Error:', error);

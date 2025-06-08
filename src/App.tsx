@@ -9,6 +9,7 @@ import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
 import CreateBot from "./pages/CreateBot";
 import Auth from "./pages/Auth";
+import Workspace from "./pages/Workspace";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -25,6 +26,7 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/create" element={<CreateBot />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/workspace/:botId" element={<Workspace />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
