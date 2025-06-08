@@ -1,9 +1,8 @@
 
-import { getAllRunningContainers } from './container-state.ts';
 import { 
   createDockerContainer, 
   stopDockerContainer, 
-  getDockerContainerStatus, 
+  getDockerContainerStatusAsync, 
   getDockerContainerLogs 
 } from './docker-operations.ts';
 
@@ -18,11 +17,17 @@ export class RealDockerManager {
   }
 
   static getContainerStatus(botId: string): { isRunning: boolean; containerId?: string } {
-    return getDockerContainerStatus(botId);
+    // Synchronous fallback - will be replaced by async version
+    return { isRunning: false };
+  }
+
+  static async getContainerStatusAsync(botId: string): Promise<{ isRunning: boolean; containerId?: string }> {
+    return getDockerContainerStatusAsync(botId);
   }
 
   static getRunningContainers(): string[] {
-    return getAllRunningContainers();
+    // This method is deprecated - using database instead
+    return [];
   }
 
   static async getContainerLogs(botId: string): Promise<string[]> {

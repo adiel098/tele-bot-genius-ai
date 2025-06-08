@@ -1,12 +1,7 @@
+
 import { BotLogger } from './logger.ts';
 import { generatePythonBotScript, generateDockerfile } from './python-bot-generator.ts';
 import { setupTelegramWebhook, removeTelegramWebhook } from './webhook-setup.ts';
-import { 
-  initializeContainerState, 
-  storeContainerReference, 
-  removeContainerReference, 
-  getContainerReference 
-} from './container-state.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -14,8 +9,6 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 export async function createDockerContainer(botId: string, actualBotCode: string, token: string): Promise<{ success: boolean; logs: string[]; containerId?: string; error?: string }> {
-  initializeContainerState();
-  
   const logs: string[] = [];
   
   try {
@@ -51,8 +44,8 @@ export async function createDockerContainer(botId: string, actualBotCode: string
     logs.push(BotLogger.log(botId, 'Starting real Docker container with bot\'s Python code...'));
     await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate start time
     
-    // Store container reference
-    storeContainerReference(botId, containerId);
+    // Store container reference in database instead of memory
+    await storeContainerReference(botId, containerId);
     
     // Simulate initial bot startup logs
     logs.push(BotLogger.logSection('REAL PYTHON BOT STARTUP LOGS'));
@@ -85,14 +78,12 @@ export async function createDockerContainer(botId: string, actualBotCode: string
 }
 
 export async function stopDockerContainer(botId: string, token?: string): Promise<{ success: boolean; logs: string[] }> {
-  initializeContainerState();
-  
   const logs: string[] = [];
   
   try {
     logs.push(BotLogger.logSection('STOPPING REAL DOCKER CONTAINER'));
     
-    const containerId = getContainerReference(botId);
+    const containerId = await getContainerReference(botId);
     console.log(`[${new Date().toISOString()}] *** STOP CONTAINER: Looking for ${botId}, found: ${containerId} ***`);
     
     if (!containerId) {
@@ -116,8 +107,8 @@ export async function stopDockerContainer(botId: string, token?: string): Promis
     logs.push(BotLogger.log(botId, 'Cleaning up Docker container resources...'));
     await new Promise(resolve => setTimeout(resolve, 300));
     
-    // Remove from running containers
-    removeContainerReference(botId);
+    // Remove from database
+    await removeContainerReference(botId);
     
     logs.push(BotLogger.logSuccess(`✅ Real Docker container ${containerId} stopped successfully`));
     logs.push(BotLogger.logSection('REAL CONTAINER STOP COMPLETE'));
@@ -131,25 +122,30 @@ export async function stopDockerContainer(botId: string, token?: string): Promis
 }
 
 export function getDockerContainerStatus(botId: string): { isRunning: boolean; containerId?: string } {
-  initializeContainerState();
-  
-  const containerId = getContainerReference(botId);
-  
-  const result = {
-    isRunning: !!containerId,
-    containerId
-  };
-  
-  console.log(`[${new Date().toISOString()}] Status result:`, JSON.stringify(result, null, 2));
-  console.log(`[${new Date().toISOString()}] ========== GET REAL CONTAINER STATUS COMPLETE ==========`);
-  
-  return result;
+  // This will be implemented as an async call in the updated manager
+  return { isRunning: false };
+}
+
+export async function getDockerContainerStatusAsync(botId: string): Promise<{ isRunning: boolean; containerId?: string }> {
+  try {
+    const containerId = await getContainerReference(botId);
+    
+    const result = {
+      isRunning: !!containerId,
+      containerId
+    };
+    
+    console.log(`[${new Date().toISOString()}] Status check for ${botId}: isRunning=${result.isRunning}, containerId=${result.containerId}`);
+    
+    return result;
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Error checking container status:`, error);
+    return { isRunning: false };
+  }
 }
 
 export async function getDockerContainerLogs(botId: string): Promise<string[]> {
-  initializeContainerState();
-  
-  const containerId = getContainerReference(botId);
+  const containerId = await getContainerReference(botId);
   if (!containerId) {
     return [
       BotLogger.logSection('CONTAINER STATUS'),
@@ -182,4 +178,81 @@ export async function getDockerContainerLogs(botId: string): Promise<string[]> {
     `[${currentTime}] INFO - Webhook endpoint ready for real-time processing`,
     BotLogger.logSection('END OF REAL PYTHON BOT LOGS')
   ];
+}
+
+// Database-based container state management
+async function storeContainerReference(botId: string, containerId: string): Promise<void> {
+  try {
+    console.log(`[${new Date().toISOString()}] Storing container reference: ${botId} -> ${containerId}`);
+    
+    // Store in database instead of memory
+    const { error } = await supabase
+      .from('bots')
+      .update({ 
+        container_id: containerId,
+        runtime_status: 'running'
+      })
+      .eq('id', botId);
+    
+    if (error) {
+      console.error(`[${new Date().toISOString()}] Error storing container reference:`, error);
+      throw error;
+    }
+    
+    console.log(`[${new Date().toISOString()}] Container reference stored successfully`);
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Failed to store container reference:`, error);
+    throw error;
+  }
+}
+
+async function removeContainerReference(botId: string): Promise<void> {
+  try {
+    console.log(`[${new Date().toISOString()}] Removing container reference for: ${botId}`);
+    
+    const { error } = await supabase
+      .from('bots')
+      .update({ 
+        container_id: null,
+        runtime_status: 'stopped'
+      })
+      .eq('id', botId);
+    
+    if (error) {
+      console.error(`[${new Date().toISOString()}] Error removing container reference:`, error);
+      throw error;
+    }
+    
+    console.log(`[${new Date().toISOString()}] Container reference removed successfully`);
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Failed to remove container reference:`, error);
+    throw error;
+  }
+}
+
+async function getContainerReference(botId: string): Promise<string | null> {
+  try {
+    const { data: bot, error } = await supabase
+      .from('bots')
+      .select('container_id, runtime_status')
+      .eq('id', botId)
+      .single();
+    
+    if (error || !bot) {
+      console.log(`[${new Date().toISOString()}] No bot found or error: ${error?.message}`);
+      return null;
+    }
+    
+    // Only return container ID if status is running
+    if (bot.runtime_status === 'running' && bot.container_id) {
+      console.log(`[${new Date().toISOString()}] Found running container: ${bot.container_id}`);
+      return bot.container_id;
+    }
+    
+    console.log(`[${new Date().toISOString()}] Bot not running or no container: status=${bot.runtime_status}, container=${bot.container_id}`);
+    return null;
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Error getting container reference:`, error);
+    return null;
+  }
 }

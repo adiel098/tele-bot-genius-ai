@@ -14,8 +14,8 @@ export async function processWebhook(botId: string, webhookData: any, token: str
     logs.push(BotLogger.logSection(`PROCESSING WEBHOOK FOR REAL PYTHON BOT ${botId}`));
     logs.push(BotLogger.log(botId, `Webhook data received: ${JSON.stringify(webhookData)}`));
     
-    // Check if the real Python bot container is running
-    const containerStatus = RealDockerManager.getContainerStatus(botId);
+    // Check if the real Python bot container is running using async method
+    const containerStatus = await RealDockerManager.getContainerStatusAsync(botId);
     
     if (!containerStatus.isRunning || !containerStatus.containerId) {
       logs.push(BotLogger.logError('Real Python bot container is not running'));
@@ -92,7 +92,7 @@ export async function processWebhook(botId: string, webhookData: any, token: str
         logs.push(BotLogger.log(botId, 'Sent error message to user'));
       }
       
-      // Update bot logs in database
+      // Update bot logs in database and mark as error
       await supabase
         .from('bots')
         .update({
