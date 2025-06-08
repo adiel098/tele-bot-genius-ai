@@ -184,50 +184,6 @@ export async function startBot(botId: string, userId: string): Promise<{ success
   }
 }
 
-function generateFallbackBotCode(): string {
-  return `
-import os
-import logging
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-
-# Set up logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
-
-# Bot token will be replaced during container creation
-BOT_TOKEN = "PLACEHOLDER_TOKEN"
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    await update.message.reply_text(f"Hello, {user.first_name}! Your user ID is {user.id}.")
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Available commands:\\n/start - Get started\\n/help - Show this help")
-
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"You said: {update.message.text}")
-
-def main():
-    app = Application.builder().token(BOT_TOKEN).build()
-    
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
-    
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=8080,
-        url_path="/webhook"
-    )
-
-if __name__ == '__main__':
-    main();
-}
-
 export async function stopBot(botId: string): Promise<{ success: boolean; logs: string[] }> {
   const logs: string[] = [];
   
@@ -319,49 +275,4 @@ export async function streamLogs(botId: string): Promise<{ success: boolean; log
       logs: [BotLogger.logError('Error getting logs: ' + error.message)]
     };
   }
-}
-
-function generateFallbackBotCode(): string {
-  return `
-import os
-import logging
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-
-# Set up logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
-
-# Bot token will be replaced during container creation
-BOT_TOKEN = "PLACEHOLDER_TOKEN"
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    await update.message.reply_text(f"Hello, {user.first_name}! Your user ID is {user.id}.")
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Available commands:\\n/start - Get started\\n/help - Show this help")
-
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"You said: {update.message.text}")
-
-def main():
-    app = Application.builder().token(BOT_TOKEN).build()
-    
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
-    
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=8080,
-        url_path="/webhook"
-    )
-
-if __name__ == '__main__':
-    main()
-`;
 }
