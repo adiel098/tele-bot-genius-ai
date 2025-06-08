@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -70,14 +69,63 @@ const Dashboard = () => {
     navigate("/");
   };
 
+  const deleteBotFiles = async (botId: string, userId: string) => {
+    try {
+      // List all files in the bot's directory
+      const { data: files, error: listError } = await supabase.storage
+        .from('bot-files')
+        .list(`${userId}/${botId}`);
+
+      if (listError) {
+        console.error('Error listing bot files:', listError);
+        return false;
+      }
+
+      if (files && files.length > 0) {
+        // Delete all files in the bot's directory
+        const filePaths = files.map(file => `${userId}/${botId}/${file.name}`);
+        const { error: deleteError } = await supabase.storage
+          .from('bot-files')
+          .remove(filePaths);
+
+        if (deleteError) {
+          console.error('Error deleting bot files:', deleteError);
+          return false;
+        }
+
+        console.log(`Successfully deleted ${files.length} files for bot ${botId}`);
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error in deleteBotFiles:', error);
+      return false;
+    }
+  };
+
   const handleDeleteBot = async (botId: string, botName: string) => {
     if (!confirm(`האם אתה בטוח שברצונך למחוק את הבוט "${botName}"? פעולה זו לא ניתנת לביטול.`)) {
       return;
     }
 
+    if (!user) return;
+
     setDeletingBotId(botId);
     
     try {
+      // First, delete the bot files from storage
+      const filesDeleted = await deleteBotFiles(botId, user.id);
+      
+      if (!filesDeleted) {
+        toast({
+          title: "שגיאה",
+          description: "לא ניתן למחוק את קבצי הבוט",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Then delete the bot from the database
       const { error } = await supabase
         .from('bots')
         .delete()
@@ -94,7 +142,7 @@ const Dashboard = () => {
         setBots(prev => prev.filter(bot => bot.id !== botId));
         toast({
           title: "הבוט נמחק בהצלחה! 🗑️",
-          description: `${botName} הוסר מהמערכת`,
+          description: `${botName} וכל הקבצים שלו הוסרו מהמערכת`,
         });
       }
     } catch (error) {
