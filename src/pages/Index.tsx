@@ -8,6 +8,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import BotCreationProgress from "@/components/BotCreationProgress";
+import ExistingBots from "@/components/ExistingBots";
+
 const Index = () => {
   const {
     user
@@ -263,11 +265,14 @@ const Index = () => {
               <Button variant="outline" className="h-auto p-4 text-left flex-col items-start space-y-2" onClick={() => handleTemplateClick('news')}>
                 <span className="font-medium">News & Updates Bot</span>
               </Button>
-              
             </div>
           </div>
+
+          {/* Existing Bots Section */}
+          <ExistingBots />
         </div>
       </div>
     </div>;
 };
+
 export default Index;
