@@ -58,6 +58,7 @@ export class DockerManager {
       const containerId = this.runningContainers.get(botId);
       if (!containerId) {
         logs.push(BotLogger.log(botId, 'No running container found'));
+        logs.push(BotLogger.logSection('CONTAINER STOP COMPLETE'));
         return { success: true, logs };
       }
       
