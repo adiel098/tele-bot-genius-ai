@@ -32,7 +32,7 @@ interface Bot {
 // Type guard to check if Json is a valid Message array
 const isMessageArray = (data: Json): data is Message[] => {
   if (!Array.isArray(data)) return false;
-  return data.every((item) => 
+  return data.every((item: any) => 
     typeof item === 'object' && 
     item !== null &&
     'role' in item &&
