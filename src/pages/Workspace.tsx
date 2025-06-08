@@ -29,6 +29,29 @@ interface Bot {
   created_at: string;
 }
 
+// Type guard to check if Json is a valid Message array
+const isMessageArray = (data: Json): data is Message[] => {
+  if (!Array.isArray(data)) return false;
+  return data.every((item) => 
+    typeof item === 'object' && 
+    item !== null &&
+    'role' in item &&
+    'content' in item &&
+    'timestamp' in item &&
+    (item.role === 'user' || item.role === 'assistant')
+  );
+};
+
+// Helper function to safely get the last message with files (alternative to findLast)
+const getLastMessageWithFiles = (messages: Message[]): Message | undefined => {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'assistant' && messages[i].files) {
+      return messages[i];
+    }
+  }
+  return undefined;
+};
+
 const Workspace = () => {
   const { botId } = useParams();
   const navigate = useNavigate();
@@ -68,8 +91,8 @@ const Workspace = () => {
         }
 
         setBot(data);
-        if (data.conversation_history && Array.isArray(data.conversation_history)) {
-          setMessages(data.conversation_history as Message[]);
+        if (data.conversation_history && isMessageArray(data.conversation_history)) {
+          setMessages(data.conversation_history);
         }
       } catch (error) {
         console.error('Error fetching bot:', error);
@@ -117,8 +140,8 @@ const Workspace = () => {
           .eq('id', botId)
           .single();
 
-        if (updatedBot && updatedBot.conversation_history) {
-          setMessages(updatedBot.conversation_history as Message[]);
+        if (updatedBot && updatedBot.conversation_history && isMessageArray(updatedBot.conversation_history)) {
+          setMessages(updatedBot.conversation_history);
         }
 
         toast({
@@ -151,19 +174,21 @@ const Workspace = () => {
   };
 
   const downloadFiles = () => {
-    const lastMessage = messages.findLast(msg => msg.role === 'assistant' && msg.files);
+    const lastMessage = getLastMessageWithFiles(messages);
     if (!lastMessage?.files) return;
 
     Object.entries(lastMessage.files).forEach(([filename, content]) => {
-      const blob = new Blob([content], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      if (typeof content === 'string') {
+        const blob = new Blob([content], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
     });
 
     toast({
@@ -198,7 +223,7 @@ const Workspace = () => {
     );
   }
 
-  const latestFiles = messages.findLast(msg => msg.role === 'assistant' && msg.files)?.files || {};
+  const latestFiles = getLastMessageWithFiles(messages)?.files || {};
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
@@ -342,13 +367,19 @@ const Workspace = () => {
                             <div className="flex items-center justify-between mb-2">
                               <h4 className="font-medium text-sm">{filename}</h4>
                               <Badge variant="outline" className="text-xs">
-                                {content.length} chars
+                                {typeof content === 'string' ? content.length : 0} chars
                               </Badge>
                             </div>
                             <ScrollArea className="h-32">
                               <pre className="text-xs text-gray-600 font-mono whitespace-pre-wrap">
-                                {content.substring(0, 500)}
-                                {content.length > 500 && '...'}
+                                {typeof content === 'string' ? (
+                                  <>
+                                    {content.substring(0, 500)}
+                                    {content.length > 500 && '...'}
+                                  </>
+                                ) : (
+                                  'Invalid file content'
+                                )}
                               </pre>
                             </ScrollArea>
                           </Card>
