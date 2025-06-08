@@ -25,6 +25,10 @@ interface WorkspaceLayoutProps {
   latestFiles: Record<string, string>;
   botId: string;
   onFixByAI: (errorLogs: string) => Promise<void>;
+  hasErrors?: boolean;
+  errorLogs?: string;
+  errorType?: string;
+  onRetryBot?: () => Promise<void>;
 }
 
 const WorkspaceLayout = ({
@@ -36,15 +40,23 @@ const WorkspaceLayout = ({
   onCloseFile,
   latestFiles,
   botId,
-  onFixByAI
+  onFixByAI,
+  hasErrors = false,
+  errorLogs = "",
+  errorType = "",
+  onRetryBot
 }: WorkspaceLayoutProps) => {
-  const [hasErrors, setHasErrors] = useState(false);
-  const [errorLogs, setErrorLogs] = useState("");
+  const [logsHasErrors, setLogsHasErrors] = useState(false);
+  const [logsErrorContent, setLogsErrorContent] = useState("");
 
   const handleLogsUpdate = useCallback((logs: string, hasErrorsDetected: boolean) => {
-    setErrorLogs(logs);
-    setHasErrors(hasErrorsDetected);
+    setLogsErrorContent(logs);
+    setLogsHasErrors(hasErrorsDetected);
   }, []);
+
+  // Combine errors from props and logs
+  const combinedHasErrors = hasErrors || logsHasErrors;
+  const combinedErrorLogs = errorLogs || logsErrorContent;
 
   return (
     <div className="flex h-[calc(100vh-73px)]">
@@ -58,9 +70,11 @@ const WorkspaceLayout = ({
               messages={messages}
               onSendMessage={onSendMessage}
               isGenerating={isGenerating}
-              hasErrors={hasErrors}
-              errorLogs={errorLogs}
+              hasErrors={combinedHasErrors}
+              errorLogs={combinedErrorLogs}
+              errorType={errorType}
               onFixByAI={onFixByAI}
+              onRetryBot={onRetryBot}
             />
           )}
         </div>

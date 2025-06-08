@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -63,6 +62,7 @@ const Workspace = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedFile, setSelectedFile] = useState<{ name: string; content: string } | null>(null);
+  const [botError, setBotError] = useState<{ type: string; message: string } | null>(null);
 
   // Fetch bot data
   useEffect(() => {
@@ -141,6 +141,7 @@ const Workspace = () => {
 
     setMessages(prev => [...prev, userMessage]);
     setIsGenerating(true);
+    setBotError(null); // Clear previous errors
 
     try {
       const response = await fetch(`https://efhwjkhqbbucvedgznba.functions.supabase.co/generate-bot-code`, {
@@ -170,7 +171,12 @@ const Workspace = () => {
           title: "Bot Updated! 🎉",
           description: "Your bot code has been generated and deployed successfully",
         });
+        setBotError(null); // Clear errors on success
       } else {
+        // Check if it's a bot conflict error
+        if (data.errorType) {
+          setBotError({ type: data.errorType, message: data.error || 'Unknown error' });
+        }
         throw new Error(data.error || 'Failed to generate bot code');
       }
     } catch (error) {
@@ -202,6 +208,42 @@ Please analyze these errors and provide corrected code that fixes the issues. Fo
 Please provide working, corrected code.`;
 
     await sendMessage(fixPrompt);
+  };
+
+  const handleRetryBot = async () => {
+    if (!bot || !user) return;
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('manage-bot-runtime', {
+        body: {
+          action: 'restart',
+          botId: bot.id,
+          userId: user.id
+        }
+      });
+
+      if (error) throw error;
+
+      if (data.success) {
+        setBotError(null);
+        toast({
+          title: "Bot Restart Initiated! 🔄",
+          description: "Your bot is being restarted...",
+        });
+      } else {
+        if (data.errorType) {
+          setBotError({ type: data.errorType, message: data.error || 'Unknown error' });
+        }
+        throw new Error(data.error || 'Failed to restart bot');
+      }
+    } catch (error) {
+      console.error('Error restarting bot:', error);
+      toast({
+        title: "Error",
+        description: `Failed to restart bot: ${error.message}`,
+        variant: "destructive",
+      });
+    }
   };
 
   const openFile = (filename: string, content: string) => {
@@ -245,6 +287,9 @@ Please provide working, corrected code.`;
   }
 
   const latestFiles = getLastMessageWithFiles(messages)?.files || {};
+  const hasErrors = bot?.runtime_status === 'error' || botError !== null;
+  const errorLogs = bot?.runtime_logs || botError?.message || '';
+  const errorType = botError?.type || '';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
@@ -263,6 +308,10 @@ Please provide working, corrected code.`;
         latestFiles={latestFiles}
         botId={bot.id}
         onFixByAI={handleFixByAI}
+        hasErrors={hasErrors}
+        errorLogs={errorLogs}
+        errorType={errorType}
+        onRetryBot={handleRetryBot}
       />
     </div>
   );

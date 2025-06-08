@@ -1,10 +1,9 @@
-
 import { Bot, webhookCallback } from "https://deno.land/x/grammy@v1.19.2/mod.ts";
 
 // Store active bot instances
 const activeBots = new Map<string, { bot: Bot; controller: AbortController }>();
 
-export async function startTelegramBot(botId: string, token: string, code: string): Promise<{ success: boolean; logs: string[] }> {
+export async function startTelegramBot(botId: string, token: string, code: string): Promise<{ success: boolean; logs: string[]; error?: string; errorType?: string }> {
   const logs: string[] = [];
   
   try {
@@ -24,7 +23,12 @@ export async function startTelegramBot(botId: string, token: string, code: strin
     // Validate token format
     if (!token || !token.match(/^\d+:[A-Za-z0-9_-]+$/)) {
       logs.push(`[${new Date().toISOString()}] ERROR: Invalid bot token format`);
-      return { success: false, logs };
+      return { 
+        success: false, 
+        logs, 
+        error: "Invalid bot token format. Please check your token from @BotFather.",
+        errorType: "invalid_token"
+      };
     }
 
     logs.push(`[${new Date().toISOString()}] Creating bot instance for ${botId}`);
@@ -35,7 +39,12 @@ export async function startTelegramBot(botId: string, token: string, code: strin
       botInstance = new Bot(token);
     } catch (tokenError) {
       logs.push(`[${new Date().toISOString()}] ERROR: Failed to create bot instance - ${tokenError.message}`);
-      return { success: false, logs };
+      return { 
+        success: false, 
+        logs, 
+        error: "Failed to create bot instance. Please verify your bot token.",
+        errorType: "bot_creation_failed"
+      };
     }
     
     const controller = new AbortController();
@@ -68,7 +77,12 @@ export async function startTelegramBot(botId: string, token: string, code: strin
     
     if (!code || code.trim().length === 0) {
       logs.push(`[${new Date().toISOString()}] ERROR: No generated code provided`);
-      return { success: false, logs };
+      return { 
+        success: false, 
+        logs, 
+        error: "No generated code provided. Please regenerate your bot code.",
+        errorType: "no_code"
+      };
     }
     
     try {
@@ -96,7 +110,12 @@ export async function startTelegramBot(botId: string, token: string, code: strin
 
       if (!cleanCode || cleanCode.trim().length === 0) {
         logs.push(`[${new Date().toISOString()}] ERROR: After cleaning, no executable code remains`);
-        return { success: false, logs };
+        return { 
+          success: false, 
+          logs, 
+          error: "Generated code is empty after processing. Please regenerate your bot.",
+          errorType: "empty_processed_code"
+        };
       }
 
       // Create a safe execution environment - STRICT MODE
@@ -119,7 +138,12 @@ export async function startTelegramBot(botId: string, token: string, code: strin
           logs.push(`[${new Date().toISOString()}] ERROR: Stack trace: ${result.stack}`);
         }
         logs.push(`[${new Date().toISOString()}] STRICT MODE: Bot will NOT start with fallback code`);
-        return { success: false, logs };
+        return { 
+          success: false, 
+          logs, 
+          error: `Code execution failed: ${result?.error || 'Unknown error'}`,
+          errorType: "code_execution_failed"
+        };
       }
       
       logs.push(`[${new Date().toISOString()}] SUCCESS: Generated code executed successfully`);
@@ -127,7 +151,12 @@ export async function startTelegramBot(botId: string, token: string, code: strin
     } catch (codeError) {
       logs.push(`[${new Date().toISOString()}] ERROR: Code execution failed: ${codeError.message}`);
       logs.push(`[${new Date().toISOString()}] STRICT MODE: No fallback handlers - bot MUST work with generated code`);
-      return { success: false, logs };
+      return { 
+        success: false, 
+        logs, 
+        error: `Code execution failed: ${codeError.message}`,
+        errorType: "code_execution_failed"
+      };
     }
     
     // Store the bot instance BEFORE starting
@@ -164,24 +193,49 @@ export async function startTelegramBot(botId: string, token: string, code: strin
     } catch (startError) {
       logs.push(`[${new Date().toISOString()}] ERROR: Failed to start bot with Telegram: ${startError.message}`);
       
-      // Provide specific error guidance
-      if (startError.message.includes('409') || startError.message.includes('Conflict')) {
-        logs.push(`[${new Date().toISOString()}] ERROR: Bot token conflict - another instance may be running`);
-      } else if (startError.message.includes('401') || startError.message.includes('Unauthorized')) {
+      // Enhanced error detection and classification
+      let errorType = "unknown_error";
+      let userFriendlyError = "Failed to start bot. Please check your configuration.";
+      
+      if (startError.message.includes('409') || startError.message.includes('Conflict') || startError.message.includes('already running')) {
+        errorType = "bot_already_running";
+        userFriendlyError = "This bot is already running in another location. Please stop the other instance first or wait a few minutes before trying again.";
+        logs.push(`[${new Date().toISOString()}] ERROR: Bot token conflict - another instance is running`);
+      } else if (startError.message.includes('401') || startError.message.includes('Unauthorized') || startError.message.includes('token')) {
+        errorType = "invalid_token";
+        userFriendlyError = "Invalid bot token. Please check your token from @BotFather and make sure it's correct.";
         logs.push(`[${new Date().toISOString()}] ERROR: Invalid bot token - check @BotFather`);
-      } else if (startError.message.includes('timeout')) {
+      } else if (startError.message.includes('timeout') || startError.message.includes('network')) {
+        errorType = "network_timeout";
+        userFriendlyError = "Network timeout while connecting to Telegram. Please check your internet connection and try again.";
         logs.push(`[${new Date().toISOString()}] ERROR: Network timeout - check connectivity`);
+      } else if (startError.message.includes('rate') || startError.message.includes('limit')) {
+        errorType = "rate_limited";
+        userFriendlyError = "Rate limited by Telegram. Please wait a few minutes before trying again.";
+        logs.push(`[${new Date().toISOString()}] ERROR: Rate limited by Telegram`);
+      } else {
+        logs.push(`[${new Date().toISOString()}] ERROR: Unexpected error: ${startError.message}`);
       }
       
       // Remove from active bots on error
       activeBots.delete(botId);
-      return { success: false, logs };
+      return { 
+        success: false, 
+        logs, 
+        error: userFriendlyError,
+        errorType 
+      };
     }
     
   } catch (error) {
     logs.push(`[${new Date().toISOString()}] CRITICAL ERROR: ${error.message}`);
     activeBots.delete(botId);
-    return { success: false, logs };
+    return { 
+      success: false, 
+      logs, 
+      error: `Critical error: ${error.message}`,
+      errorType: "critical_error"
+    };
   }
 }
 

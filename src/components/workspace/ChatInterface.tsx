@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Send, Wrench, AlertTriangle } from "lucide-react";
+import BotConflictAlert from "@/components/BotConflictAlert";
 import type { Json } from "@/integrations/supabase/types";
 
 interface Message {
@@ -14,6 +15,7 @@ interface Message {
   content: string;
   timestamp: string;
   files?: Record<string, string>;
+  errorType?: string;
   [key: string]: Json | undefined;
 }
 
@@ -23,7 +25,9 @@ interface ChatInterfaceProps {
   isGenerating: boolean;
   hasErrors?: boolean;
   errorLogs?: string;
+  errorType?: string;
   onFixByAI?: (errorLogs: string) => Promise<void>;
+  onRetryBot?: () => Promise<void>;
 }
 
 const ChatInterface = ({ 
@@ -32,9 +36,12 @@ const ChatInterface = ({
   isGenerating, 
   hasErrors = false, 
   errorLogs = "", 
-  onFixByAI 
+  errorType = "",
+  onFixByAI,
+  onRetryBot
 }: ChatInterfaceProps) => {
   const [newMessage, setNewMessage] = useState("");
+  const [isRetrying, setIsRetrying] = useState(false);
 
   const handleSendMessage = async () => {
     if (!newMessage.trim() || isGenerating) return;
@@ -57,6 +64,20 @@ const ChatInterface = ({
     }
   };
 
+  const handleRetryBot = async () => {
+    if (onRetryBot) {
+      setIsRetrying(true);
+      try {
+        await onRetryBot();
+      } finally {
+        setIsRetrying(false);
+      }
+    }
+  };
+
+  // Check if we have a bot conflict error
+  const showBotConflictAlert = hasErrors && (errorType === "bot_already_running" || errorType === "invalid_token" || errorType === "network_timeout" || errorType === "rate_limited");
+
   return (
     <Card className="h-full flex flex-col">
       <CardHeader>
@@ -71,7 +92,16 @@ const ChatInterface = ({
         </CardTitle>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col">
-        {hasErrors && (
+        {showBotConflictAlert ? (
+          <div className="mb-4">
+            <BotConflictAlert
+              errorType={errorType}
+              errorMessage={errorLogs}
+              onRetry={handleRetryBot}
+              isRetrying={isRetrying}
+            />
+          </div>
+        ) : hasErrors && (
           <Alert variant="destructive" className="mb-4">
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription className="flex items-center justify-between">
