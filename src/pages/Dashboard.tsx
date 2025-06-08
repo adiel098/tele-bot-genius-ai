@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,13 +8,14 @@ import { BotLogs } from "@/components/BotLogs";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import type { Json } from "@/integrations/supabase/types";
 
 interface Bot {
   id: string;
   name: string;
   status: string;
   token: string;
-  conversation_history: any[];
+  conversation_history: Json;
   created_at: string;
 }
 
@@ -72,7 +72,13 @@ const Dashboard = () => {
   };
 
   const runningBots = bots.filter(bot => bot.status === "active").length;
-  const totalMessages = bots.reduce((sum, bot) => sum + (bot.conversation_history?.length || 0), 0);
+  const totalMessages = bots.reduce((sum, bot) => {
+    const history = bot.conversation_history;
+    if (Array.isArray(history)) {
+      return sum + history.length;
+    }
+    return sum;
+  }, 0);
 
   if (loading) {
     return (
@@ -182,7 +188,7 @@ const Dashboard = () => {
                     status: bot.status as "running" | "stopped" | "error" | "deploying",
                     description: "בוט AI מותאם אישית",
                     createdAt: bot.created_at,
-                    messagesHandled: bot.conversation_history?.length || 0,
+                    messagesHandled: Array.isArray(bot.conversation_history) ? bot.conversation_history.length : 0,
                     lastActivity: "לפני דקות ספורות",
                   }} 
                   onViewLogs={() => setSelectedBot(bot.id)}
