@@ -137,17 +137,18 @@ const Workspace = () => {
     };
   }, [user, botId, navigate, toast]);
 
-  const sendMessage = async () => {
-    if (!newMessage.trim() || !bot || isGenerating || !session) return;
+  const sendMessage = async (messageContent?: string) => {
+    const content = messageContent || newMessage.trim();
+    if (!content || !bot || isGenerating || !session) return;
 
     const userMessage: Message = {
       role: 'user',
-      content: newMessage,
+      content,
       timestamp: new Date().toISOString()
     };
 
     setMessages(prev => [...prev, userMessage]);
-    setNewMessage("");
+    if (!messageContent) setNewMessage("");
     setIsGenerating(true);
 
     try {
@@ -160,7 +161,7 @@ const Workspace = () => {
         },
         body: JSON.stringify({
           botId: bot.id,
-          prompt: newMessage,
+          prompt: content,
           token: bot.token
         })
       });
@@ -191,6 +192,25 @@ const Workspace = () => {
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  const handleFixByAI = async (errorLogs: string) => {
+    const fixPrompt = `
+There are errors in my Telegram bot execution. Please analyze the following error logs and fix the issues in the bot code:
+
+ERROR LOGS:
+${errorLogs}
+
+Please analyze these errors and provide corrected code that fixes the issues. Focus on:
+1. Syntax errors
+2. Logic errors
+3. Telegram API usage issues
+4. Dependencies or import issues
+5. Any other issues causing the bot to fail
+
+Please provide working, corrected code.`;
+
+    await sendMessage(fixPrompt);
   };
 
   const getStatusColor = (status: string) => {
@@ -452,7 +472,7 @@ const Workspace = () => {
             </TabsContent>
             
             <TabsContent value="logs" className="flex-1 p-4">
-              <BotRuntimeLogs botId={bot.id} />
+              <BotRuntimeLogs botId={bot.id} onFixByAI={handleFixByAI} />
             </TabsContent>
           </Tabs>
         </div>
