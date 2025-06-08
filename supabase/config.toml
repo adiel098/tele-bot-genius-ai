@@ -53,3 +53,6 @@ enable_confirmations = false
 
 [functions.generate-bot-code]
 verify_jwt = false
+
+[functions.manage-bot-runtime]
+verify_jwt = false

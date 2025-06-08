@@ -9,32 +9,91 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      bot_executions: {
+        Row: {
+          bot_id: string | null
+          created_at: string | null
+          exit_code: number | null
+          id: string
+          logs: string | null
+          started_at: string | null
+          status: string | null
+          stopped_at: string | null
+          user_id: string
+        }
+        Insert: {
+          bot_id?: string | null
+          created_at?: string | null
+          exit_code?: number | null
+          id?: string
+          logs?: string | null
+          started_at?: string | null
+          status?: string | null
+          stopped_at?: string | null
+          user_id: string
+        }
+        Update: {
+          bot_id?: string | null
+          created_at?: string | null
+          exit_code?: number | null
+          id?: string
+          logs?: string | null
+          started_at?: string | null
+          status?: string | null
+          stopped_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bot_executions_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "bots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bots: {
         Row: {
+          container_id: string | null
           conversation_history: Json | null
           created_at: string
+          files_stored: boolean | null
           id: string
+          last_restart: string | null
           name: string
+          runtime_logs: string | null
+          runtime_status: string | null
           status: string | null
           token: string
           updated_at: string
           user_id: string
         }
         Insert: {
+          container_id?: string | null
           conversation_history?: Json | null
           created_at?: string
+          files_stored?: boolean | null
           id?: string
+          last_restart?: string | null
           name: string
+          runtime_logs?: string | null
+          runtime_status?: string | null
           status?: string | null
           token: string
           updated_at?: string
           user_id: string
         }
         Update: {
+          container_id?: string | null
           conversation_history?: Json | null
           created_at?: string
+          files_stored?: boolean | null
           id?: string
+          last_restart?: string | null
           name?: string
+          runtime_logs?: string | null
+          runtime_status?: string | null
           status?: string | null
           token?: string
           updated_at?: string

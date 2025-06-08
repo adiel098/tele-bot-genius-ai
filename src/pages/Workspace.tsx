@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -6,10 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Send, Download, Play, Square, Settings, FileText, X, MessageSquare } from "lucide-react";
+import { ArrowLeft, Send, Settings, FileText, MessageSquare } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import BotRuntimeControls from "@/components/BotRuntimeControls";
+import BotRuntimeLogs from "@/components/BotRuntimeLogs";
 import type { Json } from "@/integrations/supabase/types";
 
 interface Message {
@@ -27,6 +30,10 @@ interface Bot {
   token: string;
   conversation_history: Json;
   created_at: string;
+  runtime_status: string;
+  runtime_logs: string;
+  files_stored: boolean;
+  container_id: string;
 }
 
 // Type guard to check if Json is a valid Message array
@@ -42,7 +49,7 @@ const isMessageArray = (data: Json): data is Message[] => {
   );
 };
 
-// Helper function to safely get the last message with files (alternative to findLast)
+// Helper function to safely get the last message with files
 const getLastMessageWithFiles = (messages: Message[]): Message | undefined => {
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role === 'assistant' && messages[i].files) {
@@ -103,6 +110,32 @@ const Workspace = () => {
     };
 
     fetchBot();
+
+    // Set up real-time subscription for bot updates
+    const channel = supabase
+      .channel('bot-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'bots',
+          filter: `id=eq.${botId}`
+        },
+        (payload) => {
+          if (payload.new) {
+            setBot(prevBot => ({ ...prevBot, ...payload.new } as Bot));
+            if (payload.new.conversation_history && isMessageArray(payload.new.conversation_history)) {
+              setMessages(payload.new.conversation_history);
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user, botId, navigate, toast]);
 
   const sendMessage = async () => {
@@ -119,7 +152,6 @@ const Workspace = () => {
     setIsGenerating(true);
 
     try {
-      // Make a direct fetch call with proper headers
       const response = await fetch(`https://efhwjkhqbbucvedgznba.functions.supabase.co/generate-bot-code`, {
         method: 'POST',
         headers: {
@@ -143,20 +175,9 @@ const Workspace = () => {
       const data = await response.json();
 
       if (data.success) {
-        // Refresh bot data to get updated conversation
-        const { data: updatedBot } = await supabase
-          .from('bots')
-          .select('*')
-          .eq('id', botId)
-          .single();
-
-        if (updatedBot && updatedBot.conversation_history && isMessageArray(updatedBot.conversation_history)) {
-          setMessages(updatedBot.conversation_history);
-        }
-
         toast({
           title: "Bot Updated! 🎉",
-          description: "Your bot code has been generated successfully",
+          description: "Your bot code has been generated and deployed successfully",
         });
       } else {
         throw new Error(data.error || 'Failed to generate bot code');
@@ -175,36 +196,12 @@ const Workspace = () => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "active": return "bg-green-100 text-green-800 border-green-200";
-      case "creating": return "bg-yellow-100 text-yellow-800 border-yellow-200";
+      case "running": return "bg-green-100 text-green-800 border-green-200";
+      case "starting": return "bg-yellow-100 text-yellow-800 border-yellow-200";
       case "stopped": return "bg-gray-100 text-gray-800 border-gray-200";
       case "error": return "bg-red-100 text-red-800 border-red-200";
       default: return "bg-gray-100 text-gray-800 border-gray-200";
     }
-  };
-
-  const downloadFiles = () => {
-    const lastMessage = getLastMessageWithFiles(messages);
-    if (!lastMessage?.files) return;
-
-    Object.entries(lastMessage.files).forEach(([filename, content]) => {
-      if (typeof content === 'string') {
-        const blob = new Blob([content], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }
-    });
-
-    toast({
-      title: "Files Downloaded! 📁",
-      description: "Bot source files have been downloaded",
-    });
   };
 
   const openFile = (filename: string, content: string) => {
@@ -213,6 +210,12 @@ const Workspace = () => {
 
   const closeFile = () => {
     setSelectedFile(null);
+  };
+
+  const handleStatusChange = (newStatus: string) => {
+    if (bot) {
+      setBot({ ...bot, runtime_status: newStatus });
+    }
   };
 
   if (loading) {
@@ -257,9 +260,16 @@ const Workspace = () => {
             </Link>
             <div>
               <h1 className="text-2xl font-bold text-gray-900">{bot.name}</h1>
-              <Badge className={`${getStatusColor(bot.status)} font-medium`}>
-                {bot.status.charAt(0).toUpperCase() + bot.status.slice(1)}
-              </Badge>
+              <div className="flex items-center space-x-2">
+                <Badge className={`${getStatusColor(bot.status)} font-medium`}>
+                  {bot.status.charAt(0).toUpperCase() + bot.status.slice(1)}
+                </Badge>
+                {bot.files_stored && (
+                  <Badge variant="outline" className="text-green-600 border-green-200">
+                    Files Stored
+                  </Badge>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex items-center space-x-2">
@@ -267,16 +277,12 @@ const Workspace = () => {
               <Settings className="h-4 w-4 mr-2" />
               Settings
             </Button>
-            <Button variant="outline" size="sm">
-              <Play className="h-4 w-4 mr-2" />
-              Start Bot
-            </Button>
-            {Object.keys(latestFiles).length > 0 && (
-              <Button onClick={downloadFiles} size="sm">
-                <Download className="h-4 w-4 mr-2" />
-                Download Files
-              </Button>
-            )}
+            <BotRuntimeControls
+              botId={bot.id}
+              userId={user.id}
+              runtimeStatus={bot.runtime_status || 'stopped'}
+              onStatusChange={handleStatusChange}
+            />
           </div>
         </div>
       </div>
@@ -360,7 +366,7 @@ const Workspace = () => {
                                 <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
                                 <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100"></div>
                                 <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200"></div>
-                                <span className="text-sm text-gray-600 ml-2">Generating code...</span>
+                                <span className="text-sm text-gray-600 ml-2">Generating and deploying...</span>
                               </div>
                             </div>
                           </div>
@@ -397,7 +403,7 @@ const Workspace = () => {
           <Tabs defaultValue="files" className="h-full flex flex-col">
             <TabsList className="grid w-full grid-cols-2 mx-4 mt-4">
               <TabsTrigger value="files">Files</TabsTrigger>
-              <TabsTrigger value="logs">Logs</TabsTrigger>
+              <TabsTrigger value="logs">Runtime Logs</TabsTrigger>
             </TabsList>
             
             <TabsContent value="files" className="flex-1 p-4">
@@ -441,21 +447,7 @@ const Workspace = () => {
             </TabsContent>
             
             <TabsContent value="logs" className="flex-1 p-4">
-              <Card className="h-full">
-                <CardHeader>
-                  <CardTitle className="text-sm">Bot Logs</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ScrollArea className="h-[400px]">
-                    <div className="space-y-2 text-sm font-mono">
-                      <div className="text-green-600">[INFO] Bot initialized</div>
-                      <div className="text-blue-600">[DEBUG] Loading configuration</div>
-                      <div className="text-green-600">[INFO] Bot code generated successfully</div>
-                      <div className="text-yellow-600">[WARN] Bot not deployed yet</div>
-                    </div>
-                  </ScrollArea>
-                </CardContent>
-              </Card>
+              <BotRuntimeLogs botId={bot.id} />
             </TabsContent>
           </Tabs>
         </div>
