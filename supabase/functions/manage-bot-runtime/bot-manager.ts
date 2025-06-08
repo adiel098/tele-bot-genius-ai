@@ -1,3 +1,4 @@
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
 import { RealDockerManager } from './real-docker-manager.ts';
 import { BotLogger } from './logger.ts';
@@ -10,7 +11,7 @@ export async function startBot(botId: string, userId: string): Promise<{ success
   const logs: string[] = [];
   
   try {
-    logs.push(BotLogger.logSection(`STARTING REAL PYTHON BOT ${botId}`));
+    logs.push(BotLogger.logSection('STARTING REAL PYTHON BOT ' + botId));
     
     // Get bot data from database
     const { data: bot, error: botError } = await supabase
@@ -21,12 +22,12 @@ export async function startBot(botId: string, userId: string): Promise<{ success
       .single();
 
     if (botError || !bot) {
-      logs.push(BotLogger.logError(`Bot not found: ${botError?.message}`));
+      logs.push(BotLogger.logError('Bot not found: ' + (botError?.message || 'Unknown error')));
       return { success: false, logs, error: 'Bot not found' };
     }
 
-    // Check if bot is already running
-    const containerStatus = RealDockerManager.getContainerStatus(botId);
+    // Check if bot is already running using async method
+    const containerStatus = await RealDockerManager.getContainerStatusAsync(botId);
     if (containerStatus.isRunning) {
       logs.push(BotLogger.logWarning('Bot is already running'));
       
@@ -43,37 +44,52 @@ export async function startBot(botId: string, userId: string): Promise<{ success
       return { success: true, logs };
     }
 
-    // Get bot's actual main.py code from storage
+    // Get bot's actual main.py code from storage - prioritize bot-files bucket
     logs.push(BotLogger.log(botId, 'Fetching bot\'s main.py from storage...'));
     
     let actualBotCode = '';
     
-    // Try bot-files bucket first (where files are actually stored based on logs)
+    // First try bot-files bucket (where files are actually stored)
     const { data: mainFile, error: mainError } = await supabase.storage
       .from('bot-files')
-      .download(`${userId}/${botId}/main.py`);
+      .download(userId + '/' + botId + '/main.py');
       
     if (mainError || !mainFile) {
-      logs.push(BotLogger.logWarning(`Could not fetch from bot-files: ${mainError?.message}`));
+      logs.push(BotLogger.logWarning('Could not fetch from bot-files: ' + (mainError?.message || 'No file')));
       
       // Try bot-code bucket as fallback
       const { data: fallbackFile, error: fallbackError } = await supabase.storage
         .from('bot-code')
-        .download(`${botId}/main.py`);
+        .download(botId + '/main.py');
         
       if (fallbackError || !fallbackFile) {
-        logs.push(BotLogger.logWarning(`Could not fetch from bot-code: ${fallbackError?.message}`));
+        logs.push(BotLogger.logWarning('Could not fetch from bot-code: ' + (fallbackError?.message || 'No file')));
         logs.push(BotLogger.log(botId, 'Using fallback template code'));
         
         // Use a basic fallback template
         actualBotCode = generateFallbackBotCode();
       } else {
         actualBotCode = await fallbackFile.text();
-        logs.push(BotLogger.log(botId, `Bot's main.py loaded from bot-code: ${actualBotCode.length} characters`));
+        logs.push(BotLogger.log(botId, 'Bot\'s main.py loaded from bot-code: ' + actualBotCode.length + ' characters'));
       }
     } else {
       actualBotCode = await mainFile.text();
-      logs.push(BotLogger.log(botId, `Bot's main.py loaded from bot-files: ${actualBotCode.length} characters`));
+      logs.push(BotLogger.log(botId, 'Bot\'s main.py loaded from bot-files: ' + actualBotCode.length + ' characters'));
+    }
+
+    // Validate that we have actual bot code
+    if (!actualBotCode || actualBotCode.trim().length === 0) {
+      logs.push(BotLogger.logError('No valid bot code found'));
+      
+      await supabase
+        .from('bots')
+        .update({
+          runtime_status: 'error',
+          runtime_logs: logs.join('\n')
+        })
+        .eq('id', botId);
+        
+      return { success: false, logs, error: 'No valid bot code found' };
     }
 
     // Create and start real Docker container with the bot's actual code
@@ -95,8 +111,23 @@ export async function startBot(botId: string, userId: string): Promise<{ success
       return { success: false, logs, error: dockerResult.error };
     }
 
+    // Validate container ID
+    if (!dockerResult.containerId) {
+      logs.push(BotLogger.logError('Container created but no container ID returned'));
+      
+      await supabase
+        .from('bots')
+        .update({
+          runtime_status: 'error',
+          runtime_logs: logs.join('\n')
+        })
+        .eq('id', botId);
+        
+      return { success: false, logs, error: 'No container ID returned' };
+    }
+
     // Update bot status in database - with detailed verification
-    logs.push(BotLogger.log(botId, `Updating database with container ID: ${dockerResult.containerId}`));
+    logs.push(BotLogger.log(botId, 'Updating database with container ID: ' + dockerResult.containerId));
     
     const { error: updateError } = await supabase
       .from('bots')
@@ -109,7 +140,7 @@ export async function startBot(botId: string, userId: string): Promise<{ success
       .eq('id', botId);
 
     if (updateError) {
-      logs.push(BotLogger.logError(`Database update failed: ${updateError.message}`));
+      logs.push(BotLogger.logError('Database update failed: ' + updateError.message));
     } else {
       logs.push(BotLogger.logSuccess('Database updated successfully'));
     }
@@ -121,13 +152,13 @@ export async function startBot(botId: string, userId: string): Promise<{ success
       .eq('id', botId)
       .single();
       
-    logs.push(BotLogger.log(botId, `Verification - DB status: ${verifyBot?.runtime_status}, container: ${verifyBot?.container_id}`));
+    logs.push(BotLogger.log(botId, 'Verification - DB status: ' + (verifyBot?.runtime_status || 'unknown') + ', container: ' + (verifyBot?.container_id || 'none')));
 
     logs.push(BotLogger.logSuccess('✅ Real Python bot started successfully with actual main.py!'));
     return { success: true, logs };
 
   } catch (error) {
-    logs.push(BotLogger.logError(`Error starting bot: ${error.message}`));
+    logs.push(BotLogger.logError('Error starting bot: ' + error.message));
     
     // Update bot status to error in database
     await supabase
@@ -182,14 +213,15 @@ def main():
     )
 
 if __name__ == '__main__':
-    main();
+    main()
+`;
 }
 
 export async function stopBot(botId: string): Promise<{ success: boolean; logs: string[] }> {
   const logs: string[] = [];
   
   try {
-    logs.push(BotLogger.logSection(`STOPPING REAL PYTHON BOT ${botId}`));
+    logs.push(BotLogger.logSection('STOPPING REAL PYTHON BOT ' + botId));
     
     // Get bot data for token
     const { data: bot } = await supabase
@@ -216,7 +248,7 @@ export async function stopBot(botId: string): Promise<{ success: boolean; logs: 
     return { success: true, logs };
 
   } catch (error) {
-    logs.push(BotLogger.logError(`Error stopping bot: ${error.message}`));
+    logs.push(BotLogger.logError('Error stopping bot: ' + error.message));
     return { success: false, logs };
   }
 }
@@ -225,7 +257,7 @@ export async function restartBot(botId: string, userId: string): Promise<{ succe
   const logs: string[] = [];
   
   try {
-    logs.push(BotLogger.logSection(`RESTARTING REAL PYTHON BOT ${botId}`));
+    logs.push(BotLogger.logSection('RESTARTING REAL PYTHON BOT ' + botId));
     
     // Stop the bot first
     const stopResult = await stopBot(botId);
@@ -241,7 +273,7 @@ export async function restartBot(botId: string, userId: string): Promise<{ succe
     return { success: startResult.success, logs };
 
   } catch (error) {
-    logs.push(BotLogger.logError(`Error restarting bot: ${error.message}`));
+    logs.push(BotLogger.logError('Error restarting bot: ' + error.message));
     return { success: false, logs };
   }
 }
@@ -273,7 +305,7 @@ export async function streamLogs(botId: string): Promise<{ success: boolean; log
   } catch (error) {
     return {
       success: false,
-      logs: [BotLogger.logError(`Error getting logs: ${error.message}`)]
+      logs: [BotLogger.logError('Error getting logs: ' + error.message)]
     };
   }
 }
