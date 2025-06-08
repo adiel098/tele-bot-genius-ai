@@ -1,140 +1,56 @@
 
 export function generatePythonBotScript(botId: string, containerId: string, token: string, actualBotCode: string): string {
-  // If actual bot code is provided and not empty, use it directly
-  if (actualBotCode && actualBotCode.trim().length > 0) {
-    console.log(`[${new Date().toISOString()}] Using actual bot code: ${actualBotCode.length} characters`);
-    
-    // Replace any token placeholders in the code with the actual token
-    let updatedCode = actualBotCode;
-    
-    // Handle different token variable patterns
-    updatedCode = updatedCode.replace(/\${token}/g, token);
-    updatedCode = updatedCode.replace(/BOT_TOKEN\s*=\s*['"][^'"]*['"]/, `BOT_TOKEN = "${token}"`);
-    updatedCode = updatedCode.replace(/os\.getenv\(['"]TELEGRAM_TOKEN['"][^)]*\)/, `"${token}"`);
-    updatedCode = updatedCode.replace(/os\.getenv\(['"]BOT_TOKEN['"][^)]*\)/, `"${token}"`);
-    
-    // Also handle the environment variable loading pattern
-    updatedCode = updatedCode.replace(/token = os\.getenv\(['"]BOT_TOKEN['"][^)]*\)/, `token = "${token}"`);
-    
-    console.log(`[${new Date().toISOString()}] Token replacement completed, using actual user code`);
-    return updatedCode;
+  // ALWAYS use the actual user's code - no fallback templates
+  if (!actualBotCode || actualBotCode.trim().length === 0) {
+    throw new Error('No actual bot code provided - cannot create container without user code');
   }
 
-  console.log(`[${new Date().toISOString()}] No actual bot code provided, using fallback template`);
+  console.log(`[${new Date().toISOString()}] Using REAL user code: ${actualBotCode.length} characters`);
   
-  // Fallback to a simple bot template if no code is provided
-  return `
-import os
-import sys
-import asyncio
-import logging
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import json
-import aiohttp
-from datetime import datetime
+  // Prepare the user's actual code for container execution
+  let preparedCode = actualBotCode;
+  
+  // Replace token placeholders with actual token
+  preparedCode = preparedCode.replace(/\${token}/g, token);
+  preparedCode = preparedCode.replace(/BOT_TOKEN\s*=\s*['"][^'"]*['"]/, `BOT_TOKEN = "${token}"`);
+  preparedCode = preparedCode.replace(/os\.getenv\(['"]TELEGRAM_TOKEN['"][^)]*\)/, `"${token}"`);
+  preparedCode = preparedCode.replace(/os\.getenv\(['"]BOT_TOKEN['"][^)]*\)/, `"${token}"`);
+  preparedCode = preparedCode.replace(/token = os\.getenv\(['"]BOT_TOKEN['"][^)]*\)/, `token = "${token}"`);
+  
+  console.log(`[${new Date().toISOString()}] Token replacement completed in user's actual code`);
+  
+  // Add container metadata as comments at the top
+  const containerInfo = `# Real Docker Container: ${containerId}
+# Bot ID: ${botId}
+# This is the user's actual Python code running in a real container
+# Generated at: ${new Date().toISOString()}
 
-# Set up logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
-
-# Get bot token from environment
-BOT_TOKEN = "${token}"
-
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /start command"""
-    user = update.effective_user
-    await update.message.reply_text(
-        f"🤖 Hello {user.first_name}! I'm your AI bot running in a real Docker container!\\n"
-        f"Your user ID is: {user.id}\\n"
-        f"Container ID: ${containerId}"
-    )
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /help command"""
-    help_text = """
-Available commands:
-/start - Get started
-/help - Show this help
-/status - Check bot status
-
-I'm running real Python code in a Docker container! 🐳
-"""
-    await update.message.reply_text(help_text)
-
-async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /status command"""
-    await update.message.reply_text(
-        f"✅ Bot Status: RUNNING\\n"
-        f"🐳 Container: ${containerId}\\n"
-        f"🐍 Python: {sys.version}\\n"
-        f"⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-    )
-
-async def echo_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Echo user messages with processing info"""
-    user_message = update.message.text
-    user = update.effective_user
-    
-    response = f"🤖 Processing your message in real Python!\\n\\n"
-    response += f"📝 You said: '{user_message}'\\n"
-    response += f"👤 User: {user.first_name} (@{user.username})\\n"
-    response += f"🆔 Chat ID: {update.effective_chat.id}\\n"
-    response += f"🐳 Container: ${containerId}"
-    
-    await update.message.reply_text(response)
-
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    """Handle errors"""
-    logger.error(f"Exception while handling an update: {context.error}")
-
-def main():
-    """Start the bot"""
-    logger.info(f"Starting bot with token: {BOT_TOKEN[:10]}...")
-    logger.info(f"Container ID: ${containerId}")
-    
-    # Create application
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Add handlers
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("status", status_command))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo_message))
-    
-    # Add error handler
-    application.add_error_handler(error_handler)
-    
-    logger.info("Starting bot with webhook...")
-    
-    try:
-        # Start the bot with webhook
-        application.run_webhook(
-            listen="0.0.0.0",
-            port=8080,
-            url_path="/webhook",
-            webhook_url=f"https://efhwjkhqbbucvedgznba.supabase.co/functions/v1/telegram-webhook/${botId}"
-        )
-    except Exception as e:
-        logger.error(f"Failed to start bot: {e}")
-        sys.exit(1)
-
-if __name__ == '__main__':
-    main()
 `;
+  
+  return containerInfo + preparedCode;
 }
 
 export function generateDockerfile(token: string): string {
-  return `FROM python:3.11-slim
+  return `# Real Docker container for user's Python bot
+FROM python:3.11-slim
+
+# Set working directory
 WORKDIR /app
-RUN pip install python-telegram-bot aiohttp
+
+# Install required Python packages
+RUN pip install python-telegram-bot aiohttp requests
+
+# Copy user's actual bot code
 COPY main.py .
+
+# Set environment variables
 ENV TELEGRAM_TOKEN=${token}
 ENV BOT_TOKEN=${token}
 ENV PYTHONUNBUFFERED=1
+
+# Expose webhook port
 EXPOSE 8080
+
+# Run the user's actual Python code
 CMD ["python", "main.py"]`;
 }
