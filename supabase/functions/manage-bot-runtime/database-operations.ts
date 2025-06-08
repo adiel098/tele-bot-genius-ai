@@ -59,14 +59,19 @@ export async function updateBotStatus(botId: string, status: string, logs: strin
     }
   }
 
-  await supabase
+  const { error } = await supabase
     .from('bots')
     .update(updateData)
     .eq('id', botId);
+
+  if (error) {
+    console.error('Error updating bot status:', error);
+    throw error;
+  }
 }
 
 export async function createBotExecution(botId: string, userId: string, status: string, logs: string[]) {
-  await supabase
+  const { error } = await supabase
     .from('bot_executions')
     .insert({
       bot_id: botId,
@@ -75,6 +80,11 @@ export async function createBotExecution(botId: string, userId: string, status: 
       logs: logs.join('\n'),
       started_at: new Date().toISOString()
     });
+
+  if (error) {
+    console.error('Error creating bot execution:', error);
+    throw error;
+  }
 }
 
 export async function getRunningExecution(botId: string) {
@@ -91,7 +101,7 @@ export async function getRunningExecution(botId: string) {
 }
 
 export async function updateExecutionStatus(executionId: string, status: string, logs: string[]) {
-  await supabase
+  const { error } = await supabase
     .from('bot_executions')
     .update({
       status: status,
@@ -99,4 +109,9 @@ export async function updateExecutionStatus(executionId: string, status: string,
       stopped_at: new Date().toISOString()
     })
     .eq('id', executionId);
+
+  if (error) {
+    console.error('Error updating execution status:', error);
+    throw error;
+  }
 }

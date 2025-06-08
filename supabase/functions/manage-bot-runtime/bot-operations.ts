@@ -29,7 +29,7 @@ export async function startBotOperation(botId: string, userId: string): Promise<
 
     console.log(`[${new Date().toISOString()}] Calling startTelegramBot...`);
     
-    // Start the bot using Docker containers with the token field
+    // Start the bot using real Docker containers
     const result = await startTelegramBot(botId, bot.token, mainCode);
     
     const duration = Date.now() - startTime;
@@ -37,7 +37,7 @@ export async function startBotOperation(botId: string, userId: string): Promise<
 
     if (result.success) {
       // Update bot status
-      await updateBotStatus('running', result.logs || [], result.containerId);
+      await updateBotStatus(botId, 'running', result.logs || [], result.containerId);
       
       // Create execution record
       await createBotExecution(botId, userId, 'running', result.logs || []);
@@ -68,8 +68,13 @@ export async function stopBotOperation(botId: string): Promise<{ success: boolea
   try {
     LoggingUtils.logOperation('STOP BOT REQUEST', botId);
     
-    // Get bot data to retrieve token for webhook cleanup
-    const bot = await getBotData(botId, ''); // Empty userId since we're just getting token
+    // For stop operation, we don't need userId validation, but we need the token for webhook cleanup
+    // Get bot data to retrieve token
+    const { data: bot } = await supabase
+      .from('bots')
+      .select('token')
+      .eq('id', botId)
+      .single();
     
     // Get running execution
     const execution = await getRunningExecution(botId);
@@ -161,17 +166,20 @@ export async function streamLogsOperation(botId: string): Promise<{ success: boo
   console.log(`[${new Date().toISOString()}] Bot ID: ${botId}`);
   
   try {
-    // Get logs from the bot process
-    const logs = await getBotLogs(botId);
+    // Get live logs from the real Docker container
+    const containerLogs = await getBotLogs(botId);
     
     // Get status information
     const statusLogs = ProcessManager.getBotStatus(botId);
     
     const allLogs = [
       ...statusLogs,
-      BotLogger.logSection('DOCKER CONTAINER LOGS'),
-      ...logs
+      BotLogger.logSection('LIVE DOCKER CONTAINER LOGS'),
+      ...containerLogs
     ];
+    
+    // Update bot logs in database with fresh container logs
+    await updateBotStatus(botId, 'running', allLogs);
     
     return {
       success: true,
