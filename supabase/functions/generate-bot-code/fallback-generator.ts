@@ -17,13 +17,19 @@ except ImportError:
     # dotenv not available in production, that's fine
     pass
 
-# Enable logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+# Enable logging with detailed format
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', 
+    level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /start is issued."""
     user_name = update.effective_user.first_name
+    user_id = update.effective_user.id
+    logger.info(f'User {user_name} (ID: {user_id}) executed /start command')
+    
     await update.message.reply_text(
         f'Hello {user_name}! 👋\\n\\n'
         'I am your AI-powered Telegram bot created with BotFactory! 🤖\\n\\n'
@@ -32,9 +38,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         '/help - Show help message\\n\\n'
         'Send me any message and I will echo it back!'
     )
+    logger.info(f'Sent welcome message to user {user_name}')
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /help is issued."""
+    user_name = update.effective_user.first_name
+    user_id = update.effective_user.id
+    logger.info(f'User {user_name} (ID: {user_id}) requested help')
+    
     await update.message.reply_text(
         'Available commands:\\n'
         '/start - Start the bot\\n'
@@ -42,18 +53,27 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         'I\\'m an AI bot created with BotFactory! 🤖\\n'
         'Send me any message and I will echo it back.'
     )
+    logger.info(f'Sent help message to user {user_name}')
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Echo the user message."""
     user_message = update.message.text
     user_name = update.effective_user.first_name
+    user_id = update.effective_user.id
+    
+    logger.info(f'User {user_name} (ID: {user_id}) sent message: "{user_message}"')
+    
     await update.message.reply_text(
         f'Hello {user_name}! You said: "{user_message}"\\n\\n'
         'I\\'m an AI bot running your custom code! 🤖'
     )
+    logger.info(f'Echoed message back to user {user_name}')
 
 def main() -> None:
     """Start the bot."""
+    logger.info('========== TELEGRAM BOT STARTUP ==========')
+    logger.info('BotFactory AI-Generated Bot Starting...')
+    
     # Get bot token from environment variable
     token = os.getenv('BOT_TOKEN', '${token}')
     
@@ -61,17 +81,38 @@ def main() -> None:
         logger.error('BOT_TOKEN not found in environment variables. Please check your .env file.')
         return
     
+    logger.info('✓ Bot token loaded successfully')
+    logger.info('Creating Telegram Application...')
+    
     # Create the Application
     application = Application.builder().token(token).build()
+    logger.info('✓ Telegram Application created successfully')
 
+    logger.info('Registering command and message handlers...')
+    
     # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+    
+    logger.info('✓ All handlers registered successfully')
+    logger.info('  - /start command handler')
+    logger.info('  - /help command handler') 
+    logger.info('  - Text message echo handler')
 
     # Run the bot until the user presses Ctrl-C
-    logger.info("Starting bot...")
-    application.run_polling()
+    logger.info('Starting bot polling...')
+    logger.info('🤖 BOT IS NOW RUNNING AND READY TO RECEIVE MESSAGES!')
+    logger.info('🔄 Polling for updates from Telegram...')
+    logger.info('========================================')
+    
+    try:
+        application.run_polling()
+    except Exception as e:
+        logger.error(f'❌ Bot encountered an error: {e}')
+        raise
+    finally:
+        logger.info('🛑 Bot polling stopped')
 
 if __name__ == '__main__':
     main()`,
@@ -147,24 +188,33 @@ services:
 ## Features
 - Responds to /start and /help commands
 - Echoes user messages with friendly responses
-- Professional error handling and logging
+- Professional error handling and comprehensive logging
 - Built with python-telegram-bot library
 - Ready for both local and cloud deployment
 - Environment variable configuration
 - Docker support included
+- Detailed startup and runtime logging
 
 ## Project Structure
-- \`main.py\` - Main bot application
+- \`main.py\` - Main bot application with comprehensive logging
 - \`.env\` - Environment variables (bot token, etc.)
 - \`requirements.txt\` - Python dependencies
 - \`Dockerfile\` - Docker configuration
 - \`README.md\` - This documentation
 
 ## Development Tips
-- Check logs for debugging information
+- Check logs for debugging information and bot status
 - Use virtual environments to avoid dependency conflicts
 - Keep your bot token secure and never commit it to version control
 - Test locally before deploying to production
+- Monitor logs to track user interactions and bot performance
+
+## Logging Features
+- Startup sequence logging
+- User interaction tracking
+- Command execution logging
+- Error handling and reporting
+- Performance monitoring
 
 ## Getting Help
 - Telegram Bot API documentation: https://core.telegram.org/bots/api
@@ -227,6 +277,6 @@ ENV/
 .DS_Store
 Thumbs.db`
     },
-    explanation: "A professional Telegram bot built with python-telegram-bot library. Includes complete local development setup with .env file, virtual environment support, Docker deployment, and comprehensive documentation for both local and cloud deployment."
+    explanation: "A professional Telegram bot with comprehensive startup logging, user interaction tracking, and detailed debugging information. Includes complete local development setup with .env file, virtual environment support, Docker deployment, and extensive documentation for both local and cloud deployment."
   };
 }
