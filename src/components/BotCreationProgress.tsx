@@ -19,26 +19,26 @@ const BotCreationProgress = ({ currentStep = 0 }: BotCreationProgressProps) => {
   const [steps, setSteps] = useState<Step[]>([
     {
       id: 'analyze',
-      title: 'ניתוח דרישות',
-      description: 'האל רגע מנתח את התיאור שלך ומבין מה הבוט צריך לעשות',
+      title: 'Analyzing requirements',
+      description: 'Understanding your bot description and requirements',
       status: 'pending'
     },
     {
       id: 'generate',
-      title: 'יצירת קוד',
-      description: 'כותב את כל הקוד הדרוש לבוט שלך בצורה מקצועית',
+      title: 'Generating code',
+      description: 'Writing all the necessary code for your bot',
       status: 'pending'
     },
     {
       id: 'prepare',
-      title: 'הכנת סביבה',
-      description: 'מכין את הסביבה הטכנית ומתקין את כל התלויות',
+      title: 'Preparing environment',
+      description: 'Setting up the runtime environment and dependencies',
       status: 'pending'
     },
     {
       id: 'deploy',
-      title: 'הפעלת הבוט',
-      description: 'מפעיל את הבוט ומוודא שהכל עובד כמו שצריך',
+      title: 'Starting bot',
+      description: 'Deploying and starting your bot',
       status: 'pending'
     }
   ]);
@@ -73,47 +73,47 @@ const BotCreationProgress = ({ currentStep = 0 }: BotCreationProgressProps) => {
   const getStepIcon = (step: Step) => {
     switch (step.status) {
       case 'completed':
-        return <CheckCircle className="w-6 h-6 text-green-500" />;
+        return <CheckCircle className="w-5 h-5 text-green-500" />;
       case 'active':
-        return <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />;
+        return <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />;
       case 'error':
-        return <AlertCircle className="w-6 h-6 text-red-500" />;
+        return <AlertCircle className="w-5 h-5 text-red-500" />;
       default:
         return (
-          <div className="w-6 h-6 border-2 border-gray-300 rounded-full bg-gray-100"></div>
+          <div className="w-5 h-5 border-2 border-gray-300 rounded-full bg-gray-100"></div>
         );
     }
   };
 
   return (
-    <div className="w-full max-w-2xl mx-auto">
+    <div className="w-full max-w-xl mx-auto">
       {/* Progress Bar */}
-      <div className="mb-8">
+      <div className="mb-6">
         <div className="flex justify-between items-center mb-2">
-          <span className="text-sm font-medium text-gray-700">התקדמות</span>
+          <span className="text-sm font-medium text-gray-700">Progress</span>
           <span className="text-sm text-gray-500">{Math.round(progress)}%</span>
         </div>
         <Progress value={progress} className="h-2" />
       </div>
 
       {/* Steps */}
-      <div className="space-y-6">
+      <div className="space-y-4">
         {steps.map((step, index) => (
           <div
             key={step.id}
-            className={`flex items-start space-x-4 rtl:space-x-reverse transition-all duration-500 ${
-              step.status === 'active' ? 'scale-105' : ''
+            className={`flex items-start space-x-3 transition-all duration-300 ${
+              step.status === 'active' ? 'scale-[1.02]' : ''
             }`}
           >
             {/* Step Icon */}
-            <div className="flex-shrink-0 mt-1">
+            <div className="flex-shrink-0 mt-0.5">
               {getStepIcon(step)}
             </div>
 
             {/* Step Content */}
             <div className="flex-1 min-w-0">
-              <div className={`flex items-center space-x-2 rtl:space-x-reverse mb-1`}>
-                <h3 className={`text-lg font-semibold transition-colors duration-300 ${
+              <div className={`flex items-center space-x-2 mb-1`}>
+                <h3 className={`text-base font-medium transition-colors duration-300 ${
                   step.status === 'completed' ? 'text-green-600' :
                   step.status === 'active' ? 'text-blue-600' :
                   'text-gray-500'
@@ -121,10 +121,10 @@ const BotCreationProgress = ({ currentStep = 0 }: BotCreationProgressProps) => {
                   {step.title}
                 </h3>
                 {step.status === 'active' && (
-                  <div className="flex space-x-1 rtl:space-x-reverse">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
-                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce delay-100"></div>
-                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce delay-200"></div>
+                  <div className="flex space-x-1">
+                    <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce"></div>
+                    <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce delay-100"></div>
+                    <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce delay-200"></div>
                   </div>
                 )}
               </div>
@@ -136,8 +136,8 @@ const BotCreationProgress = ({ currentStep = 0 }: BotCreationProgressProps) => {
               
               {/* Progress indicator for active step */}
               {step.status === 'active' && (
-                <div className="mt-3">
-                  <div className="bg-blue-100 rounded-full h-1.5 overflow-hidden">
+                <div className="mt-2">
+                  <div className="bg-blue-100 rounded-full h-1 overflow-hidden">
                     <div className="bg-blue-500 h-full rounded-full animate-pulse w-3/4"></div>
                   </div>
                 </div>
@@ -148,11 +148,11 @@ const BotCreationProgress = ({ currentStep = 0 }: BotCreationProgressProps) => {
       </div>
 
       {/* Estimated Time */}
-      <div className="mt-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
-        <div className="flex items-center justify-center space-x-2 rtl:space-x-reverse">
-          <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+      <div className="mt-6 p-3 bg-blue-50 rounded-lg border border-blue-200">
+        <div className="flex items-center justify-center space-x-2">
+          <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
           <span className="text-sm text-blue-700 font-medium">
-            זמן משוער: 30-60 שניות
+            Estimated time: 30-60 seconds
           </span>
         </div>
       </div>

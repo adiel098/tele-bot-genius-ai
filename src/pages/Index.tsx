@@ -142,17 +142,17 @@ const Index = () => {
   };
   if (isCreating) {
     return <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center p-6">
-        <div className="text-center max-w-4xl mx-auto">
+        <div className="text-center max-w-3xl mx-auto">
           {/* Header */}
-          <div className="mb-12">
-            <div className="w-24 h-24 mx-auto mb-6 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center shadow-lg animate-pulse">
-              <span className="text-white text-4xl">🤖</span>
+          <div className="mb-8">
+            <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center shadow-lg">
+              <span className="text-white text-2xl">🤖</span>
             </div>
-            <h2 className="text-4xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-              יוצר את הבוט שלך...
+            <h2 className="text-2xl font-semibold mb-3 bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+              Creating your bot
             </h2>
-            <p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed">
-              הذكاء الاصطناعي שלנו מייצר את קוד הבוט, מכין את הסביבה ומכין הכל לפריסה.
+            <p className="text-base text-gray-600 max-w-lg mx-auto">
+              Our AI is generating your bot code, setting up the environment, and preparing everything for deployment.
             </p>
           </div>
 
@@ -160,10 +160,10 @@ const Index = () => {
           <BotCreationProgress currentStep={creationStep} />
 
           {/* Fun fact while waiting */}
-          <div className="mt-12 p-6 bg-white/50 backdrop-blur-sm rounded-xl border border-blue-100">
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">💡 עובדה מעניינת</h3>
-            <p className="text-gray-600">
-              הבוט שלך נבנה עם טכנולוגיות מתקדמות כולל Python, Telegram Bot API ו-Docker לפריסה מאובטחת
+          <div className="mt-8 p-4 bg-white/50 backdrop-blur-sm rounded-xl border border-blue-100">
+            <h3 className="text-base font-semibold text-gray-800 mb-1">💡 Did you know?</h3>
+            <p className="text-sm text-gray-600">
+              Your bot is built with advanced technologies including Python, Telegram Bot API, and Docker for secure deployment
             </p>
           </div>
         </div>
