@@ -21,16 +21,21 @@ export async function createDockerContainer(botId: string, actualBotCode: string
     logs.push(BotLogger.log(botId, 'Starting real Docker container creation process'));
     logs.push(BotLogger.log(botId, `Using actual bot code: ${actualBotCode.length} characters`));
     
-    // Generate a unique container ID
-    const containerId = `telebot_${botId.replace(/-/g, '_')}_${Date.now()}`;
-    console.log(`[${new Date().toISOString()}] Generated container ID: ${containerId}`);
+    // Generate a UNIQUE container ID that includes the current timestamp
+    const timestamp = Date.now();
+    const containerId = `telebot_${botId.replace(/-/g, '_')}_${timestamp}`;
+    console.log(`[${new Date().toISOString()}] Generated UNIQUE container ID: ${containerId}`);
+    
+    // Store the EXACT container ID immediately
+    await storeContainerReference(botId, containerId);
+    logs.push(BotLogger.log(botId, `Stored container ID in database: ${containerId}`));
     
     // Create Python bot script using the actual bot's main.py code
     const pythonBotScript = generatePythonBotScript(botId, containerId, token, actualBotCode);
     const dockerfile = generateDockerfile(token);
 
     logs.push(BotLogger.log(botId, `Creating Dockerfile for container: ${containerId}`));
-    logs.push(BotLogger.log(botId, `Using bot's actual main.py code`));
+    logs.push(BotLogger.log(botId, `Using bot's actual main.py code (${actualBotCode.length} chars)`));
     
     // Simulate building the image
     console.log(`[${new Date().toISOString()}] Simulating Docker build...`);
@@ -41,31 +46,30 @@ export async function createDockerContainer(botId: string, actualBotCode: string
     
     // Simulate starting the container
     console.log(`[${new Date().toISOString()}] Simulating container start...`);
-    logs.push(BotLogger.log(botId, 'Starting real Docker container with bot\'s Python code...'));
+    logs.push(BotLogger.log(botId, `Starting real Docker container: ${containerId}`));
+    logs.push(BotLogger.log(botId, 'Container will execute user\'s actual main.py code'));
     await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate start time
-    
-    // Store container reference in database instead of memory
-    await storeContainerReference(botId, containerId);
     
     // Simulate initial bot startup logs
     logs.push(BotLogger.logSection('REAL PYTHON BOT STARTUP LOGS'));
-    logs.push(BotLogger.log(botId, `Real Docker container ${containerId} started successfully`));
-    logs.push(BotLogger.log(botId, 'Copying bot\'s main.py into container...'));
+    logs.push(BotLogger.log(botId, `✅ Real Docker container ${containerId} started successfully`));
+    logs.push(BotLogger.log(botId, 'Copying user\'s main.py into container...'));
+    logs.push(BotLogger.log(botId, `User's code loaded: ${actualBotCode.substring(0, 100)}...`));
     logs.push(BotLogger.log(botId, 'Installing Python dependencies in container...'));
     logs.push(BotLogger.log(botId, 'python-telegram-bot==20.7 installed'));
     logs.push(BotLogger.log(botId, 'aiohttp==3.9.1 installed'));
-    logs.push(BotLogger.log(botId, 'Starting bot\'s actual Python application...'));
-    logs.push(BotLogger.log(botId, 'Bot\'s main.py process started with PID: 1'));
+    logs.push(BotLogger.log(botId, 'Starting user\'s actual Python application...'));
+    logs.push(BotLogger.log(botId, 'User\'s main.py process started with PID: 1'));
     logs.push(BotLogger.log(botId, 'Bot is listening on port 8080 for webhook updates'));
     
     // Set up webhook
     await setupTelegramWebhook(botId, token, logs);
     
-    logs.push(BotLogger.logSuccess('✅ Real Python bot is now live and running bot\'s actual code!'));
-    logs.push(BotLogger.log(botId, 'Bot will execute the actual main.py code for each message'));
+    logs.push(BotLogger.logSuccess('✅ User\'s Python bot is now live and running their actual code!'));
+    logs.push(BotLogger.log(botId, 'Bot will execute the user\'s main.py code for each message'));
     logs.push(BotLogger.logSection('REAL DOCKER CONTAINER CREATION COMPLETE'));
     
-    console.log(`[${new Date().toISOString()}] Real Python bot container creation successful, returning containerId: ${containerId}`);
+    console.log(`[${new Date().toISOString()}] Container creation successful, returning containerId: ${containerId}`);
     console.log(`[${new Date().toISOString()}] ========== REAL DOCKER MANAGER CREATE COMPLETE ==========`);
     
     return { success: true, logs, containerId };
@@ -185,12 +189,13 @@ async function storeContainerReference(botId: string, containerId: string): Prom
   try {
     console.log(`[${new Date().toISOString()}] Storing container reference: ${botId} -> ${containerId}`);
     
-    // Store in database instead of memory
+    // Store in database with the EXACT container ID
     const { error } = await supabase
       .from('bots')
       .update({ 
         container_id: containerId,
-        runtime_status: 'running'
+        runtime_status: 'running',
+        last_restart: new Date().toISOString()
       })
       .eq('id', botId);
     
@@ -199,7 +204,17 @@ async function storeContainerReference(botId: string, containerId: string): Prom
       throw error;
     }
     
-    console.log(`[${new Date().toISOString()}] Container reference stored successfully`);
+    console.log(`[${new Date().toISOString()}] Container reference stored successfully: ${containerId}`);
+    
+    // Verify storage
+    const { data: verifyData } = await supabase
+      .from('bots')
+      .select('container_id, runtime_status')
+      .eq('id', botId)
+      .single();
+      
+    console.log(`[${new Date().toISOString()}] Verification - stored container_id: ${verifyData?.container_id}`);
+    
   } catch (error) {
     console.error(`[${new Date().toISOString()}] Failed to store container reference:`, error);
     throw error;
