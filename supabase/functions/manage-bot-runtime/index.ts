@@ -16,40 +16,66 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 async function startBot(botId: string, userId: string) {
   try {
-    // Get bot data and files
-    const { data: bot, error: botError } = await supabase
+    console.log(`Starting bot process for ${botId}`);
+    
+    // Get bot data and files with timeout
+    const botPromise = supabase
       .from('bots')
       .select('*')
       .eq('id', botId)
       .single();
 
+    const { data: bot, error: botError } = await Promise.race([
+      botPromise,
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Bot fetch timeout')), 5000)
+      )
+    ]) as any;
+
     if (botError || !bot) {
-      throw new Error('Bot not found');
+      throw new Error('Bot not found or fetch timeout');
     }
 
-    // Get bot files from storage
-    const { data: filesList, error: filesError } = await supabase.storage
+    console.log(`Bot found: ${bot.name}`);
+
+    // Get bot files from storage with timeout
+    const filesPromise = supabase.storage
       .from('bot-files')
       .list(`${userId}/${botId}`);
+
+    const { data: filesList, error: filesError } = await Promise.race([
+      filesPromise,
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Files list timeout')), 5000)
+      )
+    ]) as any;
 
     if (filesError) {
       console.error('Failed to list bot files:', filesError);
       throw new Error('Failed to retrieve bot files');
     }
 
-    // Get main.py content
-    const { data: mainFileData, error: mainFileError } = await supabase.storage
+    // Get main.py content with timeout
+    const mainFilePromise = supabase.storage
       .from('bot-files')
       .download(`${userId}/${botId}/main.py`);
+
+    const { data: mainFileData, error: mainFileError } = await Promise.race([
+      mainFilePromise,
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Main file download timeout')), 5000)
+      )
+    ]) as any;
 
     if (mainFileError || !mainFileData) {
       throw new Error('Bot main.py file not found');
     }
 
     const botCode = await mainFileData.text();
+    console.log(`Bot code loaded, length: ${botCode.length}`);
 
-    // Create new execution record
-    const { data: execution, error: execError } = await supabase
+    // Create new execution record (non-blocking)
+    const executionPromise = supabase
       .from('bot_executions')
       .insert({
         bot_id: botId,
@@ -59,10 +85,8 @@ async function startBot(botId: string, userId: string) {
       .select()
       .single();
 
-    if (execError) throw execError;
-
-    // Update bot status to starting
-    await supabase
+    // Update bot status to starting (non-blocking)
+    const statusUpdatePromise = supabase
       .from('bots')
       .update({
         runtime_status: 'starting',
@@ -71,39 +95,66 @@ async function startBot(botId: string, userId: string) {
       })
       .eq('id', botId);
 
-    // Start the actual Telegram bot
-    const result = await startTelegramBot(botId, bot.token, botCode);
+    // Wait for both operations with timeout
+    const [{ data: execution, error: execError }] = await Promise.race([
+      Promise.all([executionPromise, statusUpdatePromise]),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Database operations timeout')), 5000)
+      )
+    ]) as any;
+
+    if (execError) {
+      console.error('Failed to create execution record:', execError);
+      throw execError;
+    }
+
+    console.log(`Starting actual Telegram bot for ${botId}`);
+
+    // Start the actual Telegram bot with timeout
+    const botStartPromise = startTelegramBot(botId, bot.token, botCode);
+    const result = await Promise.race([
+      botStartPromise,
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Bot start timeout')), 10000)
+      )
+    ]) as any;
     
     const logsText = result.logs.join('\n') + '\n';
     
     if (result.success) {
-      // Update bot status to running
-      await supabase
+      // Update bot status to running (fire and forget)
+      supabase
         .from('bots')
         .update({
           runtime_status: 'running',
           runtime_logs: logsText,
-          container_id: `telegram-bot-${botId}` // Use a logical container ID
+          container_id: `telegram-bot-${botId}`
         })
-        .eq('id', botId);
+        .eq('id', botId)
+        .then(() => console.log(`Bot ${botId} marked as running`))
+        .catch(e => console.error(`Failed to update bot status:`, e));
 
-      await supabase
+      supabase
         .from('bot_executions')
         .update({
           status: 'running'
         })
-        .eq('id', execution.id);
+        .eq('id', execution.id)
+        .then(() => console.log(`Execution ${execution.id} marked as running`))
+        .catch(e => console.error(`Failed to update execution:`, e));
 
       return { success: true, executionId: execution.id, logs: result.logs };
     } else {
-      // Update bot status to error
-      await supabase
+      // Update bot status to error (fire and forget)
+      supabase
         .from('bots')
         .update({
           runtime_status: 'error',
           runtime_logs: logsText
         })
-        .eq('id', botId);
+        .eq('id', botId)
+        .then(() => console.log(`Bot ${botId} marked as error`))
+        .catch(e => console.error(`Failed to update bot error status:`, e));
 
       throw new Error(result.logs.join('\n'));
     }
@@ -111,13 +162,16 @@ async function startBot(botId: string, userId: string) {
   } catch (error) {
     console.error('Failed to start bot:', error);
     
-    await supabase
+    // Update bot status to error (fire and forget)
+    supabase
       .from('bots')
       .update({
         runtime_status: 'error',
         runtime_logs: `[${new Date().toISOString()}] Failed to start: ${error.message}\n`
       })
-      .eq('id', botId);
+      .eq('id', botId)
+      .then(() => console.log(`Bot ${botId} marked as error due to failure`))
+      .catch(e => console.error(`Failed to update bot error status:`, e));
 
     throw error;
   }
@@ -125,8 +179,10 @@ async function startBot(botId: string, userId: string) {
 
 async function stopBot(botId: string) {
   try {
-    // Get current execution
-    const { data: execution } = await supabase
+    console.log(`Stopping bot ${botId}`);
+
+    // Get current execution with timeout
+    const executionPromise = supabase
       .from('bot_executions')
       .select('id')
       .eq('bot_id', botId)
@@ -135,29 +191,41 @@ async function stopBot(botId: string) {
       .limit(1)
       .single();
 
+    const { data: execution } = await Promise.race([
+      executionPromise,
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Execution fetch timeout')), 3000)
+      )
+    ]) as any;
+
     // Stop the bot
     const result = stopTelegramBot(botId);
     const logsText = result.logs.join('\n') + '\n';
     
-    await supabase
+    // Update bot status (fire and forget)
+    supabase
       .from('bots')
       .update({
         runtime_status: 'stopped',
         runtime_logs: logsText,
         container_id: null
       })
-      .eq('id', botId);
+      .eq('id', botId)
+      .then(() => console.log(`Bot ${botId} marked as stopped`))
+      .catch(e => console.error(`Failed to update bot stop status:`, e));
 
-    // Update execution record
+    // Update execution record (fire and forget)
     if (execution) {
-      await supabase
+      supabase
         .from('bot_executions')
         .update({
           status: 'stopped',
           stopped_at: new Date().toISOString(),
           exit_code: 0
         })
-        .eq('id', execution.id);
+        .eq('id', execution.id)
+        .then(() => console.log(`Execution ${execution.id} marked as stopped`))
+        .catch(e => console.error(`Failed to update execution stop:`, e));
     }
 
     return { stopped: true, logs: result.logs };
@@ -166,25 +234,27 @@ async function stopBot(botId: string) {
     console.error('Failed to stop bot:', error);
     const errorLogs = `[${new Date().toISOString()}] Error stopping bot: ${error.message}\n`;
     
-    await supabase
+    // Update bot status to error (fire and forget)
+    supabase
       .from('bots')
       .update({
         runtime_status: 'error',
         runtime_logs: errorLogs
       })
-      .eq('id', botId);
+      .eq('id', botId)
+      .then(() => console.log(`Bot ${botId} marked as error during stop`))
+      .catch(e => console.error(`Failed to update bot error status:`, e));
     
     throw error;
   }
 }
 
 async function restartBot(botId: string, userId: string) {
+  console.log(`Restarting bot ${botId}`);
   await stopBot(botId);
-  // Wait a moment before restarting
-  setTimeout(async () => {
-    await startBot(botId, userId);
-  }, 2000);
-  return { restarting: true };
+  // Small delay before restart
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  return await startBot(botId, userId);
 }
 
 async function streamLogs(botId: string) {
@@ -192,12 +262,15 @@ async function streamLogs(botId: string) {
     const logs = getBotLogs(botId);
     const logsText = logs.join('\n') + '\n';
     
-    await supabase
+    // Update logs (fire and forget)
+    supabase
       .from('bots')
       .update({
         runtime_logs: logsText
       })
-      .eq('id', botId);
+      .eq('id', botId)
+      .then(() => console.log(`Logs updated for bot ${botId}`))
+      .catch(e => console.error(`Failed to update logs:`, e));
 
     return { logs: logsText };
   } catch (error) {
@@ -211,12 +284,16 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
+  
   try {
     const { action, botId, userId } = await req.json();
 
     if (!action || !botId) {
       throw new Error('Missing required parameters: action and botId are required');
     }
+
+    console.log(`Processing action: ${action} for bot: ${botId}`);
 
     let result;
     switch (action) {
@@ -238,20 +315,26 @@ serve(async (req) => {
         throw new Error(`Unknown action: ${action}`);
     }
 
+    const duration = Date.now() - startTime;
+    console.log(`Action ${action} completed in ${duration}ms`);
+
     return new Response(JSON.stringify({
       success: true,
       action,
-      result
+      result,
+      duration
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
   } catch (error) {
-    console.error('Error in manage-bot-runtime function:', error);
+    const duration = Date.now() - startTime;
+    console.error(`Error in manage-bot-runtime function after ${duration}ms:`, error);
     
     return new Response(JSON.stringify({ 
       error: error.message,
-      success: false 
+      success: false,
+      duration 
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -36,7 +36,7 @@ export async function deployAndStartBot(botId: string, userId: string, files: Re
 
     console.log(`Deploying bot ${botId} using Deno runtime`);
     
-    // Use simple Deno deployment (avoid Kubernetes for now due to process dependency issues)
+    // Update bot status to preparing
     await supabase
       .from('bots')
       .update({
@@ -50,91 +50,64 @@ export async function deployAndStartBot(botId: string, userId: string, files: Re
       })
       .eq('id', botId);
 
-    // If bot was running before, restart it with new code
-    if (currentRuntimeStatus === 'running' || currentRuntimeStatus === 'starting') {
-      console.log(`Bot was running, initiating restart with new code...`);
-      
-      // Use a shorter timeout to make the restart more responsive
-      setTimeout(async () => {
-        try {
-          // First stop the existing bot
+    // Start bot asynchronously to avoid timeout issues
+    console.log(`Scheduling bot ${botId} for auto-start...`);
+    
+    // Use a very short timeout to avoid gateway timeout
+    setTimeout(async () => {
+      try {
+        console.log(`Auto-starting bot ${botId} with new code`);
+        
+        // First stop any existing instance
+        if (currentRuntimeStatus === 'running' || currentRuntimeStatus === 'starting') {
           console.log(`Stopping existing bot ${botId} before restart...`);
-          const { error: stopError } = await supabase.functions.invoke('manage-bot-runtime', {
-            body: {
-              action: 'stop',
-              botId
-            }
-          });
+          
+          try {
+            const { error: stopError } = await Promise.race([
+              supabase.functions.invoke('manage-bot-runtime', {
+                body: {
+                  action: 'stop',
+                  botId
+                }
+              }),
+              new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Stop timeout')), 8000)
+              )
+            ]) as any;
 
-          if (stopError) {
-            console.error('Failed to stop bot before restart:', stopError);
+            if (stopError) {
+              console.error('Failed to stop bot before restart:', stopError);
+            } else {
+              console.log(`Bot ${botId} stopped successfully`);
+            }
+          } catch (stopError) {
+            console.error('Stop operation timed out:', stopError);
+            // Continue with start anyway
           }
 
           // Wait for stop to complete
           await new Promise(resolve => setTimeout(resolve, 2000));
-
-          // Then start with new code
-          console.log(`Starting bot ${botId} with updated code...`);
-          const { data: runtimeData, error: runtimeError } = await supabase.functions.invoke('manage-bot-runtime', {
-            body: {
-              action: 'start',
-              botId,
-              userId
-            }
-          });
-
-          if (runtimeError) {
-            console.error('Failed to restart bot with new code:', runtimeError);
-            await supabase
-              .from('bots')
-              .update({
-                runtime_status: 'error',
-                runtime_logs: `[${new Date().toISOString()}] Deployment completed but failed to restart: ${runtimeError.message}\n`
-              })
-              .eq('id', botId);
-          } else if (runtimeData?.success) {
-            console.log('Bot restarted successfully with new code');
-            await supabase
-              .from('bots')
-              .update({
-                runtime_logs: `[${new Date().toISOString()}] Bot restarted successfully with updated code\n`
-              })
-              .eq('id', botId);
-          }
-
-        } catch (error) {
-          console.error('Failed to restart bot with new code:', error);
-          await supabase
-            .from('bots')
-            .update({
-              runtime_status: 'error',
-              runtime_logs: `[${new Date().toISOString()}] Deployment completed but failed to restart: ${error.message}\n`
-            })
-            .eq('id', botId);
         }
-      }, 1000); // Reduced timeout to 1 second for faster response
 
-      return { 
-        executionId: execution.id, 
-        deploymentType: 'deno',
-        restartInitiated: true 
-      };
-    } else {
-      // Bot wasn't running, just auto-start it
-      setTimeout(async () => {
+        // Start the bot with timeout protection
+        console.log(`Starting bot ${botId} with updated code...`);
+        
         try {
-          console.log(`Auto-starting bot ${botId} with new code`);
-          
-          const { data: runtimeData, error: runtimeError } = await supabase.functions.invoke('manage-bot-runtime', {
-            body: {
-              action: 'start',
-              botId,
-              userId
-            }
-          });
+          const { data: runtimeData, error: runtimeError } = await Promise.race([
+            supabase.functions.invoke('manage-bot-runtime', {
+              body: {
+                action: 'start',
+                botId,
+                userId
+              }
+            }),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Start timeout')), 15000)
+            )
+          ]) as any;
 
           if (runtimeError) {
-            console.error('Failed to auto-start bot:', runtimeError);
+            console.error('Failed to start bot with new code:', runtimeError);
             await supabase
               .from('bots')
               .update({
@@ -143,27 +116,45 @@ export async function deployAndStartBot(botId: string, userId: string, files: Re
               })
               .eq('id', botId);
           } else if (runtimeData?.success) {
-            console.log('Bot auto-start initiated successfully');
+            console.log('Bot started successfully with new code');
+            await supabase
+              .from('bots')
+              .update({
+                runtime_logs: `[${new Date().toISOString()}] Bot restarted successfully with updated code\n`
+              })
+              .eq('id', botId);
+          } else {
+            console.log('Bot start completed but with issues');
           }
 
-        } catch (error) {
-          console.error('Failed to auto-start bot:', error);
+        } catch (startError) {
+          console.error('Start operation timed out or failed:', startError);
           await supabase
             .from('bots')
             .update({
               runtime_status: 'error',
-              runtime_logs: `[${new Date().toISOString()}] Deployment completed but failed to start: ${error.message}\n`
+              runtime_logs: `[${new Date().toISOString()}] Deployment completed but failed to start: ${startError.message}\n`
             })
             .eq('id', botId);
         }
-      }, 1000); // Reduced timeout to 1 second for faster response
 
-      return { 
-        executionId: execution.id, 
-        deploymentType: 'deno',
-        autoStartInitiated: true 
-      };
-    }
+      } catch (error) {
+        console.error('Failed in auto-start process:', error);
+        await supabase
+          .from('bots')
+          .update({
+            runtime_status: 'error',
+            runtime_logs: `[${new Date().toISOString()}] Auto-start failed: ${error.message}\n`
+          })
+          .eq('id', botId);
+      }
+    }, 500); // Very short delay to return response quickly
+
+    return { 
+      executionId: execution.id, 
+      deploymentType: 'deno',
+      autoStartScheduled: true 
+    };
 
   } catch (error) {
     console.error('Deployment failed:', error);
