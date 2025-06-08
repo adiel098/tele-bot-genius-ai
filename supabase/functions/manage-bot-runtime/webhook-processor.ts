@@ -23,7 +23,7 @@ export async function processWebhook(botId: string, webhookData: any, token: str
       // Send fallback response
       if (webhookData.message) {
         const chatId = webhookData.message.chat.id;
-        const fallbackMessage = "🚧 I'm currently offline. My Python container is not running. Please contact the administrator.";
+        const fallbackMessage = "🚧 I'm currently offline. My Python container is not running. Please contact the bot administrator.";
         
         await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
           method: 'POST',
@@ -33,7 +33,18 @@ export async function processWebhook(botId: string, webhookData: any, token: str
             text: fallbackMessage
           })
         });
+        
+        logs.push(BotLogger.log(botId, 'Sent offline message to user'));
       }
+      
+      // Update bot logs in database
+      await supabase
+        .from('bots')
+        .update({
+          runtime_logs: logs.join('\n'),
+          last_activity: new Date().toISOString()
+        })
+        .eq('id', botId);
       
       return { success: false, logs };
     }
@@ -45,6 +56,15 @@ export async function processWebhook(botId: string, webhookData: any, token: str
     try {
       // Execute real Python bot logic in container
       const pythonBotResponse = await executeRealPythonBotLogic(botId, webhookData, token, containerStatus.containerId, logs);
+      
+      // Update bot logs in database
+      await supabase
+        .from('bots')
+        .update({
+          runtime_logs: logs.join('\n'),
+          last_activity: new Date().toISOString()
+        })
+        .eq('id', botId);
       
       if (pythonBotResponse.success) {
         logs.push(BotLogger.logSuccess('✅ Real Python bot processed webhook successfully'));
@@ -70,13 +90,36 @@ export async function processWebhook(botId: string, webhookData: any, token: str
             text: fallbackMessage
           })
         });
+        
+        logs.push(BotLogger.log(botId, 'Sent error message to user'));
       }
+      
+      // Update bot logs in database
+      await supabase
+        .from('bots')
+        .update({
+          runtime_logs: logs.join('\n'),
+          runtime_status: 'error',
+          last_activity: new Date().toISOString()
+        })
+        .eq('id', botId);
       
       return { success: false, logs };
     }
     
   } catch (error) {
     logs.push(BotLogger.logError(`❌ Error processing webhook: ${error.message}`));
+    
+    // Update bot logs in database
+    await supabase
+      .from('bots')
+      .update({
+        runtime_logs: logs.join('\n'),
+        runtime_status: 'error',
+        last_activity: new Date().toISOString()
+      })
+      .eq('id', botId);
+    
     return { success: false, logs };
   }
 }

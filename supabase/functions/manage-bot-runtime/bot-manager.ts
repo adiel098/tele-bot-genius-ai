@@ -1,3 +1,4 @@
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
 import { RealDockerManager } from './real-docker-manager.ts';
 import { BotLogger } from './logger.ts';
@@ -32,20 +33,34 @@ export async function startBot(botId: string, userId: string): Promise<{ success
       return { success: true, logs };
     }
 
-    // Get bot's actual main.py code from storage
+    // Get bot's actual main.py code from storage - try both buckets
     logs.push(BotLogger.log(botId, 'Fetching bot\'s main.py from storage...'));
+    
+    let actualBotCode = '';
+    
+    // First try bot-code bucket
     const { data: codeFile, error: codeError } = await supabase.storage
       .from('bot-code')
       .download(`${botId}/main.py`);
 
-    let actualBotCode = '';
     if (codeError || !codeFile) {
-      logs.push(BotLogger.logWarning(`Could not fetch main.py: ${codeError?.message}`));
-      logs.push(BotLogger.log(botId, 'Using fallback template code'));
-      // actualBotCode remains empty string, will use fallback in generator
+      logs.push(BotLogger.logWarning(`Could not fetch from bot-code: ${codeError?.message}`));
+      
+      // Try bot-files bucket as fallback
+      const { data: fallbackFile, error: fallbackError } = await supabase.storage
+        .from('bot-files')
+        .download(`${userId}/${botId}/main.py`);
+        
+      if (fallbackError || !fallbackFile) {
+        logs.push(BotLogger.logWarning(`Could not fetch from bot-files: ${fallbackError?.message}`));
+        logs.push(BotLogger.log(botId, 'Using fallback template code'));
+      } else {
+        actualBotCode = await fallbackFile.text();
+        logs.push(BotLogger.log(botId, `Bot's main.py loaded from bot-files: ${actualBotCode.length} characters`));
+      }
     } else {
       actualBotCode = await codeFile.text();
-      logs.push(BotLogger.log(botId, `Bot's main.py loaded: ${actualBotCode.length} characters`));
+      logs.push(BotLogger.log(botId, `Bot's main.py loaded from bot-code: ${actualBotCode.length} characters`));
     }
 
     // Create and start real Docker container with the bot's actual code
@@ -57,7 +72,7 @@ export async function startBot(botId: string, userId: string): Promise<{ success
       return { success: false, logs, error: dockerResult.error };
     }
 
-    // Update bot status in database
+    // Update bot status in database with detailed logs
     await supabase
       .from('bots')
       .update({
@@ -73,6 +88,17 @@ export async function startBot(botId: string, userId: string): Promise<{ success
 
   } catch (error) {
     logs.push(BotLogger.logError(`Error starting bot: ${error.message}`));
+    
+    // Update bot status to error in database
+    await supabase
+      .from('bots')
+      .update({
+        runtime_status: 'error',
+        runtime_logs: logs.join('\n'),
+        last_activity: new Date().toISOString()
+      })
+      .eq('id', botId);
+      
     return { success: false, logs, error: error.message };
   }
 }
@@ -144,9 +170,23 @@ export async function streamLogs(botId: string): Promise<{ success: boolean; log
     // Get real-time logs from Docker container
     const containerLogs = await RealDockerManager.getContainerLogs(botId);
     
+    // Also get logs from database
+    const { data: bot } = await supabase
+      .from('bots')
+      .select('runtime_logs, runtime_status')
+      .eq('id', botId)
+      .single();
+    
+    const allLogs = [
+      BotLogger.logSection('LIVE DOCKER CONTAINER LOGS'),
+      ...containerLogs,
+      BotLogger.logSection('DATABASE STORED LOGS'),
+      ...(bot?.runtime_logs ? bot.runtime_logs.split('\n') : ['No database logs available'])
+    ];
+    
     return {
       success: true,
-      logs: containerLogs
+      logs: allLogs
     };
 
   } catch (error) {

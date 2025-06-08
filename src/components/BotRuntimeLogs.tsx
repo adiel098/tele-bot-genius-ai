@@ -20,7 +20,9 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate }: BotRuntimeLogsProps) => {
   const checkForErrors = (logText: string) => {
     return logText.includes('[ERROR]') || 
            logText.includes('Error:') || 
-           logText.includes('Failed to');
+           logText.includes('Failed to') ||
+           logText.includes('offline') ||
+           logText.includes('administrator');
   };
 
   const fetchLogs = async () => {
@@ -33,10 +35,26 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate }: BotRuntimeLogsProps) => {
 
       if (error) {
         console.error('Error fetching logs:', error);
+        const errorMessage = "Error loading logs: " + error.message;
+        setLogs(errorMessage);
+        if (onLogsUpdate) {
+          onLogsUpdate(errorMessage, true);
+        }
         return;
       }
 
-      const logText = data.runtime_logs || "No logs available";
+      let logText = "No logs available";
+      
+      if (data.runtime_logs && data.runtime_logs.trim()) {
+        logText = data.runtime_logs;
+      } else if (data.runtime_status === 'creating') {
+        logText = "Bot is being created... Please wait.";
+      } else if (data.runtime_status === 'stopped') {
+        logText = "Bot is stopped. Click 'Restart' to start the bot.";
+      } else if (data.runtime_status === 'error') {
+        logText = "Bot encountered an error. Check the logs above for details.";
+      }
+      
       setLogs(logText);
       
       // Check if there are errors in the logs
@@ -48,9 +66,10 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate }: BotRuntimeLogsProps) => {
       }
     } catch (error) {
       console.error('Error:', error);
-      setLogs("Error loading logs");
+      const errorMessage = "Error loading logs: " + error.message;
+      setLogs(errorMessage);
       if (onLogsUpdate) {
-        onLogsUpdate("Error loading logs", true);
+        onLogsUpdate(errorMessage, true);
       }
     }
   };
@@ -102,8 +121,20 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate }: BotRuntimeLogsProps) => {
           filter: `id=eq.${botId}`
         },
         (payload) => {
-          if (payload.new?.runtime_logs) {
-            const logText = payload.new.runtime_logs;
+          if (payload.new?.runtime_logs !== undefined) {
+            let logText = payload.new.runtime_logs || "No logs available";
+            
+            // Add status-based messages if no logs
+            if (!logText.trim() || logText === "No logs available") {
+              if (payload.new.runtime_status === 'creating') {
+                logText = "Bot is being created... Please wait.";
+              } else if (payload.new.runtime_status === 'stopped') {
+                logText = "Bot is stopped. Click 'Restart' to start the bot.";
+              } else if (payload.new.runtime_status === 'error') {
+                logText = "Bot encountered an error. Please check the configuration.";
+              }
+            }
+            
             setLogs(logText);
             
             const hasErrorsInLogs = checkForErrors(logText) || payload.new.runtime_status === 'error';
@@ -126,13 +157,13 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate }: BotRuntimeLogsProps) => {
       if (line.trim() === '') return null;
       
       let className = "text-gray-700";
-      if (line.includes('[ERROR]') || line.includes('Error:') || line.includes('Failed to')) {
+      if (line.includes('[ERROR]') || line.includes('Error:') || line.includes('Failed to') || line.includes('offline') || line.includes('administrator')) {
         className = "text-red-600 font-medium";
       } else if (line.includes('[WARN]') || line.includes('Warning:')) {
         className = "text-yellow-600";
-      } else if (line.includes('[INFO]') || line.includes('Container')) {
+      } else if (line.includes('[INFO]') || line.includes('Container') || line.includes('started') || line.includes('SUCCESS')) {
         className = "text-blue-600";
-      } else if (line.includes('successfully') || line.includes('started')) {
+      } else if (line.includes('successfully') || line.includes('✅')) {
         className = "text-green-600";
       }
       
@@ -166,7 +197,7 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate }: BotRuntimeLogsProps) => {
         <ScrollArea className="h-[300px]">
           <div className="space-y-1 p-2 bg-gray-50 rounded-md">
             {logs ? formatLogs(logs) : (
-              <div className="text-gray-500 text-sm">No logs available</div>
+              <div className="text-gray-500 text-sm">Loading logs...</div>
             )}
           </div>
         </ScrollArea>
