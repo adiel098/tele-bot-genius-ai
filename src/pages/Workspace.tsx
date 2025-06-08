@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -192,6 +193,10 @@ const Workspace = () => {
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  const handleSendMessage = () => {
+    sendMessage();
   };
 
   const handleFixByAI = async (errorLogs: string) => {
@@ -406,13 +411,13 @@ Please provide working, corrected code.`;
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && !e.shiftKey) {
                             e.preventDefault();
-                            sendMessage();
+                            handleSendMessage();
                           }
                         }}
                         className="flex-1"
                         rows={2}
                       />
-                      <Button onClick={sendMessage} disabled={!newMessage.trim() || isGenerating}>
+                      <Button onClick={handleSendMessage} disabled={!newMessage.trim() || isGenerating}>
                         <Send className="h-4 w-4" />
                       </Button>
                     </div>
