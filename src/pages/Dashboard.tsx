@@ -1,10 +1,9 @@
+
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ArrowRight, LogOut } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { BotCard } from "@/components/BotCard";
-import { BotLogs } from "@/components/BotLogs";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -20,7 +19,6 @@ interface Bot {
 }
 
 const Dashboard = () => {
-  const [selectedBot, setSelectedBot] = useState<string | null>(null);
   const [bots, setBots] = useState<Bot[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -49,8 +47,8 @@ const Dashboard = () => {
         if (error) {
           console.error('Error fetching bots:', error);
           toast({
-            title: "שגיאה",
-            description: "לא ניתן לטעון את הבוטים",
+            title: "Error",
+            description: "Could not load bots",
             variant: "destructive",
           });
         } else {
@@ -71,14 +69,35 @@ const Dashboard = () => {
     navigate("/");
   };
 
-  const runningBots = bots.filter(bot => bot.status === "active").length;
-  const totalMessages = bots.reduce((sum, bot) => {
-    const history = bot.conversation_history;
-    if (Array.isArray(history)) {
-      return sum + history.length;
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "active": return "bg-green-100 text-green-800 border-green-200";
+      case "creating": return "bg-yellow-100 text-yellow-800 border-yellow-200";
+      case "stopped": return "bg-gray-100 text-gray-800 border-gray-200";
+      case "error": return "bg-red-100 text-red-800 border-red-200";
+      default: return "bg-gray-100 text-gray-800 border-gray-200";
     }
-    return sum;
-  }, 0);
+  };
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case "active": return "Running";
+      case "creating": return "Deploying";
+      case "stopped": return "Stopped";
+      case "error": return "Error";
+      default: return "Unknown";
+    }
+  };
+
+  const getStatusDetails = (status: string) => {
+    switch (status) {
+      case "active": return "1,247 messages handled";
+      case "creating": return "Setting up...";
+      case "stopped": return "Inactive";
+      case "error": return "Needs attention";
+      default: return "";
+    }
+  };
 
   if (loading) {
     return (
@@ -87,7 +106,7 @@ const Dashboard = () => {
           <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center animate-pulse">
             <span className="text-white text-2xl">🤖</span>
           </div>
-          <p className="text-gray-600">טוען...</p>
+          <p className="text-gray-600">Loading...</p>
         </div>
       </div>
     );
@@ -108,15 +127,15 @@ const Dashboard = () => {
           </Link>
           
           <div className="flex items-center space-x-4">
-            <Link to="/create">
+            <Link to="/">
               <Button className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white">
-                צור בוט חדש
+                Create New Bot
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </Link>
             <Button variant="outline" onClick={handleSignOut}>
-              <LogOut className="h-4 w-4 ml-2" />
-              התנתק
+              <LogOut className="h-4 w-4 mr-2" />
+              Sign Out
             </Button>
           </div>
         </div>
@@ -125,97 +144,60 @@ const Dashboard = () => {
       <div className="max-w-7xl mx-auto px-6 py-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">דשבורד</h1>
-          <p className="text-gray-600">נהל ועקוב אחר הבוטים שלך</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">TeleBot AI Dashboard</h1>
+          <p className="text-gray-600">Manage and monitor your bots</p>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">סך הכל בוטים</p>
-                  <p className="text-2xl font-bold text-gray-900">{bots.length}</p>
-                </div>
-                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <span className="text-2xl">🤖</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">בוטים פעילים</p>
-                  <p className="text-2xl font-bold text-green-600">{runningBots}</p>
-                </div>
-                <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                  <span className="text-2xl">✅</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">הודעות שטופלו</p>
-                  <p className="text-2xl font-bold text-blue-600">{totalMessages.toLocaleString()}</p>
-                </div>
-                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <span className="text-2xl">💬</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Bots List */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div>
-            <h2 className="text-xl font-bold text-gray-900 mb-4">הבוטים שלך</h2>
-            <div className="space-y-4">
-              {bots.map((bot) => (
-                <BotCard 
-                  key={bot.id} 
-                  bot={{
-                    id: bot.id,
-                    name: bot.name,
-                    status: bot.status as "running" | "stopped" | "error" | "deploying",
-                    description: "בוט AI מותאם אישית",
-                    createdAt: bot.created_at,
-                    messagesHandled: Array.isArray(bot.conversation_history) ? bot.conversation_history.length : 0,
-                    lastActivity: "לפני דקות ספורות",
-                  }} 
-                  onViewLogs={() => setSelectedBot(bot.id)}
-                  isSelected={selectedBot === bot.id}
-                />
-              ))}
-              
-              {bots.length === 0 && (
-                <Card className="border-dashed border-2 border-gray-300">
-                  <CardContent className="p-12 text-center">
-                    <div className="text-4xl mb-4">🤖</div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">עדיין אין בוטים</h3>
-                    <p className="text-gray-600 mb-4">צור את הבוט הראשון שלך כדי להתחיל</p>
-                    <Link to="/create">
-                      <Button>צור את הבוט הראשון שלך</Button>
-                    </Link>
-                  </CardContent>
-                </Card>
-              )}
+        {bots.length === 0 ? (
+          /* Empty State */
+          <div className="text-center py-20">
+            <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center">
+              <span className="text-white text-2xl">🤖</span>
             </div>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">No bots yet</h3>
+            <p className="text-gray-600 mb-6">Create your first bot to get started</p>
+            <Link to="/">
+              <Button className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white">
+                Create Your First Bot
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </Link>
           </div>
-
-          <div>
-            <h2 className="text-xl font-bold text-gray-900 mb-4">לוגים חיים</h2>
-            <BotLogs selectedBotId={selectedBot} />
+        ) : (
+          /* Bots Grid */
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {bots.map((bot) => (
+              <Card key={bot.id} className="transition-all duration-300 hover:shadow-lg hover:-translate-y-1">
+                <CardContent className="p-6">
+                  <div className="flex items-start justify-between mb-4">
+                    <div>
+                      <h3 className="font-bold text-lg text-gray-900 mb-1">
+                        {bot.name}
+                      </h3>
+                      <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(bot.status)}`}>
+                        {getStatusText(bot.status)}
+                      </div>
+                    </div>
+                    <div className="w-3 h-3 rounded-full bg-green-400"></div>
+                  </div>
+                  
+                  <p className="text-gray-600 text-sm mb-4">
+                    {getStatusDetails(bot.status)}
+                  </p>
+                  
+                  <div className="flex space-x-2">
+                    <Button size="sm" variant="outline" className="flex-1">
+                      View Logs
+                    </Button>
+                    <Button size="sm" variant="outline">
+                      Edit
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
