@@ -21,14 +21,18 @@ export async function generateBotCode(prompt: string, botToken?: string): Promis
     7. Handle common Telegram bot scenarios (start, help, error handling)
     8. Make the bot robust and production-ready
     9. CRITICAL: Always create a .env file with the actual bot token provided by the user
+    10. Include health check endpoint for containerized deployments
+    11. Add proper logging for monitoring and debugging
+    12. Implement graceful shutdown handling
     
     Return your response as a JSON object with this structure:
     {
       "files": {
-        "main.py": "# Main bot code here",
-        "requirements.txt": "python-telegram-bot==20.7\\nrequests==2.31.0",
+        "main.py": "# Main bot code with health checks and proper error handling",
+        "requirements.txt": "python-telegram-bot==20.7\\nrequests==2.31.0\\nflask==2.3.3",
         "config.py": "# Configuration file",
         "handlers.py": "# Message handlers",
+        "health.py": "# Health check endpoints for container orchestration",
         ".env": "BOT_TOKEN=actual_bot_token_here",
         ".env.example": "BOT_TOKEN=your_bot_token_here"
       },
@@ -38,7 +42,9 @@ export async function generateBotCode(prompt: string, botToken?: string): Promis
     CRITICAL: 
     - Return ONLY the JSON object, no markdown code blocks, no additional text.
     - Always include both .env (with the actual token) and .env.example (with placeholder) files
-    - The .env file MUST contain the actual bot token provided by the user`;
+    - The .env file MUST contain the actual bot token provided by the user
+    - Include health.py for container health checks and monitoring
+    - Add proper logging configuration for production deployments`;
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -92,6 +98,11 @@ export async function generateBotCode(prompt: string, botToken?: string): Promis
       result.files['.env'] = `BOT_TOKEN=${botToken}\nLOG_LEVEL=INFO`;
     }
     
+    // Add health check if not present
+    if (result.files && !result.files['health.py']) {
+      result.files['health.py'] = generateHealthCheckFile();
+    }
+    
     return result;
   } catch (error) {
     console.error('Failed to parse GPT response as JSON:', error);
@@ -110,6 +121,11 @@ export async function generateBotCode(prompt: string, botToken?: string): Promis
           result.files['.env'] = `BOT_TOKEN=${botToken}\nLOG_LEVEL=INFO`;
         }
         
+        // Add health check if not present
+        if (result.files && !result.files['health.py']) {
+          result.files['health.py'] = generateHealthCheckFile();
+        }
+        
         return result;
       } catch (extractError) {
         console.error('Failed to parse extracted JSON:', extractError);
@@ -120,7 +136,8 @@ export async function generateBotCode(prompt: string, botToken?: string): Promis
     const fallbackResult = {
       files: {
         "main.py": `# Generated bot code\n# Original prompt: ${prompt}\n\n${cleanedContent}`,
-        "requirements.txt": "python-telegram-bot==20.7\nrequests==2.31.0",
+        "requirements.txt": "python-telegram-bot==20.7\nrequests==2.31.0\nflask==2.3.3",
+        "health.py": generateHealthCheckFile(),
         ".env.example": "BOT_TOKEN=your_bot_token_here\nLOG_LEVEL=INFO"
       },
       explanation: "Generated bot code (fallback due to parsing error)"
@@ -133,4 +150,64 @@ export async function generateBotCode(prompt: string, botToken?: string): Promis
     
     return fallbackResult;
   }
+}
+
+function generateHealthCheckFile(): string {
+  return `
+import os
+import time
+import logging
+from flask import Flask, jsonify
+from threading import Thread
+
+app = Flask(__name__)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint for container orchestration"""
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': int(time.time()),
+        'bot_token_configured': bool(os.getenv('BOT_TOKEN'))
+    }), 200
+
+@app.route('/ready')
+def readiness_check():
+    """Readiness check endpoint"""
+    bot_token = os.getenv('BOT_TOKEN')
+    if bot_token:
+        return jsonify({
+            'status': 'ready',
+            'timestamp': int(time.time())
+        }), 200
+    else:
+        return jsonify({
+            'status': 'not ready',
+            'error': 'BOT_TOKEN not configured',
+            'timestamp': int(time.time())
+        }), 503
+
+def run_health_server():
+    """Run health check server in background thread"""
+    try:
+        app.run(host='0.0.0.0', port=8080, debug=False)
+    except Exception as e:
+        logger.error(f"Health server failed: {e}")
+
+def start_health_server():
+    """Start health check server in background thread"""
+    health_thread = Thread(target=run_health_server, daemon=True)
+    health_thread.start()
+    logger.info("Health check server started on port 8080")
+
+if __name__ == '__main__':
+    start_health_server()
+`;
 }

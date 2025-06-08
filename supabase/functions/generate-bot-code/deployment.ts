@@ -1,5 +1,6 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
+import { deployToKubernetes } from './kubernetes.ts';
 import type { DeploymentInfo } from './types.ts';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -24,12 +25,22 @@ export async function deployAndStartBot(botId: string, userId: string, files: Re
       throw execError;
     }
 
+    // Get bot data to determine deployment type
+    const { data: bot } = await supabase
+      .from('bots')
+      .select('name, deployment_type')
+      .eq('id', botId)
+      .single();
+
+    const botName = bot?.name || 'AI Bot';
+    const deploymentType = bot?.deployment_type || 'docker'; // default to docker for backwards compatibility
+
     // Update bot status to indicate deployment is starting
     const { error: updateError } = await supabase
       .from('bots')
       .update({
-        runtime_status: 'starting',
-        runtime_logs: `[${new Date().toISOString()}] Preparing bot deployment...\n[${new Date().toISOString()}] Files uploaded to storage\n[${new Date().toISOString()}] Ready for Docker container creation\n`,
+        runtime_status: 'preparing',
+        runtime_logs: `[${new Date().toISOString()}] Preparing bot deployment...\n[${new Date().toISOString()}] Files uploaded to storage\n[${new Date().toISOString()}] Deployment type: ${deploymentType}\n`,
         last_restart: new Date().toISOString()
       })
       .eq('id', botId);
@@ -39,46 +50,59 @@ export async function deployAndStartBot(botId: string, userId: string, files: Re
       throw updateError;
     }
 
-    // Auto-start the bot using the runtime management function
-    setTimeout(async () => {
-      try {
-        console.log(`Auto-starting bot ${botId} after deployment`);
-        
-        // Call the runtime management function to start the bot
-        const { data: runtimeData, error: runtimeError } = await supabase.functions.invoke('manage-bot-runtime', {
-          body: {
-            action: 'start',
-            botId,
-            userId
-          }
-        });
+    let deploymentResult;
 
-        if (runtimeError) {
-          console.error('Failed to auto-start bot:', runtimeError);
+    // Choose deployment strategy based on configuration
+    if (deploymentType === 'kubernetes') {
+      console.log(`Preparing Kubernetes deployment for bot ${botId}`);
+      deploymentResult = await deployToKubernetes(botId, userId, botName, files);
+    } else {
+      // Default Docker deployment (existing functionality)
+      console.log(`Preparing Docker deployment for bot ${botId}`);
+      
+      // Auto-start the bot using the runtime management function
+      setTimeout(async () => {
+        try {
+          console.log(`Auto-starting bot ${botId} after deployment`);
+          
+          // Call the runtime management function to start the bot
+          const { data: runtimeData, error: runtimeError } = await supabase.functions.invoke('manage-bot-runtime', {
+            body: {
+              action: 'start',
+              botId,
+              userId
+            }
+          });
+
+          if (runtimeError) {
+            console.error('Failed to auto-start bot:', runtimeError);
+            await supabase
+              .from('bots')
+              .update({
+                runtime_status: 'error',
+                runtime_logs: `[${new Date().toISOString()}] Deployment completed but failed to start: ${runtimeError.message}\n`
+              })
+              .eq('id', botId);
+          } else if (runtimeData?.success) {
+            console.log('Bot auto-start initiated successfully');
+          }
+
+        } catch (error) {
+          console.error('Failed to auto-start bot:', error);
           await supabase
             .from('bots')
             .update({
               runtime_status: 'error',
-              runtime_logs: `[${new Date().toISOString()}] Deployment completed but failed to start: ${runtimeError.message}\n`
+              runtime_logs: `[${new Date().toISOString()}] Deployment completed but failed to start: ${error.message}\n`
             })
             .eq('id', botId);
-        } else if (runtimeData?.success) {
-          console.log('Bot auto-start initiated successfully');
         }
+      }, 2000); // Start the bot 2 seconds after deployment
 
-      } catch (error) {
-        console.error('Failed to auto-start bot:', error);
-        await supabase
-          .from('bots')
-          .update({
-            runtime_status: 'error',
-            runtime_logs: `[${new Date().toISOString()}] Deployment completed but failed to start: ${error.message}\n`
-          })
-          .eq('id', botId);
-      }
-    }, 2000); // Start the bot 2 seconds after deployment
+      deploymentResult = { executionId: execution.id, autoStartInitiated: true };
+    }
 
-    return { executionId: execution.id, autoStartInitiated: true };
+    return deploymentResult;
   } catch (error) {
     console.error('Deployment failed:', error);
     
