@@ -1,3 +1,4 @@
+
 import { startTelegramBot, stopTelegramBot, getBotLogs } from './bot-executor.ts';
 import { 
   getBotData, 
@@ -20,47 +21,77 @@ export async function startBotOperation(botId: string, userId: string): Promise<
   const startTime = Date.now();
   
   try {
+    console.log(`[${new Date().toISOString()}] ========== START BOT OPERATION BEGIN ==========`);
+    console.log(`[${new Date().toISOString()}] Bot ID: ${botId}`);
+    console.log(`[${new Date().toISOString()}] User ID: ${userId}`);
+    
     LoggingUtils.logOperation('START BOT REQUEST', botId, { 'User ID': userId });
     
     // Get bot data
+    console.log(`[${new Date().toISOString()}] Step 1: Getting bot data from database...`);
     const bot = await getBotData(botId, userId);
     console.log(`[${new Date().toISOString()}] Bot found: ${bot.name}`);
     console.log(`[${new Date().toISOString()}] Token available: ${bot.token ? 'YES' : 'NO'}`);
+    console.log(`[${new Date().toISOString()}] Current bot status in DB: ${bot.status || 'undefined'}`);
+    console.log(`[${new Date().toISOString()}] Current runtime_status in DB: ${bot.runtime_status || 'undefined'}`);
 
     // Get latest files
+    console.log(`[${new Date().toISOString()}] Step 2: Getting bot files...`);
     const mainCode = await getBotFiles(userId, botId);
-    console.log(`[${new Date().toISOString()}] Loaded code from files`);
+    console.log(`[${new Date().toISOString()}] Loaded code from files, length: ${mainCode.length} characters`);
 
-    console.log(`[${new Date().toISOString()}] Calling startTelegramBot...`);
+    console.log(`[${new Date().toISOString()}] Step 3: Calling startTelegramBot...`);
     
     // Start the bot using real Docker containers
     const result = await startTelegramBot(botId, bot.token, mainCode);
+    
+    console.log(`[${new Date().toISOString()}] Step 4: startTelegramBot completed`);
+    console.log(`[${new Date().toISOString()}] Result success: ${result.success}`);
+    console.log(`[${new Date().toISOString()}] Result containerId: ${result.containerId || 'undefined'}`);
+    console.log(`[${new Date().toISOString()}] Result logs count: ${result.logs?.length || 0}`);
     
     const duration = Date.now() - startTime;
     LoggingUtils.logCompletion('BOT START', duration, result.success);
 
     if (result.success) {
+      console.log(`[${new Date().toISOString()}] Step 5a: Bot started successfully, updating status to RUNNING...`);
+      console.log(`[${new Date().toISOString()}] Container ID to store: ${result.containerId}`);
+      
       // Update bot status with container info - ONLY set to 'running' if actually started
       await updateBotStatus(botId, 'running', result.logs || [], result.containerId);
+      console.log(`[${new Date().toISOString()}] Database updated with RUNNING status`);
       
       // Create execution record
+      console.log(`[${new Date().toISOString()}] Creating execution record...`);
       await createBotExecution(botId, userId, 'running', result.logs || []);
+      console.log(`[${new Date().toISOString()}] Execution record created`);
       
       console.log(`[${new Date().toISOString()}] Bot marked as RUNNING with container: ${result.containerId}`);
     } else {
+      console.log(`[${new Date().toISOString()}] Step 5b: Bot start FAILED, updating status to ERROR...`);
+      console.log(`[${new Date().toISOString()}] Error details: ${result.error || 'No error details'}`);
+      
       // If start failed, mark as error
       await updateBotStatus(botId, 'error', result.logs || []);
+      console.log(`[${new Date().toISOString()}] Database updated with ERROR status`);
       console.log(`[${new Date().toISOString()}] Bot marked as ERROR due to start failure`);
     }
 
+    console.log(`[${new Date().toISOString()}] ========== START BOT OPERATION COMPLETE ==========`);
     return result;
 
   } catch (error) {
     const duration = Date.now() - startTime;
+    console.error(`[${new Date().toISOString()}] ========== START BOT OPERATION EXCEPTION ==========`);
+    console.error(`[${new Date().toISOString()}] Exception caught: ${error.message}`);
+    console.error(`[${new Date().toISOString()}] Exception stack: ${error.stack}`);
+    
     LoggingUtils.logError('BOT START', duration, error);
     
     // Update bot status to error on exception
+    console.log(`[${new Date().toISOString()}] Updating status to ERROR due to exception...`);
     await updateBotStatus(botId, 'error', [`Error starting bot: ${error.message}`]);
+    console.log(`[${new Date().toISOString()}] Database updated with ERROR status due to exception`);
     
     throw error;
   }

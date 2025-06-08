@@ -1,4 +1,3 @@
-
 import { BotLogger } from './logger.ts';
 
 // Global container tracking using a Map that persists across function calls
@@ -10,11 +9,17 @@ export class RealDockerManager {
     const logs: string[] = [];
     
     try {
+      console.log(`[${new Date().toISOString()}] ========== REAL DOCKER MANAGER CREATE CONTAINER ==========`);
+      console.log(`[${new Date().toISOString()}] Bot ID: ${botId}`);
+      console.log(`[${new Date().toISOString()}] Code length: ${code.length}`);
+      console.log(`[${new Date().toISOString()}] Token provided: ${token ? 'YES' : 'NO'}`);
+      
       logs.push(BotLogger.logSection('CREATING REAL DOCKER CONTAINER'));
       logs.push(BotLogger.log(botId, 'Starting real Docker container creation process'));
       
       // Generate a unique container ID
       const containerId = `telebot_${botId.replace(/-/g, '_')}_${Date.now()}`;
+      console.log(`[${new Date().toISOString()}] Generated container ID: ${containerId}`);
       
       // Create Dockerfile content
       const dockerfile = `FROM python:3.11-slim
@@ -31,16 +36,26 @@ CMD ["python", "bot.py"]`;
       // In a real implementation, this would use Docker API calls
       
       // Simulate building the image
+      console.log(`[${new Date().toISOString()}] Simulating Docker build...`);
       logs.push(BotLogger.log(botId, 'Building Docker image...'));
       await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate build time
       logs.push(BotLogger.logSuccess('Docker image built successfully'));
       
       // Simulate starting the container
+      console.log(`[${new Date().toISOString()}] Simulating container start...`);
       logs.push(BotLogger.log(botId, 'Starting Docker container...'));
       await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate start time
       
       // Store container reference BEFORE generating startup logs
+      console.log(`[${new Date().toISOString()}] Storing container reference in GLOBAL_CONTAINER_STATE...`);
+      console.log(`[${new Date().toISOString()}] Current GLOBAL_CONTAINER_STATE size: ${GLOBAL_CONTAINER_STATE.size}`);
       GLOBAL_CONTAINER_STATE.set(botId, containerId);
+      console.log(`[${new Date().toISOString()}] After storing - GLOBAL_CONTAINER_STATE size: ${GLOBAL_CONTAINER_STATE.size}`);
+      console.log(`[${new Date().toISOString()}] Stored mapping: ${botId} -> ${containerId}`);
+      
+      // Verify storage
+      const storedContainerId = GLOBAL_CONTAINER_STATE.get(botId);
+      console.log(`[${new Date().toISOString()}] Verification - Retrieved container ID: ${storedContainerId}`);
       
       // Simulate initial bot startup logs
       logs.push(BotLogger.logSection('CONTAINER STARTUP LOGS'));
@@ -56,6 +71,7 @@ CMD ["python", "bot.py"]`;
       logs.push(BotLogger.log(botId, `Setting webhook: ${webhookUrl}`));
       
       try {
+        console.log(`[${new Date().toISOString()}] Setting up Telegram webhook...`);
         const webhookResponse = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -63,21 +79,28 @@ CMD ["python", "bot.py"]`;
         });
         
         const webhookData = await webhookResponse.json();
+        console.log(`[${new Date().toISOString()}] Webhook response:`, JSON.stringify(webhookData, null, 2));
+        
         if (webhookData.ok) {
           logs.push(BotLogger.logSuccess('Telegram webhook configured successfully'));
         } else {
           logs.push(BotLogger.logWarning(`Webhook setup warning: ${webhookData.description}`));
         }
       } catch (webhookError) {
+        console.error(`[${new Date().toISOString()}] Webhook setup error:`, webhookError);
         logs.push(BotLogger.logWarning(`Webhook setup error: ${webhookError.message}`));
       }
       
       logs.push(BotLogger.logSuccess('Bot is now live and responding to messages'));
       logs.push(BotLogger.logSection('REAL DOCKER CONTAINER CREATION COMPLETE'));
       
+      console.log(`[${new Date().toISOString()}] Container creation successful, returning containerId: ${containerId}`);
+      console.log(`[${new Date().toISOString()}] ========== REAL DOCKER MANAGER CREATE COMPLETE ==========`);
+      
       return { success: true, logs, containerId };
       
     } catch (error) {
+      console.error(`[${new Date().toISOString()}] Error in createContainer:`, error);
       logs.push(BotLogger.logError(`Error creating real Docker container: ${error.message}`));
       return { success: false, logs, error: error.message };
     }
@@ -138,11 +161,23 @@ CMD ["python", "bot.py"]`;
   }
 
   static getContainerStatus(botId: string): { isRunning: boolean; containerId?: string } {
+    console.log(`[${new Date().toISOString()}] ========== GET CONTAINER STATUS ==========`);
+    console.log(`[${new Date().toISOString()}] Checking status for bot: ${botId}`);
+    console.log(`[${new Date().toISOString()}] Current GLOBAL_CONTAINER_STATE size: ${GLOBAL_CONTAINER_STATE.size}`);
+    console.log(`[${new Date().toISOString()}] All stored bot IDs:`, Array.from(GLOBAL_CONTAINER_STATE.keys()));
+    
     const containerId = GLOBAL_CONTAINER_STATE.get(botId);
-    return {
+    console.log(`[${new Date().toISOString()}] Container ID for ${botId}: ${containerId || 'undefined'}`);
+    
+    const result = {
       isRunning: !!containerId,
       containerId
     };
+    
+    console.log(`[${new Date().toISOString()}] Status result:`, JSON.stringify(result, null, 2));
+    console.log(`[${new Date().toISOString()}] ========== GET CONTAINER STATUS COMPLETE ==========`);
+    
+    return result;
   }
 
   static getRunningContainers(): string[] {

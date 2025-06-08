@@ -46,6 +46,12 @@ export async function getBotFiles(userId: string, botId: string): Promise<string
 }
 
 export async function updateBotStatus(botId: string, status: string, logs: string[], containerId?: string) {
+  console.log(`[${new Date().toISOString()}] ========== UPDATE BOT STATUS BEGIN ==========`);
+  console.log(`[${new Date().toISOString()}] Bot ID: ${botId}`);
+  console.log(`[${new Date().toISOString()}] New Status: ${status}`);
+  console.log(`[${new Date().toISOString()}] Container ID: ${containerId || 'undefined'}`);
+  console.log(`[${new Date().toISOString()}] Logs count: ${logs.length}`);
+  
   const updateData: any = {
     runtime_status: status,
     runtime_logs: logs.join('\n'),
@@ -55,10 +61,14 @@ export async function updateBotStatus(botId: string, status: string, logs: strin
   // Only set container_id when actually running
   if (status === 'running' && containerId) {
     updateData.container_id = containerId;
+    console.log(`[${new Date().toISOString()}] Setting container_id: ${containerId}`);
   } else if (status === 'stopped' || status === 'error') {
     // Clear container_id when not running
     updateData.container_id = null;
+    console.log(`[${new Date().toISOString()}] Clearing container_id (status: ${status})`);
   }
+
+  console.log(`[${new Date().toISOString()}] Update data prepared:`, JSON.stringify(updateData, null, 2));
 
   const { error } = await supabase
     .from('bots')
@@ -66,9 +76,26 @@ export async function updateBotStatus(botId: string, status: string, logs: strin
     .eq('id', botId);
 
   if (error) {
-    console.error('Error updating bot status:', error);
+    console.error(`[${new Date().toISOString()}] Error updating bot status:`, error);
     throw error;
   }
+  
+  console.log(`[${new Date().toISOString()}] Bot status updated successfully in database`);
+  
+  // Verify the update by reading back the data
+  const { data: verifyData, error: verifyError } = await supabase
+    .from('bots')
+    .select('runtime_status, container_id, last_restart')
+    .eq('id', botId)
+    .single();
+    
+  if (verifyError) {
+    console.error(`[${new Date().toISOString()}] Error verifying update:`, verifyError);
+  } else {
+    console.log(`[${new Date().toISOString()}] Verification - Current DB state:`, JSON.stringify(verifyData, null, 2));
+  }
+  
+  console.log(`[${new Date().toISOString()}] ========== UPDATE BOT STATUS COMPLETE ==========`);
 }
 
 export async function createBotExecution(botId: string, userId: string, status: string, logs: string[]) {
