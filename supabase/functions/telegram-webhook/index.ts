@@ -32,17 +32,38 @@ serve(async (req) => {
     console.log(`[${new Date().toISOString()}] Bot ID: ${botId}`);
     console.log(`[${new Date().toISOString()}] URL: ${req.url}`);
 
-    // Get bot data from database
+    // Get bot data from database - use maybeSingle() to handle missing bots gracefully
     console.log(`[${new Date().toISOString()}] Fetching bot data from database...`);
     const { data: bot, error: botError } = await supabase
       .from('bots')
       .select('*')
       .eq('id', botId)
-      .single();
+      .maybeSingle(); // Changed from .single() to .maybeSingle()
 
-    if (botError || !bot) {
-      console.error(`[${new Date().toISOString()}] Bot not found in database:`, botError);
-      throw new Error(`Bot not found: ${botError?.message || 'Unknown error'}`);
+    if (botError) {
+      console.error(`[${new Date().toISOString()}] Database error fetching bot:`, botError);
+      throw new Error(`Database error: ${botError.message}`);
+    }
+
+    if (!bot) {
+      console.error(`[${new Date().toISOString()}] Bot not found in database: ${botId}`);
+      
+      // Still respond to Telegram to avoid webhook errors
+      const update = await req.json();
+      if (update.message) {
+        const chatId = update.message.chat.id;
+        const errorMessage = "This bot is no longer available. Please contact the bot administrator.";
+        
+        // We can't send a message without a token, so we just log and return OK
+        console.log(`[${new Date().toISOString()}] Would send error message to chat ${chatId}: ${errorMessage}`);
+      }
+      
+      return new Response(JSON.stringify({ 
+        ok: true, 
+        message: "Bot not found but webhook acknowledged" 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     console.log(`[${new Date().toISOString()}] Bot found: ${bot.name}`);
