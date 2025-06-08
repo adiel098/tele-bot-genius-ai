@@ -8,15 +8,16 @@ export async function startTelegramBot(botId: string, token: string, code: strin
   const logs: string[] = [];
   
   try {
-    // Stop existing bot if running to prevent conflicts
+    // Always stop existing bot first to prevent conflicts
     if (activeBots.has(botId)) {
       logs.push(`[${new Date().toISOString()}] Stopping existing bot instance for ${botId}`);
-      stopTelegramBot(botId);
-      // Wait a moment for the previous instance to fully stop
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const stopResult = stopTelegramBot(botId);
+      logs.push(...stopResult.logs);
+      // Wait longer for the previous instance to fully stop
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
 
-    logs.push(`[${new Date().toISOString()}] Creating bot instance for ${botId}`);
+    logs.push(`[${new Date().toISOString()}] Creating new bot instance for ${botId}`);
     
     // Create new bot instance
     const botInstance = new Bot(token);
@@ -106,21 +107,60 @@ export async function startTelegramBot(botId: string, token: string, code: strin
       });
     }
     
-    // Start the bot
-    await botInstance.start({
-      drop_pending_updates: true,
-      allowed_updates: ["message", "callback_query", "inline_query"]
-    });
-    
-    logs.push(`[${new Date().toISOString()}] Bot started and listening for messages`);
-    
-    // Store the bot instance
+    // Store the bot instance BEFORE starting to prevent race conditions
     activeBots.set(botId, { bot: botInstance, controller });
     
-    return { success: true, logs };
+    try {
+      // Start the bot with proper error handling for conflicts
+      await botInstance.start({
+        drop_pending_updates: true,
+        allowed_updates: ["message", "callback_query", "inline_query"]
+      });
+      
+      logs.push(`[${new Date().toISOString()}] Bot started successfully and listening for messages`);
+      return { success: true, logs };
+      
+    } catch (startError) {
+      logs.push(`[${new Date().toISOString()}] ERROR: Failed to start bot - ${startError.message}`);
+      
+      // If it's a conflict error, try to handle it gracefully
+      if (startError.message.includes('409') || startError.message.includes('Conflict')) {
+        logs.push(`[${new Date().toISOString()}] Detected conflict - another bot instance may be running`);
+        
+        // Remove from active bots and try once more after a longer delay
+        activeBots.delete(botId);
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        logs.push(`[${new Date().toISOString()}] Retrying bot start after conflict resolution...`);
+        
+        try {
+          const newBotInstance = new Bot(token);
+          activeBots.set(botId, { bot: newBotInstance, controller });
+          
+          await newBotInstance.start({
+            drop_pending_updates: true,
+            allowed_updates: ["message", "callback_query", "inline_query"]
+          });
+          
+          logs.push(`[${new Date().toISOString()}] Bot started successfully on retry`);
+          return { success: true, logs };
+          
+        } catch (retryError) {
+          logs.push(`[${new Date().toISOString()}] ERROR: Bot start failed on retry - ${retryError.message}`);
+          activeBots.delete(botId);
+          return { success: false, logs };
+        }
+      } else {
+        // Remove from active bots on other errors
+        activeBots.delete(botId);
+        return { success: false, logs };
+      }
+    }
     
   } catch (error) {
     logs.push(`[${new Date().toISOString()}] ERROR: Failed to start bot - ${error.message}`);
+    // Ensure cleanup on any error
+    activeBots.delete(botId);
     return { success: false, logs };
   }
 }
@@ -138,23 +178,28 @@ export function stopTelegramBot(botId: string): { success: boolean; logs: string
     
     logs.push(`[${new Date().toISOString()}] Stopping bot ${botId}...`);
     
-    // Stop the bot gracefully
+    // Stop the bot gracefully with better error handling
     try {
-      botInstance.bot.stop();
-      logs.push(`[${new Date().toISOString()}] Bot ${botId} stopped gracefully`);
+      // First try to stop gracefully
+      if (botInstance.bot && typeof botInstance.bot.stop === 'function') {
+        botInstance.bot.stop();
+        logs.push(`[${new Date().toISOString()}] Bot ${botId} stopped gracefully`);
+      }
     } catch (stopError) {
       logs.push(`[${new Date().toISOString()}] Error during graceful stop: ${stopError.message}`);
     }
     
-    // Abort the controller
+    // Always abort the controller
     try {
-      botInstance.controller.abort();
-      logs.push(`[${new Date().toISOString()}] Bot ${botId} controller aborted`);
+      if (botInstance.controller && typeof botInstance.controller.abort === 'function') {
+        botInstance.controller.abort();
+        logs.push(`[${new Date().toISOString()}] Bot ${botId} controller aborted`);
+      }
     } catch (abortError) {
       logs.push(`[${new Date().toISOString()}] Error aborting controller: ${abortError.message}`);
     }
     
-    // Remove from active bots
+    // Always remove from active bots
     activeBots.delete(botId);
     
     logs.push(`[${new Date().toISOString()}] Bot ${botId} removed from active instances`);
@@ -175,7 +220,8 @@ export function getBotLogs(botId: string): string[] {
   const isActive = activeBots.has(botId);
   return [
     `[${new Date().toISOString()}] Bot status: ${isActive ? 'RUNNING' : 'STOPPED'}`,
-    `[${new Date().toISOString()}] Active bots: ${activeBots.size}`
+    `[${new Date().toISOString()}] Active bots: ${activeBots.size}`,
+    `[${new Date().toISOString()}] Active bot IDs: ${Array.from(activeBots.keys()).join(', ')}`
   ];
 }
 
