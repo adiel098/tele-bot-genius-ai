@@ -1,34 +1,33 @@
 
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
-import { HeroSection } from "@/components/HeroSection";
 import { FeatureCard } from "@/components/FeatureCard";
+import { HeroSection } from "@/components/HeroSection";
 import { StatsSection } from "@/components/StatsSection";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Index = () => {
+  const { user } = useAuth();
+
   const features = [
     {
-      title: "AI-Powered Generation",
-      description: "Describe your bot in plain English and watch our AI create the perfect Telegram bot for you.",
-      icon: "🤖"
+      title: "יצירה מהירה",
+      description: "צור בוט טלגרם מתקדם תוך דקות ספורות עם הכוח של בינה מלאכותית",
+      icon: "⚡",
+      index: 0
     },
     {
-      title: "Real-time Monitoring",
-      description: "Track your bot's performance with live logs, uptime monitoring, and instant error notifications.",
-      icon: "📊"
+      title: "ללא קוד",
+      description: "לא צריך לדעת תכנות - רק תאר מה הבוט שלך צריך לעשות ונדאג לשאר",
+      icon: "🎯",
+      index: 1
     },
     {
-      title: "One-Click Fixes",
-      description: "When errors occur, our AI automatically diagnoses and fixes issues with a single click.",
-      icon: "🛠️"
-    },
-    {
-      title: "Template Library",
-      description: "Start with proven templates or create something completely custom. The choice is yours.",
-      icon: "📚"
+      title: "ניהול חכם",
+      description: "דשבורד מתקדם לניהול, מעקב וחיזור של כל הבוטים שלך במקום אחד",
+      icon: "📊",
+      index: 2
     }
   ];
 
@@ -45,18 +44,28 @@ const Index = () => {
               TeleBot AI
             </span>
           </div>
+          
           <div className="flex items-center space-x-4">
-            <Link to="/dashboard">
-              <Button variant="ghost" className="text-gray-600 hover:text-blue-600">
-                Dashboard
-              </Button>
-            </Link>
-            <Link to="/create">
-              <Button className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-lg hover:shadow-xl transition-all duration-300">
-                Create Bot
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </Link>
+            {user ? (
+              <Link to="/dashboard">
+                <Button className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white">
+                  דשבורד
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </Link>
+            ) : (
+              <>
+                <Link to="/auth">
+                  <Button variant="outline">התחברות</Button>
+                </Link>
+                <Link to="/auth">
+                  <Button className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white">
+                    הירשם
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </nav>
@@ -68,23 +77,17 @@ const Index = () => {
       <section className="py-20 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
-            <Badge className="mb-4 bg-blue-100 text-blue-700 hover:bg-blue-100">
-              ✨ Powered by AI
-            </Badge>
-            <h2 className="text-4xl font-bold text-gray-900 mb-6">
-              Everything you need to build
-              <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                {" "}amazing bots
-              </span>
+            <h2 className="text-4xl font-bold text-gray-900 mb-4">
+              למה לבחור ב-TeleBot AI?
             </h2>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              From simple chatbots to complex automation tools, create any Telegram bot you can imagine with the power of AI.
+              הפלטפורמה המתקדמת ביותר ליצירת בוטים חכמים לטלגרם
             </p>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-            {features.map((feature, index) => (
-              <FeatureCard key={index} {...feature} index={index} />
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {features.map((feature) => (
+              <FeatureCard key={feature.index} {...feature} />
             ))}
           </div>
         </div>
@@ -94,43 +97,33 @@ const Index = () => {
       <StatsSection />
 
       {/* CTA Section */}
-      <section className="py-20 px-6 bg-gradient-to-r from-blue-600 to-indigo-700">
+      <section className="py-20 px-6 bg-gradient-to-r from-blue-600 to-indigo-600">
         <div className="max-w-4xl mx-auto text-center">
           <h2 className="text-4xl font-bold text-white mb-6">
-            Ready to build your first bot?
+            מוכן להתחיל?
           </h2>
-          <p className="text-xl text-blue-100 mb-8 max-w-2xl mx-auto">
-            Join thousands of developers who are already building amazing Telegram bots with AI. 
-            No coding experience required.
+          <p className="text-xl text-blue-100 mb-8">
+            צור את הבוט הראשון שלך עוד היום - זה חינם ולא דורש כרטיס אשראי
           </p>
-          <Link to="/create">
-            <Button size="lg" className="bg-white text-blue-600 hover:bg-gray-50 text-lg px-8 py-6 shadow-xl hover:shadow-2xl transition-all duration-300">
-              Create Your Bot Now
-              <ArrowRight className="ml-2 h-5 w-5" />
-            </Button>
-          </Link>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            {user ? (
+              <Link to="/create">
+                <Button size="lg" className="bg-white text-blue-600 hover:bg-gray-100 text-lg px-8 py-4">
+                  צור בוט עכשיו
+                  <ArrowRight className="ml-2 h-5 w-5" />
+                </Button>
+              </Link>
+            ) : (
+              <Link to="/auth">
+                <Button size="lg" className="bg-white text-blue-600 hover:bg-gray-100 text-lg px-8 py-4">
+                  התחל בחינם
+                  <ArrowRight className="ml-2 h-5 w-5" />
+                </Button>
+              </Link>
+            )}
+          </div>
         </div>
       </section>
-
-      {/* Footer */}
-      <footer className="bg-gray-900 text-white py-12 px-6">
-        <div className="max-w-7xl mx-auto text-center">
-          <div className="flex items-center justify-center space-x-2 mb-4">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">TB</span>
-            </div>
-            <span className="text-xl font-bold">TeleBot AI</span>
-          </div>
-          <p className="text-gray-400 mb-4">
-            The easiest way to create powerful Telegram bots with AI
-          </p>
-          <div className="flex justify-center space-x-6 text-sm text-gray-400">
-            <a href="#" className="hover:text-white transition-colors">Privacy</a>
-            <a href="#" className="hover:text-white transition-colors">Terms</a>
-            <a href="#" className="hover:text-white transition-colors">Support</a>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 };
