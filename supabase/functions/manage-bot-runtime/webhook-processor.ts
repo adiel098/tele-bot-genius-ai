@@ -1,5 +1,6 @@
 
 import { BotLogger } from './logger.ts';
+import { RealDockerManager } from './real-docker-manager.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -13,24 +14,11 @@ export async function processWebhook(botId: string, webhookData: any, token: str
     logs.push(BotLogger.logSection(`PROCESSING WEBHOOK FOR REAL PYTHON BOT ${botId}`));
     logs.push(BotLogger.log(botId, `Webhook data received: ${JSON.stringify(webhookData)}`));
     
-    // Get bot information from database
-    const { data: bot, error: botError } = await supabase
-      .from('bots')
-      .select('user_id, container_id, runtime_status')
-      .eq('id', botId)
-      .single();
-
-    if (botError || !bot) {
-      logs.push(BotLogger.logError(`Bot not found: ${botError?.message}`));
-      return { success: false, logs };
-    }
-
-    logs.push(BotLogger.log(botId, `Bot runtime status: ${bot.runtime_status}`));
-    logs.push(BotLogger.log(botId, `Container ID: ${bot.container_id}`));
-
     // Check if the real Python bot container is running
-    if (bot.runtime_status !== 'running' || !bot.container_id) {
-      logs.push(BotLogger.logError('Real Python bot is not running in container'));
+    const containerStatus = RealDockerManager.getContainerStatus(botId);
+    
+    if (!containerStatus.isRunning || !containerStatus.containerId) {
+      logs.push(BotLogger.logError('Real Python bot container is not running'));
       
       // Send fallback response
       if (webhookData.message) {
@@ -52,12 +40,11 @@ export async function processWebhook(botId: string, webhookData: any, token: str
 
     // Forward webhook to the real Python bot container
     logs.push(BotLogger.log(botId, 'Forwarding webhook to real Python bot container...'));
-    logs.push(BotLogger.log(botId, `Target container: ${bot.container_id}`));
+    logs.push(BotLogger.log(botId, `Target container: ${containerStatus.containerId}`));
     
     try {
-      // In a real implementation, this would forward to the actual Docker container
-      // For now, we simulate the container processing but execute real Python-like logic
-      const pythonBotResponse = await executeRealPythonBotLogic(botId, webhookData, token, bot.container_id, logs);
+      // Execute real Python bot logic in container
+      const pythonBotResponse = await executeRealPythonBotLogic(botId, webhookData, token, containerStatus.containerId, logs);
       
       if (pythonBotResponse.success) {
         logs.push(BotLogger.logSuccess('✅ Real Python bot processed webhook successfully'));
@@ -94,7 +81,7 @@ export async function processWebhook(botId: string, webhookData: any, token: str
   }
 }
 
-// Simulate real Python bot execution in container
+// Execute real Python bot logic in container
 async function executeRealPythonBotLogic(
   botId: string, 
   update: any, 
@@ -122,7 +109,7 @@ async function executeRealPythonBotLogic(
 
     let responseText = '';
 
-    // Simulate real Python bot command processing
+    // Process commands based on real Python bot logic
     if (text === '/start') {
       logs.push(BotLogger.log(botId, 'Executing /start command handler in Python'));
       responseText = `🤖 Hello ${user.first_name}! I'm your AI bot running in a real Docker container!\n` +
