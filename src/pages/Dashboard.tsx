@@ -15,6 +15,7 @@ interface Bot {
   token: string;
   conversation_history: Json;
   created_at: string;
+  runtime_status?: string;
 }
 
 const Dashboard = () => {
@@ -69,6 +70,33 @@ const Dashboard = () => {
     navigate("/");
   };
 
+  const stopBotExecution = async (botId: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('manage-bot-runtime', {
+        body: {
+          action: 'stop',
+          botId
+        }
+      });
+
+      if (error) {
+        console.error('Error stopping bot execution:', error);
+        return false;
+      }
+
+      if (data.success) {
+        console.log(`Bot ${botId} execution stopped successfully`);
+        return true;
+      } else {
+        console.error('Failed to stop bot execution:', data.error);
+        return false;
+      }
+    } catch (error) {
+      console.error('Error in stopBotExecution:', error);
+      return false;
+    }
+  };
+
   const deleteBotFiles = async (botId: string, userId: string) => {
     try {
       // List all files in the bot's directory
@@ -104,7 +132,7 @@ const Dashboard = () => {
   };
 
   const handleDeleteBot = async (botId: string, botName: string) => {
-    if (!confirm(`האם אתה בטוח שברצונך למחוק את הבוט "${botName}"? פעולה זו לא ניתנת לביטול.`)) {
+    if (!confirm(`Are you sure you want to delete the bot "${botName}"? This action cannot be undone.`)) {
       return;
     }
 
@@ -113,19 +141,37 @@ const Dashboard = () => {
     setDeletingBotId(botId);
     
     try {
-      // First, delete the bot files from storage
+      // Step 1: Stop the bot execution if it's running
+      const bot = bots.find(b => b.id === botId);
+      if (bot && (bot.runtime_status === 'running' || bot.runtime_status === 'starting')) {
+        console.log(`Stopping bot execution for ${botId}...`);
+        const stopSuccess = await stopBotExecution(botId);
+        
+        if (!stopSuccess) {
+          toast({
+            title: "Warning",
+            description: "Could not stop bot execution, but proceeding with deletion",
+            variant: "destructive",
+          });
+        }
+        
+        // Wait a moment for the bot to fully stop
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+
+      // Step 2: Delete the bot files from storage
       const filesDeleted = await deleteBotFiles(botId, user.id);
       
       if (!filesDeleted) {
         toast({
-          title: "שגיאה",
-          description: "לא ניתן למחוק את קבצי הבוט",
+          title: "Error",
+          description: "Could not delete bot files",
           variant: "destructive",
         });
         return;
       }
 
-      // Then delete the bot from the database
+      // Step 3: Delete the bot from the database
       const { error } = await supabase
         .from('bots')
         .delete()
@@ -134,22 +180,22 @@ const Dashboard = () => {
       if (error) {
         console.error('Error deleting bot:', error);
         toast({
-          title: "שגיאה",
-          description: "לא ניתן למחוק את הבוט",
+          title: "Error",
+          description: "Could not delete bot from database",
           variant: "destructive",
         });
       } else {
         setBots(prev => prev.filter(bot => bot.id !== botId));
         toast({
-          title: "הבוט נמחק בהצלחה! 🗑️",
-          description: `${botName} וכל הקבצים שלו הוסרו מהמערכת`,
+          title: "Bot deleted successfully! 🗑️",
+          description: `${botName} and all its files have been removed from the system`,
         });
       }
     } catch (error) {
       console.error('Error:', error);
       toast({
-        title: "שגיאה",
-        description: "שגיאה במחיקת הבוט",
+        title: "Error",
+        description: "Error deleting bot",
         variant: "destructive",
       });
     } finally {

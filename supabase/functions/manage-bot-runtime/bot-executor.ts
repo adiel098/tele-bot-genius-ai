@@ -136,13 +136,28 @@ export function stopTelegramBot(botId: string): { success: boolean; logs: string
       return { success: true, logs }; // Return success even if no bot found
     }
     
-    // Stop the bot
-    botInstance.bot.stop();
-    botInstance.controller.abort();
+    logs.push(`[${new Date().toISOString()}] Stopping bot ${botId}...`);
+    
+    // Stop the bot gracefully
+    try {
+      botInstance.bot.stop();
+      logs.push(`[${new Date().toISOString()}] Bot ${botId} stopped gracefully`);
+    } catch (stopError) {
+      logs.push(`[${new Date().toISOString()}] Error during graceful stop: ${stopError.message}`);
+    }
+    
+    // Abort the controller
+    try {
+      botInstance.controller.abort();
+      logs.push(`[${new Date().toISOString()}] Bot ${botId} controller aborted`);
+    } catch (abortError) {
+      logs.push(`[${new Date().toISOString()}] Error aborting controller: ${abortError.message}`);
+    }
     
     // Remove from active bots
     activeBots.delete(botId);
     
+    logs.push(`[${new Date().toISOString()}] Bot ${botId} removed from active instances`);
     logs.push(`[${new Date().toISOString()}] Bot ${botId} stopped successfully`);
     return { success: true, logs };
     
