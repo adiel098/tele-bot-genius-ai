@@ -1,16 +1,27 @@
 
 export function generatePythonBotScript(botId: string, containerId: string, token: string, actualBotCode: string): string {
-  // If actual bot code is provided, use it directly
+  // If actual bot code is provided and not empty, use it directly
   if (actualBotCode && actualBotCode.trim().length > 0) {
+    console.log(`[${new Date().toISOString()}] Using actual bot code: ${actualBotCode.length} characters`);
+    
     // Replace any token placeholders in the code with the actual token
-    let updatedCode = actualBotCode.replace(/\${token}/g, token);
+    let updatedCode = actualBotCode;
+    
+    // Handle different token variable patterns
+    updatedCode = updatedCode.replace(/\${token}/g, token);
     updatedCode = updatedCode.replace(/BOT_TOKEN\s*=\s*['"][^'"]*['"]/, `BOT_TOKEN = "${token}"`);
     updatedCode = updatedCode.replace(/os\.getenv\(['"]TELEGRAM_TOKEN['"][^)]*\)/, `"${token}"`);
     updatedCode = updatedCode.replace(/os\.getenv\(['"]BOT_TOKEN['"][^)]*\)/, `"${token}"`);
     
+    // Also handle the environment variable loading pattern
+    updatedCode = updatedCode.replace(/token = os\.getenv\(['"]BOT_TOKEN['"][^)]*\)/, `token = "${token}"`);
+    
+    console.log(`[${new Date().toISOString()}] Token replacement completed, using actual user code`);
     return updatedCode;
   }
 
+  console.log(`[${new Date().toISOString()}] No actual bot code provided, using fallback template`);
+  
   // Fallback to a simple bot template if no code is provided
   return `
 import os
@@ -122,6 +133,7 @@ WORKDIR /app
 RUN pip install python-telegram-bot aiohttp
 COPY main.py .
 ENV TELEGRAM_TOKEN=${token}
+ENV BOT_TOKEN=${token}
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8080
 CMD ["python", "main.py"]`;
