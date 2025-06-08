@@ -1,8 +1,7 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowRight, LogOut } from "lucide-react";
+import { ArrowRight, LogOut, Trash2 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -21,6 +20,7 @@ interface Bot {
 const Dashboard = () => {
   const [bots, setBots] = useState<Bot[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingBotId, setDeletingBotId] = useState<string | null>(null);
   
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
@@ -67,6 +67,49 @@ const Dashboard = () => {
   const handleSignOut = async () => {
     await signOut();
     navigate("/");
+  };
+
+  const handleDeleteBot = async (botId: string, botName: string) => {
+    if (!confirm(`האם אתה בטוח שברצונך למחוק את הבוט "${botName}"? פעולה זו לא ניתנת לביטול.`)) {
+      return;
+    }
+
+    setDeletingBotId(botId);
+    
+    try {
+      const { error } = await supabase
+        .from('bots')
+        .delete()
+        .eq('id', botId);
+
+      if (error) {
+        console.error('Error deleting bot:', error);
+        toast({
+          title: "שגיאה",
+          description: "לא ניתן למחוק את הבוט",
+          variant: "destructive",
+        });
+      } else {
+        setBots(prev => prev.filter(bot => bot.id !== botId));
+        toast({
+          title: "הבוט נמחק בהצלחה! 🗑️",
+          description: `${botName} הוסר מהמערכת`,
+        });
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      toast({
+        title: "שגיאה",
+        description: "שגיאה במחיקת הבוט",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingBotId(null);
+    }
+  };
+
+  const handleBotCardClick = (botId: string) => {
+    navigate(`/workspace/${botId}`);
   };
 
   const getStatusColor = (status: string) => {
@@ -154,11 +197,11 @@ const Dashboard = () => {
             <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center">
               <span className="text-white text-2xl">🤖</span>
             </div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">No bots yet</h3>
-            <p className="text-gray-600 mb-6">Create your first bot to get started</p>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">אין בוטים עדיין</h3>
+            <p className="text-gray-600 mb-6">צור את הבוט הראשון שלך כדי להתחיל</p>
             <Link to="/">
               <Button className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white">
-                Create Your First Bot
+                צור את הבוט הראשון שלך
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </Link>
@@ -167,33 +210,53 @@ const Dashboard = () => {
           /* Bots Grid */
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {bots.map((bot) => (
-              <Card key={bot.id} className="transition-all duration-300 hover:shadow-lg hover:-translate-y-1">
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h3 className="font-bold text-lg text-gray-900 mb-1">
-                        {bot.name}
-                      </h3>
-                      <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(bot.status)}`}>
-                        {getStatusText(bot.status)}
+              <Card key={bot.id} className="transition-all duration-300 hover:shadow-lg hover:-translate-y-1 relative group">
+                <div 
+                  className="cursor-pointer"
+                  onClick={() => handleBotCardClick(bot.id)}
+                >
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <h3 className="font-bold text-lg text-gray-900 mb-1">
+                          {bot.name}
+                        </h3>
+                        <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(bot.status)}`}>
+                          {getStatusText(bot.status)}
+                        </div>
                       </div>
+                      <div className="w-3 h-3 rounded-full bg-green-400"></div>
                     </div>
-                    <div className="w-3 h-3 rounded-full bg-green-400"></div>
-                  </div>
-                  
-                  <p className="text-gray-600 text-sm mb-4">
-                    {getStatusDetails(bot.status)}
-                  </p>
-                  
+                    
+                    <p className="text-gray-600 text-sm mb-4">
+                      {getStatusDetails(bot.status)}
+                    </p>
+                  </CardContent>
+                </div>
+                
+                <div className="px-6 pb-6">
                   <div className="flex space-x-2">
                     <Button size="sm" variant="outline" className="flex-1">
-                      View Logs
+                      צפה בלוגים
                     </Button>
-                    <Button size="sm" variant="outline">
-                      Edit
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteBot(bot.id, bot.name);
+                      }}
+                      disabled={deletingBotId === bot.id}
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                    >
+                      {deletingBotId === bot.id ? (
+                        <div className="w-4 h-4 animate-spin rounded-full border-2 border-red-600 border-t-transparent"></div>
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
                     </Button>
                   </div>
-                </CardContent>
+                </div>
               </Card>
             ))}
           </div>
