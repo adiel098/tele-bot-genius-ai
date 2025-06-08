@@ -8,15 +8,18 @@ export async function startTelegramBot(botId: string, token: string, code: strin
   const logs: string[] = [];
   
   try {
-    // Stop existing bot if running
+    // Stop existing bot if running to prevent conflicts
     if (activeBots.has(botId)) {
+      logs.push(`[${new Date().toISOString()}] Stopping existing bot instance for ${botId}`);
       stopTelegramBot(botId);
+      // Wait a moment for the previous instance to fully stop
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
     logs.push(`[${new Date().toISOString()}] Creating bot instance for ${botId}`);
     
     // Create new bot instance
-    const bot = new Bot(token);
+    const botInstance = new Bot(token);
     const controller = new AbortController();
     
     // Create a custom console for logging
@@ -43,17 +46,29 @@ export async function startTelegramBot(botId: string, token: string, code: strin
 
     // Execute bot code by creating a dynamic module
     try {
-      // Replace any import statements with direct grammy usage
-      const cleanCode = code
+      // Clean the code to remove any variable declarations that might conflict
+      let cleanCode = code
         .replace(/import\s+.*?from\s+['"].*?['"];?\s*/g, '')
         .replace(/from\s+['"]grammy['"]/, '')
-        .replace(/import\s*\{\s*Bot\s*\}/, '// Bot is already available');
+        .replace(/import\s*\{\s*Bot\s*\}/, '// Bot is already available')
+        // Remove any bot variable declarations to prevent conflicts
+        .replace(/const\s+bot\s*=.*?;/g, '')
+        .replace(/let\s+bot\s*=.*?;/g, '')
+        .replace(/var\s+bot\s*=.*?;/g, '');
 
-      // Create a function that has access to Bot and console
-      const botFunction = new Function('bot', 'console', 'Bot', cleanCode);
+      // Wrap the code to use the provided bot instance
+      const wrappedCode = `
+        // Bot instance is provided as 'botInstance' parameter
+        (function(botInstance, console, Bot) {
+          ${cleanCode}
+        })
+      `;
+
+      // Create and execute the function
+      const botFunction = new Function('return ' + wrappedCode)();
       
       // Execute bot code with the bot instance, custom console, and Bot constructor
-      botFunction(bot, customConsole, Bot);
+      botFunction(botInstance, customConsole, Bot);
       
       logs.push(`[${new Date().toISOString()}] Bot code executed successfully`);
       
@@ -63,19 +78,19 @@ export async function startTelegramBot(botId: string, token: string, code: strin
       // Fallback: create a simple echo bot if the custom code fails
       logs.push(`[${new Date().toISOString()}] Falling back to simple echo bot`);
       
-      bot.on('message:text', (ctx) => {
+      botInstance.on('message:text', (ctx) => {
         customConsole.log(`Received message: ${ctx.message.text}`);
         ctx.reply(`Echo: ${ctx.message.text}`);
       });
       
-      bot.command('start', (ctx) => {
+      botInstance.command('start', (ctx) => {
         customConsole.log('Start command received');
         ctx.reply('Hello! I am your AI bot. Send me any message and I will echo it back.');
       });
     }
     
     // Start the bot
-    await bot.start({
+    await botInstance.start({
       drop_pending_updates: true,
       allowed_updates: ["message", "callback_query", "inline_query"]
     });
@@ -83,7 +98,7 @@ export async function startTelegramBot(botId: string, token: string, code: strin
     logs.push(`[${new Date().toISOString()}] Bot started and listening for messages`);
     
     // Store the bot instance
-    activeBots.set(botId, { bot, controller });
+    activeBots.set(botId, { bot: botInstance, controller });
     
     return { success: true, logs };
     
@@ -101,7 +116,7 @@ export function stopTelegramBot(botId: string): { success: boolean; logs: string
     
     if (!botInstance) {
       logs.push(`[${new Date().toISOString()}] No active bot found for ${botId}`);
-      return { success: false, logs };
+      return { success: true, logs }; // Return success even if no bot found
     }
     
     // Stop the bot
@@ -116,6 +131,8 @@ export function stopTelegramBot(botId: string): { success: boolean; logs: string
     
   } catch (error) {
     logs.push(`[${new Date().toISOString()}] ERROR: Failed to stop bot - ${error.message}`);
+    // Still remove from active bots even if there was an error
+    activeBots.delete(botId);
     return { success: false, logs };
   }
 }

@@ -20,10 +20,11 @@ export async function generateBotCode(prompt: string, botToken: string): Promise
 
 IMPORTANT RULES:
 1. Generate code that works in Deno runtime environment
-2. Do NOT use import statements - the Bot class will be provided as a parameter
-3. Write code that can be executed with new Function()
-4. Use only basic JavaScript/TypeScript syntax
-5. The bot token will be automatically injected
+2. Do NOT declare any variables named 'bot' - the bot instance is provided as 'botInstance'
+3. Do NOT use import statements - all necessary objects will be provided
+4. Write code that can be executed within a function wrapper
+5. Use only basic JavaScript/TypeScript syntax
+6. The bot token will be automatically injected
 
 Generate a complete Telegram bot based on the user's request. The bot should:
 - Handle the /start command with a welcome message
@@ -34,7 +35,7 @@ Generate a complete Telegram bot based on the user's request. The bot should:
 Format your response as a JSON object with:
 {
   "files": {
-    "main.py": "// Bot code here - do not include imports",
+    "main.py": "// Bot code here - use botInstance instead of bot",
     "requirements.txt": "grammy",
     ".env": "BOT_TOKEN=${botToken}"
   },
@@ -43,18 +44,18 @@ Format your response as a JSON object with:
 
 Write the bot code in the main.py file (it will be executed as JavaScript despite the .py extension). 
 The code should work with this execution pattern:
-const botFunction = new Function('bot', 'console', 'Bot', codeContent);
+const botFunction = new Function('botInstance', 'console', 'Bot', codeContent);
 botFunction(botInstance, customConsole, BotConstructor);
 
-EXAMPLE CODE STRUCTURE:
+EXAMPLE CODE STRUCTURE (use botInstance, not bot):
 // Handle start command
-bot.command('start', (ctx) => {
+botInstance.command('start', (ctx) => {
   console.log('User started the bot');
   ctx.reply('Welcome! I am your AI assistant.');
 });
 
 // Handle text messages
-bot.on('message:text', (ctx) => {
+botInstance.on('message:text', (ctx) => {
   const userMessage = ctx.message.text;
   console.log('Received message:', userMessage);
   
@@ -62,7 +63,7 @@ bot.on('message:text', (ctx) => {
   ctx.reply('Your response here');
 });
 
-Remember: NO import statements, use the provided bot parameter directly.`;
+Remember: NO variable declarations like 'const bot = ...', use the provided botInstance parameter directly.`;
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -103,12 +104,12 @@ Remember: NO import statements, use the provided bot parameter directly.`;
       botCodeResult = {
         files: {
           "main.py": `// Simple bot based on: ${prompt}
-bot.command('start', (ctx) => {
+botInstance.command('start', (ctx) => {
   console.log('User started the bot');
   ctx.reply('Hello! I am your AI assistant. How can I help you today?');
 });
 
-bot.on('message:text', (ctx) => {
+botInstance.on('message:text', (ctx) => {
   const userMessage = ctx.message.text;
   console.log('Received message:', userMessage);
   
