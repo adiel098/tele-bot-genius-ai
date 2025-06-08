@@ -1,6 +1,6 @@
 
 import { 
-  createDockerContainer, 
+  createContainer, 
   stopDockerContainer, 
   getDockerContainerStatusAsync, 
   getDockerContainerLogs 
@@ -9,7 +9,7 @@ import {
 export class RealDockerManager {
   
   static async createContainer(botId: string, code: string, token: string): Promise<{ success: boolean; logs: string[]; containerId?: string; error?: string }> {
-    return createDockerContainer(botId, code, token);
+    return createContainer(botId, code, token);
   }
 
   static async stopContainer(botId: string, token?: string): Promise<{ success: boolean; logs: string[] }> {
