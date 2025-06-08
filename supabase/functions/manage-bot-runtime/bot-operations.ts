@@ -1,4 +1,3 @@
-
 import { startTelegramBot, stopTelegramBot, getBotLogs } from './bot-executor.ts';
 import { 
   getBotData, 
@@ -12,6 +11,7 @@ import { LoggingUtils } from './logging-utils.ts';
 import { ProcessManager } from './process-manager.ts';
 import { BotLogger } from './logger.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
+import { RealDockerManager } from './real-docker-manager.ts';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -35,17 +35,17 @@ export async function startBotOperation(botId: string, userId: string): Promise<
     console.log(`[${new Date().toISOString()}] Current bot status in DB: ${bot.status || 'undefined'}`);
     console.log(`[${new Date().toISOString()}] Current runtime_status in DB: ${bot.runtime_status || 'undefined'}`);
 
-    // Get latest files
-    console.log(`[${new Date().toISOString()}] Step 2: Getting bot files...`);
+    // Get latest files - the actual main.py code
+    console.log(`[${new Date().toISOString()}] Step 2: Getting bot's actual main.py file...`);
     const mainCode = await getBotFiles(userId, botId);
-    console.log(`[${new Date().toISOString()}] Loaded code from files, length: ${mainCode.length} characters`);
+    console.log(`[${new Date().toISOString()}] Loaded bot's main.py code, length: ${mainCode.length} characters`);
 
-    console.log(`[${new Date().toISOString()}] Step 3: Calling startTelegramBot...`);
+    console.log(`[${new Date().toISOString()}] Step 3: Creating Docker container with bot's code...`);
     
-    // Start the bot using real Docker containers
-    const result = await startTelegramBot(botId, bot.token, mainCode);
+    // Start the bot using real Docker containers with the actual bot code
+    const result = await RealDockerManager.createContainer(botId, mainCode, bot.token);
     
-    console.log(`[${new Date().toISOString()}] Step 4: startTelegramBot completed`);
+    console.log(`[${new Date().toISOString()}] Step 4: Docker container creation completed`);
     console.log(`[${new Date().toISOString()}] Result success: ${result.success}`);
     console.log(`[${new Date().toISOString()}] Result containerId: ${result.containerId || 'undefined'}`);
     console.log(`[${new Date().toISOString()}] Result logs count: ${result.logs?.length || 0}`);
@@ -117,10 +117,10 @@ export async function stopBotOperation(botId: string): Promise<{ success: boolea
       console.log(`[${new Date().toISOString()}] Found running execution: ${execution.id}`);
     }
 
-    console.log(`[${new Date().toISOString()}] Calling stopTelegramBot...`);
+    console.log(`[${new Date().toISOString()}] Calling RealDockerManager.stopContainer...`);
     
     // Stop the bot with token for webhook cleanup
-    const result = await stopTelegramBot(botId, bot?.token);
+    const result = await RealDockerManager.stopContainer(botId, bot?.token);
     
     const duration = Date.now() - startTime;
     LoggingUtils.logCompletion('BOT STOP', duration, result.success);
@@ -200,13 +200,9 @@ export async function streamLogsOperation(botId: string): Promise<{ success: boo
   
   try {
     // Get live logs from the real Docker container
-    const containerLogs = await getBotLogs(botId);
-    
-    // Get status information
-    const statusLogs = ProcessManager.getBotStatus(botId);
+    const containerLogs = await RealDockerManager.getContainerLogs(botId);
     
     const allLogs = [
-      ...statusLogs,
       BotLogger.logSection('LIVE DOCKER CONTAINER LOGS'),
       ...containerLogs
     ];

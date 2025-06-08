@@ -1,5 +1,17 @@
 
-export function generatePythonBotScript(botId: string, containerId: string, token: string): string {
+export function generatePythonBotScript(botId: string, containerId: string, token: string, actualBotCode: string): string {
+  // If actual bot code is provided, use it directly
+  if (actualBotCode && actualBotCode.trim().length > 0) {
+    // Replace any token placeholders in the code with the actual token
+    let updatedCode = actualBotCode.replace(/\${token}/g, token);
+    updatedCode = updatedCode.replace(/BOT_TOKEN\s*=\s*['"][^'"]*['"]/, `BOT_TOKEN = "${token}"`);
+    updatedCode = updatedCode.replace(/os\.getenv\(['"]TELEGRAM_TOKEN['"][^)]*\)/, `"${token}"`);
+    updatedCode = updatedCode.replace(/os\.getenv\(['"]BOT_TOKEN['"][^)]*\)/, `"${token}"`);
+    
+    return updatedCode;
+  }
+
+  // Fallback to a simple bot template if no code is provided
   return `
 import os
 import sys
@@ -19,10 +31,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Get bot token from environment
-BOT_TOKEN = os.getenv('TELEGRAM_TOKEN', '${token}')
-
-# Webhook URL for this bot
-WEBHOOK_URL = f"https://efhwjkhqbbucvedgznba.supabase.co/functions/v1/telegram-webhook/${botId}"
+BOT_TOKEN = "${token}"
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command"""
@@ -88,8 +97,7 @@ def main():
     # Add error handler
     application.add_error_handler(error_handler)
     
-    # Set webhook
-    logger.info(f"Setting webhook to: {WEBHOOK_URL}")
+    logger.info("Starting bot with webhook...")
     
     try:
         # Start the bot with webhook
@@ -97,7 +105,7 @@ def main():
             listen="0.0.0.0",
             port=8080,
             url_path="/webhook",
-            webhook_url=WEBHOOK_URL
+            webhook_url=f"https://efhwjkhqbbucvedgznba.supabase.co/functions/v1/telegram-webhook/${botId}"
         )
     except Exception as e:
         logger.error(f"Failed to start bot: {e}")
@@ -112,9 +120,9 @@ export function generateDockerfile(token: string): string {
   return `FROM python:3.11-slim
 WORKDIR /app
 RUN pip install python-telegram-bot aiohttp
-COPY bot.py .
+COPY main.py .
 ENV TELEGRAM_TOKEN=${token}
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8080
-CMD ["python", "bot.py"]`;
+CMD ["python", "main.py"]`;
 }

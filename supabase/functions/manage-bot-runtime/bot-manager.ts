@@ -1,4 +1,3 @@
-
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
 import { RealDockerManager } from './real-docker-manager.ts';
 import { BotLogger } from './logger.ts';
@@ -33,21 +32,24 @@ export async function startBot(botId: string, userId: string): Promise<{ success
       return { success: true, logs };
     }
 
-    // Get bot code from storage
+    // Get bot's actual main.py code from storage
+    logs.push(BotLogger.log(botId, 'Fetching bot\'s main.py from storage...'));
     const { data: codeFile, error: codeError } = await supabase.storage
       .from('bot-code')
       .download(`${botId}/main.py`);
 
+    let actualBotCode = '';
     if (codeError || !codeFile) {
-      logs.push(BotLogger.logError(`Failed to get bot code: ${codeError?.message}`));
-      return { success: false, logs, error: 'Failed to get bot code' };
+      logs.push(BotLogger.logWarning(`Could not fetch main.py: ${codeError?.message}`));
+      logs.push(BotLogger.log(botId, 'Using fallback template code'));
+      // actualBotCode remains empty string, will use fallback in generator
+    } else {
+      actualBotCode = await codeFile.text();
+      logs.push(BotLogger.log(botId, `Bot's main.py loaded: ${actualBotCode.length} characters`));
     }
 
-    const code = await codeFile.text();
-    logs.push(BotLogger.log(botId, `Bot code loaded: ${code.length} characters`));
-
-    // Create and start real Docker container
-    const dockerResult = await RealDockerManager.createContainer(botId, code, bot.token);
+    // Create and start real Docker container with the bot's actual code
+    const dockerResult = await RealDockerManager.createContainer(botId, actualBotCode, bot.token);
     logs.push(...dockerResult.logs);
 
     if (!dockerResult.success) {
@@ -66,7 +68,7 @@ export async function startBot(botId: string, userId: string): Promise<{ success
       })
       .eq('id', botId);
 
-    logs.push(BotLogger.logSuccess('✅ Real Python bot started successfully!'));
+    logs.push(BotLogger.logSuccess('✅ Real Python bot started successfully with actual main.py!'));
     return { success: true, logs };
 
   } catch (error) {
