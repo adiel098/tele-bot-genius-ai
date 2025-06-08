@@ -1,7 +1,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Play, Square, RotateCcw, Download } from "lucide-react";
+import { Play, Square, RotateCcw, Download, Activity } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -9,10 +9,11 @@ interface BotRuntimeControlsProps {
   botId: string;
   userId: string;
   runtimeStatus: string;
+  containerId?: string | null;
   onStatusChange: (newStatus: string) => void;
 }
 
-const BotRuntimeControls = ({ botId, userId, runtimeStatus, onStatusChange }: BotRuntimeControlsProps) => {
+const BotRuntimeControls = ({ botId, userId, runtimeStatus, containerId, onStatusChange }: BotRuntimeControlsProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
@@ -33,9 +34,10 @@ const BotRuntimeControls = ({ botId, userId, runtimeStatus, onStatusChange }: Bo
         const newStatus = action === 'stop' ? 'stopped' : 'starting';
         onStatusChange(newStatus);
         
+        const actionEmoji = action === 'start' ? '🚀' : action === 'stop' ? '⏹️' : '🔄';
         toast({
-          title: `Bot ${action} successful! 🤖`,
-          description: `Your bot is now ${action === 'restart' ? 'restarting' : newStatus}`,
+          title: `${actionEmoji} Bot ${action} initiated!`,
+          description: `Docker container ${action === 'restart' ? 'is restarting' : newStatus}`,
         });
       } else {
         throw new Error(data.error || 'Operation failed');
@@ -106,10 +108,26 @@ const BotRuntimeControls = ({ botId, userId, runtimeStatus, onStatusChange }: Bo
     }
   };
 
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "running": return "🟢";
+      case "starting": return "🟡";
+      case "stopped": return "⚫";
+      case "error": return "🔴";
+      default: return "⚪";
+    }
+  };
+
   return (
     <div className="flex items-center space-x-2">
-      <div className={`text-sm font-medium ${getStatusColor(runtimeStatus)}`}>
+      <div className={`text-sm font-medium ${getStatusColor(runtimeStatus)} flex items-center`}>
+        <span className="mr-1">{getStatusIcon(runtimeStatus)}</span>
         {runtimeStatus?.charAt(0).toUpperCase() + runtimeStatus?.slice(1) || 'Unknown'}
+        {containerId && (
+          <span className="ml-2 text-xs text-gray-500 font-mono">
+            🐳 {containerId.substring(0, 12)}
+          </span>
+        )}
       </div>
       
       {runtimeStatus === 'stopped' || runtimeStatus === 'error' ? (
@@ -120,7 +138,7 @@ const BotRuntimeControls = ({ botId, userId, runtimeStatus, onStatusChange }: Bo
           className="bg-green-600 hover:bg-green-700"
         >
           <Play className="h-4 w-4 mr-1" />
-          Start
+          Start Container
         </Button>
       ) : (
         <Button 
@@ -130,7 +148,7 @@ const BotRuntimeControls = ({ botId, userId, runtimeStatus, onStatusChange }: Bo
           size="sm"
         >
           <Square className="h-4 w-4 mr-1" />
-          Stop
+          Stop Container
         </Button>
       )}
       
@@ -152,6 +170,18 @@ const BotRuntimeControls = ({ botId, userId, runtimeStatus, onStatusChange }: Bo
         <Download className="h-4 w-4 mr-1" />
         Download
       </Button>
+
+      {runtimeStatus === 'running' && (
+        <Button 
+          onClick={() => handleAction('logs')}
+          variant="outline"
+          size="sm"
+          disabled={isLoading}
+        >
+          <Activity className="h-4 w-4 mr-1" />
+          Refresh Logs
+        </Button>
+      )}
     </div>
   );
 };

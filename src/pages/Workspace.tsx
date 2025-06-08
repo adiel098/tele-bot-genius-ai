@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -266,7 +265,12 @@ const Workspace = () => {
                 </Badge>
                 {bot.files_stored && (
                   <Badge variant="outline" className="text-green-600 border-green-200">
-                    Files Stored
+                    📁 Files Stored
+                  </Badge>
+                )}
+                {bot.container_id && (
+                  <Badge variant="outline" className="text-blue-600 border-blue-200 font-mono text-xs">
+                    🐳 {bot.container_id.substring(0, 12)}
                   </Badge>
                 )}
               </div>
@@ -281,6 +285,7 @@ const Workspace = () => {
               botId={bot.id}
               userId={user.id}
               runtimeStatus={bot.runtime_status || 'stopped'}
+              containerId={bot.container_id}
               onStatusChange={handleStatusChange}
             />
           </div>

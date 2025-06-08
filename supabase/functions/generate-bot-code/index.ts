@@ -1,4 +1,3 @@
-
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
@@ -46,9 +45,6 @@ async function uploadBotFiles(botId: string, userId: string, files: Record<strin
 // Helper function to simulate bot deployment and start
 async function deployAndStartBot(botId: string, userId: string, files: Record<string, string>) {
   try {
-    // Simulate container creation
-    const containerId = `bot_${botId}_${Date.now()}`;
-    
     // Create execution record
     const { data: execution, error: execError } = await supabase
       .from('bot_executions')
@@ -65,13 +61,12 @@ async function deployAndStartBot(botId: string, userId: string, files: Record<st
       throw execError;
     }
 
-    // Update bot with container info
+    // Update bot status to indicate deployment is starting
     const { error: updateError } = await supabase
       .from('bots')
       .update({
-        container_id: containerId,
         runtime_status: 'starting',
-        runtime_logs: `[${new Date().toISOString()}] Starting bot deployment...\n[${new Date().toISOString()}] Container ID: ${containerId}\n`,
+        runtime_logs: `[${new Date().toISOString()}] Preparing bot deployment...\n[${new Date().toISOString()}] Files uploaded to storage\n[${new Date().toISOString()}] Ready for Docker container creation\n`,
         last_restart: new Date().toISOString()
       })
       .eq('id', botId);
@@ -81,33 +76,46 @@ async function deployAndStartBot(botId: string, userId: string, files: Record<st
       throw updateError;
     }
 
-    // Simulate deployment process
+    // Auto-start the bot using the runtime management function
     setTimeout(async () => {
       try {
-        // Simulate successful deployment
-        const logs = `[${new Date().toISOString()}] Bot deployed successfully\n[${new Date().toISOString()}] Bot is now running\n[${new Date().toISOString()}] Listening for Telegram messages...\n`;
+        console.log(`Auto-starting bot ${botId} after deployment`);
         
+        // Call the runtime management function to start the bot
+        const { data: runtimeData, error: runtimeError } = await supabase.functions.invoke('manage-bot-runtime', {
+          body: {
+            action: 'start',
+            botId,
+            userId
+          }
+        });
+
+        if (runtimeError) {
+          console.error('Failed to auto-start bot:', runtimeError);
+          await supabase
+            .from('bots')
+            .update({
+              runtime_status: 'error',
+              runtime_logs: `[${new Date().toISOString()}] Deployment completed but failed to start: ${runtimeError.message}\n`
+            })
+            .eq('id', botId);
+        } else if (runtimeData?.success) {
+          console.log('Bot auto-start initiated successfully');
+        }
+
+      } catch (error) {
+        console.error('Failed to auto-start bot:', error);
         await supabase
           .from('bots')
           .update({
-            runtime_status: 'running',
-            runtime_logs: logs
+            runtime_status: 'error',
+            runtime_logs: `[${new Date().toISOString()}] Deployment completed but failed to start: ${error.message}\n`
           })
           .eq('id', botId);
-
-        await supabase
-          .from('bot_executions')
-          .update({
-            status: 'running'
-          })
-          .eq('id', execution.id);
-
-      } catch (error) {
-        console.error('Failed to update bot status:', error);
       }
-    }, 3000); // Simulate 3 second deployment time
+    }, 2000); // Start the bot 2 seconds after deployment
 
-    return { containerId, executionId: execution.id };
+    return { executionId: execution.id, autoStartInitiated: true };
   } catch (error) {
     console.error('Deployment failed:', error);
     
