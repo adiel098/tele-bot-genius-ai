@@ -8,19 +8,36 @@ export async function startTelegramBot(botId: string, token: string, code: strin
   const logs: string[] = [];
   
   try {
+    logs.push(`[${new Date().toISOString()}] Initializing bot ${botId}...`);
+    
     // Always stop existing bot first to prevent conflicts
     if (activeBots.has(botId)) {
       logs.push(`[${new Date().toISOString()}] Stopping existing bot instance for ${botId}`);
       const stopResult = stopTelegramBot(botId);
       logs.push(...stopResult.logs);
       // Wait longer for the previous instance to fully stop
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+
+    logs.push(`[${new Date().toISOString()}] Validating bot token format...`);
+    
+    // Validate token format
+    if (!token || !token.match(/^\d+:[A-Za-z0-9_-]+$/)) {
+      logs.push(`[${new Date().toISOString()}] ERROR: Invalid bot token format`);
+      return { success: false, logs };
     }
 
     logs.push(`[${new Date().toISOString()}] Creating new bot instance for ${botId}`);
     
-    // Create new bot instance
-    const botInstance = new Bot(token);
+    // Create new bot instance with error handling
+    let botInstance: Bot;
+    try {
+      botInstance = new Bot(token);
+    } catch (tokenError) {
+      logs.push(`[${new Date().toISOString()}] ERROR: Failed to create bot instance - ${tokenError.message}`);
+      return { success: false, logs };
+    }
+    
     const controller = new AbortController();
     
     // Create a custom console for logging
@@ -46,6 +63,7 @@ export async function startTelegramBot(botId: string, token: string, code: strin
     };
 
     // Execute bot code by creating a dynamic module
+    logs.push(`[${new Date().toISOString()}] Executing bot code...`);
     try {
       // More aggressive cleaning of the code
       let cleanCode = code
@@ -66,8 +84,7 @@ export async function startTelegramBot(botId: string, token: string, code: strin
         // Remove any bot.start() calls since we handle that
         .replace(/botInstance\.start\s*\(.*?\);?\s*/g, '');
 
-      logs.push(`[${new Date().toISOString()}] Cleaned code for execution`);
-      logs.push(`[${new Date().toISOString()}] Code preview: ${cleanCode.substring(0, 200)}...`);
+      logs.push(`[${new Date().toISOString()}] Code cleaned for execution`);
 
       // Create a safe execution environment
       const executionCode = `
@@ -91,9 +108,8 @@ export async function startTelegramBot(botId: string, token: string, code: strin
       
     } catch (codeError) {
       logs.push(`[${new Date().toISOString()}] Error executing bot code: ${codeError.message}`);
-      logs.push(`[${new Date().toISOString()}] Code that failed: ${code.substring(0, 500)}...`);
       
-      // Only fall back to echo bot if absolutely necessary
+      // Create basic bot handlers as fallback
       logs.push(`[${new Date().toISOString()}] Creating basic bot handlers as fallback`);
       
       botInstance.command('start', (ctx) => {
@@ -110,12 +126,29 @@ export async function startTelegramBot(botId: string, token: string, code: strin
     // Store the bot instance BEFORE starting to prevent race conditions
     activeBots.set(botId, { bot: botInstance, controller });
     
+    logs.push(`[${new Date().toISOString()}] Testing bot connection...`);
+    
     try {
+      // Test bot connection first with getMe
+      const botInfo = await Promise.race([
+        botInstance.api.getMe(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Bot token validation timeout')), 10000)
+        )
+      ]) as any;
+      
+      logs.push(`[${new Date().toISOString()}] Bot connection successful: @${botInfo.username}`);
+      
       // Start the bot with proper error handling for conflicts
-      await botInstance.start({
-        drop_pending_updates: true,
-        allowed_updates: ["message", "callback_query", "inline_query"]
-      });
+      await Promise.race([
+        botInstance.start({
+          drop_pending_updates: true,
+          allowed_updates: ["message", "callback_query", "inline_query"]
+        }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Bot start operation timeout')), 15000)
+        )
+      ]);
       
       logs.push(`[${new Date().toISOString()}] Bot started successfully and listening for messages`);
       return { success: true, logs };
@@ -125,36 +158,16 @@ export async function startTelegramBot(botId: string, token: string, code: strin
       
       // If it's a conflict error, try to handle it gracefully
       if (startError.message.includes('409') || startError.message.includes('Conflict')) {
-        logs.push(`[${new Date().toISOString()}] Detected conflict - another bot instance may be running`);
-        
-        // Remove from active bots and try once more after a longer delay
-        activeBots.delete(botId);
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        
-        logs.push(`[${new Date().toISOString()}] Retrying bot start after conflict resolution...`);
-        
-        try {
-          const newBotInstance = new Bot(token);
-          activeBots.set(botId, { bot: newBotInstance, controller });
-          
-          await newBotInstance.start({
-            drop_pending_updates: true,
-            allowed_updates: ["message", "callback_query", "inline_query"]
-          });
-          
-          logs.push(`[${new Date().toISOString()}] Bot started successfully on retry`);
-          return { success: true, logs };
-          
-        } catch (retryError) {
-          logs.push(`[${new Date().toISOString()}] ERROR: Bot start failed on retry - ${retryError.message}`);
-          activeBots.delete(botId);
-          return { success: false, logs };
-        }
-      } else {
-        // Remove from active bots on other errors
-        activeBots.delete(botId);
-        return { success: false, logs };
+        logs.push(`[${new Date().toISOString()}] Detected conflict - another bot instance may be running with this token`);
+      } else if (startError.message.includes('401') || startError.message.includes('Unauthorized')) {
+        logs.push(`[${new Date().toISOString()}] ERROR: Invalid bot token - please check your token from @BotFather`);
+      } else if (startError.message.includes('timeout')) {
+        logs.push(`[${new Date().toISOString()}] ERROR: Network timeout - please check your internet connection`);
       }
+      
+      // Remove from active bots on error
+      activeBots.delete(botId);
+      return { success: false, logs };
     }
     
   } catch (error) {

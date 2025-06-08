@@ -18,7 +18,7 @@ async function startBot(botId: string, userId: string) {
   try {
     console.log(`Starting bot process for ${botId}`);
     
-    // Get bot data and files with timeout
+    // Get bot data and files with longer timeout
     const botPromise = supabase
       .from('bots')
       .select('*')
@@ -28,7 +28,7 @@ async function startBot(botId: string, userId: string) {
     const { data: bot, error: botError } = await Promise.race([
       botPromise,
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Bot fetch timeout')), 5000)
+        setTimeout(() => reject(new Error('Bot fetch timeout')), 8000)
       )
     ]) as any;
 
@@ -36,7 +36,12 @@ async function startBot(botId: string, userId: string) {
       throw new Error('Bot not found or fetch timeout');
     }
 
-    console.log(`Bot found: ${bot.name}`);
+    console.log(`Bot found: ${bot.name}, validating token...`);
+
+    // Validate bot token format before proceeding
+    if (!bot.token || !bot.token.match(/^\d+:[A-Za-z0-9_-]+$/)) {
+      throw new Error('Invalid bot token format');
+    }
 
     // Get bot files from storage with timeout
     const filesPromise = supabase.storage
@@ -46,7 +51,7 @@ async function startBot(botId: string, userId: string) {
     const { data: filesList, error: filesError } = await Promise.race([
       filesPromise,
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Files list timeout')), 5000)
+        setTimeout(() => reject(new Error('Files list timeout')), 8000)
       )
     ]) as any;
 
@@ -63,7 +68,7 @@ async function startBot(botId: string, userId: string) {
     const { data: mainFileData, error: mainFileError } = await Promise.race([
       mainFilePromise,
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Main file download timeout')), 5000)
+        setTimeout(() => reject(new Error('Main file download timeout')), 8000)
       )
     ]) as any;
 
@@ -90,7 +95,7 @@ async function startBot(botId: string, userId: string) {
       .from('bots')
       .update({
         runtime_status: 'starting',
-        runtime_logs: `[${new Date().toISOString()}] Starting Telegram bot...\n`,
+        runtime_logs: `[${new Date().toISOString()}] Starting Telegram bot...\n[${new Date().toISOString()}] Validating bot token...\n`,
         last_restart: new Date().toISOString()
       })
       .eq('id', botId);
@@ -99,7 +104,7 @@ async function startBot(botId: string, userId: string) {
     const [{ data: execution, error: execError }] = await Promise.race([
       Promise.all([executionPromise, statusUpdatePromise]),
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Database operations timeout')), 5000)
+        setTimeout(() => reject(new Error('Database operations timeout')), 8000)
       )
     ]) as any;
 
@@ -110,12 +115,12 @@ async function startBot(botId: string, userId: string) {
 
     console.log(`Starting actual Telegram bot for ${botId}`);
 
-    // Start the actual Telegram bot with timeout
+    // Start the actual Telegram bot with longer timeout
     const botStartPromise = startTelegramBot(botId, bot.token, botCode);
     const result = await Promise.race([
       botStartPromise,
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Bot start timeout')), 10000)
+        setTimeout(() => reject(new Error('Bot start timeout - Check if token is valid or if there are network issues')), 30000)
       )
     ]) as any;
     
@@ -167,7 +172,7 @@ async function startBot(botId: string, userId: string) {
       .from('bots')
       .update({
         runtime_status: 'error',
-        runtime_logs: `[${new Date().toISOString()}] Failed to start: ${error.message}\n`
+        runtime_logs: `[${new Date().toISOString()}] Failed to start: ${error.message}\n[${new Date().toISOString()}] Common causes: Invalid bot token, network issues, or code errors\n`
       })
       .eq('id', botId)
       .then(() => console.log(`Bot ${botId} marked as error due to failure`))
@@ -334,7 +339,8 @@ serve(async (req) => {
     return new Response(JSON.stringify({ 
       error: error.message,
       success: false,
-      duration 
+      duration,
+      troubleshooting: 'Check bot token validity, network connection, and generated code syntax'
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
