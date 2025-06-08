@@ -5,7 +5,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Send } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Send, Wrench, AlertTriangle } from "lucide-react";
 import type { Json } from "@/integrations/supabase/types";
 
 interface Message {
@@ -20,9 +21,19 @@ interface ChatInterfaceProps {
   messages: Message[];
   onSendMessage: (content: string) => Promise<void>;
   isGenerating: boolean;
+  hasErrors?: boolean;
+  errorLogs?: string;
+  onFixByAI?: (errorLogs: string) => Promise<void>;
 }
 
-const ChatInterface = ({ messages, onSendMessage, isGenerating }: ChatInterfaceProps) => {
+const ChatInterface = ({ 
+  messages, 
+  onSendMessage, 
+  isGenerating, 
+  hasErrors = false, 
+  errorLogs = "", 
+  onFixByAI 
+}: ChatInterfaceProps) => {
   const [newMessage, setNewMessage] = useState("");
 
   const handleSendMessage = async () => {
@@ -40,15 +51,49 @@ const ChatInterface = ({ messages, onSendMessage, isGenerating }: ChatInterfaceP
     }
   };
 
+  const handleFixByAI = () => {
+    if (onFixByAI && errorLogs) {
+      onFixByAI(errorLogs);
+    }
+  };
+
   return (
     <Card className="h-full flex flex-col">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <span>🤖</span>
           AI Assistant
+          {hasErrors && (
+            <div className="flex items-center text-red-600">
+              <AlertTriangle className="h-4 w-4" />
+            </div>
+          )}
         </CardTitle>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col">
+        {hasErrors && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription className="flex items-center justify-between">
+              <div>
+                <div className="font-medium">Errors detected in bot execution</div>
+                <div className="text-sm mt-1">Your bot has encountered errors and may not be working properly</div>
+              </div>
+              {onFixByAI && (
+                <Button 
+                  onClick={handleFixByAI}
+                  variant="outline" 
+                  size="sm"
+                  className="ml-4 bg-white text-red-600 border-red-200 hover:bg-red-50"
+                >
+                  <Wrench className="h-4 w-4 mr-1" />
+                  Fix by AI
+                </Button>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+        
         <ScrollArea className="flex-1 pr-4">
           <div className="space-y-4">
             {messages.map((message, index) => (

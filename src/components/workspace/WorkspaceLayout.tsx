@@ -1,4 +1,5 @@
 
+import { useState, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import BotRuntimeLogs from "@/components/BotRuntimeLogs";
 import FilesPanel from "./FilesPanel";
@@ -37,6 +38,14 @@ const WorkspaceLayout = ({
   botId,
   onFixByAI
 }: WorkspaceLayoutProps) => {
+  const [hasErrors, setHasErrors] = useState(false);
+  const [errorLogs, setErrorLogs] = useState("");
+
+  const handleLogsUpdate = useCallback((logs: string, hasErrorsDetected: boolean) => {
+    setErrorLogs(logs);
+    setHasErrors(hasErrorsDetected);
+  }, []);
+
   return (
     <div className="flex h-[calc(100vh-73px)]">
       {/* Main Content Area */}
@@ -49,6 +58,9 @@ const WorkspaceLayout = ({
               messages={messages}
               onSendMessage={onSendMessage}
               isGenerating={isGenerating}
+              hasErrors={hasErrors}
+              errorLogs={errorLogs}
+              onFixByAI={onFixByAI}
             />
           )}
         </div>
@@ -67,7 +79,7 @@ const WorkspaceLayout = ({
           </TabsContent>
           
           <TabsContent value="logs" className="flex-1 p-4">
-            <BotRuntimeLogs botId={botId} onFixByAI={onFixByAI} />
+            <BotRuntimeLogs botId={botId} onLogsUpdate={handleLogsUpdate} />
           </TabsContent>
         </Tabs>
       </div>

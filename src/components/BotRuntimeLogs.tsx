@@ -3,20 +3,25 @@ import { useState, useEffect } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Wrench, AlertTriangle } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
 interface BotRuntimeLogsProps {
   botId: string;
-  onFixByAI?: (errorLogs: string) => void;
+  onLogsUpdate?: (logs: string, hasErrors: boolean) => void;
 }
 
-const BotRuntimeLogs = ({ botId, onFixByAI }: BotRuntimeLogsProps) => {
+const BotRuntimeLogs = ({ botId, onLogsUpdate }: BotRuntimeLogsProps) => {
   const [logs, setLogs] = useState<string>("");
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [hasErrors, setHasErrors] = useState(false);
   const { toast } = useToast();
+
+  const checkForErrors = (logText: string) => {
+    return logText.includes('[ERROR]') || 
+           logText.includes('Error:') || 
+           logText.includes('Failed to');
+  };
 
   const fetchLogs = async () => {
     try {
@@ -35,15 +40,18 @@ const BotRuntimeLogs = ({ botId, onFixByAI }: BotRuntimeLogsProps) => {
       setLogs(logText);
       
       // Check if there are errors in the logs
-      const hasErrorsInLogs = logText.includes('[ERROR]') || 
-                             logText.includes('Error:') || 
-                             logText.includes('Failed to') ||
-                             data.runtime_status === 'error';
-      setHasErrors(hasErrorsInLogs);
+      const hasErrorsInLogs = checkForErrors(logText) || data.runtime_status === 'error';
+      
+      // Notify parent component about logs update
+      if (onLogsUpdate) {
+        onLogsUpdate(logText, hasErrorsInLogs);
+      }
     } catch (error) {
       console.error('Error:', error);
       setLogs("Error loading logs");
-      setHasErrors(true);
+      if (onLogsUpdate) {
+        onLogsUpdate("Error loading logs", true);
+      }
     }
   };
 
@@ -79,12 +87,6 @@ const BotRuntimeLogs = ({ botId, onFixByAI }: BotRuntimeLogsProps) => {
     }
   };
 
-  const handleFixByAI = () => {
-    if (onFixByAI && logs) {
-      onFixByAI(logs);
-    }
-  };
-
   useEffect(() => {
     fetchLogs();
 
@@ -104,11 +106,11 @@ const BotRuntimeLogs = ({ botId, onFixByAI }: BotRuntimeLogsProps) => {
             const logText = payload.new.runtime_logs;
             setLogs(logText);
             
-            const hasErrorsInLogs = logText.includes('[ERROR]') || 
-                                   logText.includes('Error:') || 
-                                   logText.includes('Failed to') ||
-                                   payload.new.runtime_status === 'error';
-            setHasErrors(hasErrorsInLogs);
+            const hasErrorsInLogs = checkForErrors(logText) || payload.new.runtime_status === 'error';
+            
+            if (onLogsUpdate) {
+              onLogsUpdate(logText, hasErrorsInLogs);
+            }
           }
         }
       )
@@ -117,7 +119,7 @@ const BotRuntimeLogs = ({ botId, onFixByAI }: BotRuntimeLogsProps) => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [botId]);
+  }, [botId, onLogsUpdate]);
 
   const formatLogs = (logText: string) => {
     return logText.split('\n').map((line, index) => {
@@ -149,47 +151,18 @@ const BotRuntimeLogs = ({ botId, onFixByAI }: BotRuntimeLogsProps) => {
           <div className="flex items-center">
             🐳 Docker Logs
             <div className="ml-2 w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            {hasErrors && (
-              <div className="ml-2 flex items-center text-red-600">
-                <AlertTriangle className="h-3 w-3" />
-              </div>
-            )}
           </div>
-          <div className="flex items-center space-x-1">
-            <Button 
-              onClick={refreshLogs} 
-              disabled={isRefreshing}
-              variant="outline" 
-              size="sm"
-            >
-              <RefreshCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
-            </Button>
-            {hasErrors && onFixByAI && (
-              <Button 
-                onClick={handleFixByAI}
-                variant="outline" 
-                size="sm"
-                className="text-red-600 border-red-200 hover:bg-red-50"
-              >
-                <Wrench className="h-3 w-3 mr-1" />
-                Fix by AI
-              </Button>
-            )}
-          </div>
+          <Button 
+            onClick={refreshLogs} 
+            disabled={isRefreshing}
+            variant="outline" 
+            size="sm"
+          >
+            <RefreshCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+          </Button>
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {hasErrors && (
-          <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-md">
-            <div className="flex items-center text-red-800 text-sm font-medium">
-              <AlertTriangle className="h-4 w-4 mr-2" />
-              Errors detected in bot execution
-            </div>
-            <p className="text-red-600 text-xs mt-1">
-              Click "Fix by AI" to automatically analyze and fix the issues
-            </p>
-          </div>
-        )}
         <ScrollArea className="h-[300px]">
           <div className="space-y-1 p-2 bg-gray-50 rounded-md">
             {logs ? formatLogs(logs) : (
