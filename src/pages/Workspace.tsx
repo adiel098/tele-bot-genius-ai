@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -18,6 +17,7 @@ interface Message {
   content: string;
   timestamp: string;
   files?: Record<string, string>;
+  [key: string]: Json | undefined;
 }
 
 interface Bot {
