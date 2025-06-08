@@ -57,6 +57,9 @@ export async function updateBotStatus(botId: string, status: string, logs: strin
     if (containerId) {
       updateData.container_id = containerId;
     }
+  } else if (status === 'stopped') {
+    // Clear container_id when bot is stopped
+    updateData.container_id = null;
   }
 
   const { error } = await supabase

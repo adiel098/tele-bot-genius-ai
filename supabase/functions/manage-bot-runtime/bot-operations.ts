@@ -1,4 +1,3 @@
-
 import { startTelegramBot, stopTelegramBot, getBotLogs } from './bot-executor.ts';
 import { 
   getBotData, 
@@ -36,13 +35,13 @@ export async function startBotOperation(botId: string, userId: string): Promise<
     LoggingUtils.logCompletion('BOT START', duration, result.success);
 
     if (result.success) {
-      // Update bot status
+      // Update bot status with container info
       await updateBotStatus(botId, 'running', result.logs || [], result.containerId);
       
       // Create execution record
       await createBotExecution(botId, userId, 'running', result.logs || []);
       
-      console.log(`[${new Date().toISOString()}] Bot marked as running`);
+      console.log(`[${new Date().toISOString()}] Bot marked as running with container: ${result.containerId}`);
     } else {
       // Update bot status to error
       await updateBotStatus(botId, 'error', result.logs || []);
@@ -68,8 +67,7 @@ export async function stopBotOperation(botId: string): Promise<{ success: boolea
   try {
     LoggingUtils.logOperation('STOP BOT REQUEST', botId);
     
-    // For stop operation, we don't need userId validation, but we need the token for webhook cleanup
-    // Get bot data to retrieve token
+    // Get bot data to retrieve token for webhook cleanup
     const { data: bot } = await supabase
       .from('bots')
       .select('token')
@@ -91,7 +89,7 @@ export async function stopBotOperation(botId: string): Promise<{ success: boolea
     const duration = Date.now() - startTime;
     LoggingUtils.logCompletion('BOT STOP', duration, result.success);
 
-    // Update bot status
+    // Update bot status - clear container_id when stopped
     await updateBotStatus(botId, 'stopped', result.logs || []);
 
     // Update execution status if exists
