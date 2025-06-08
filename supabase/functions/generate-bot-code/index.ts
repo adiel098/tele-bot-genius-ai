@@ -37,8 +37,8 @@ serve(async (req) => {
       conversationHistory = existingBot.conversation_history;
     }
 
-    // Generate bot code using OpenAI
-    const botCode = await generateBotCode(prompt);
+    // Generate bot code using OpenAI with the bot token
+    const botCode = await generateBotCode(prompt, token);
 
     // Upload files to storage
     console.log('Uploading files to storage...');
