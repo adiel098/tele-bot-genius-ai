@@ -55,7 +55,7 @@ const getLastMessageWithFiles = (messages: Message[]): Message | undefined => {
 const Workspace = () => {
   const { botId } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { toast } = useToast();
   
   const [bot, setBot] = useState<Bot | null>(null);
@@ -105,7 +105,7 @@ const Workspace = () => {
   }, [user, botId, navigate, toast]);
 
   const sendMessage = async () => {
-    if (!newMessage.trim() || !bot || isGenerating) return;
+    if (!newMessage.trim() || !bot || isGenerating || !session) return;
 
     const userMessage: Message = {
       role: 'user',
@@ -118,19 +118,17 @@ const Workspace = () => {
     setIsGenerating(true);
 
     try {
-      const response = await fetch('https://efhwjkhqbbucvedgznba.functions.supabase.co/generate-bot-code', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      const { data, error } = await supabase.functions.invoke('generate-bot-code', {
+        body: {
           botId: bot.id,
           prompt: newMessage,
           token: bot.token
-        }),
+        }
       });
 
-      const data = await response.json();
+      if (error) {
+        throw new Error(error.message || 'Failed to generate bot code');
+      }
 
       if (data.success) {
         // Refresh bot data to get updated conversation
