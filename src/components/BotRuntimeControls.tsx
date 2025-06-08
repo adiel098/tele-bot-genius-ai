@@ -1,7 +1,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Play, Square, RotateCcw, Download, Activity } from "lucide-react";
+import { RotateCcw, Download, Activity } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -31,13 +31,13 @@ const BotRuntimeControls = ({ botId, userId, runtimeStatus, containerId, onStatu
       if (error) throw error;
 
       if (data.success) {
-        const newStatus = action === 'stop' ? 'stopped' : 'starting';
+        const newStatus = action === 'restart' ? 'starting' : runtimeStatus;
         onStatusChange(newStatus);
         
-        const actionEmoji = action === 'start' ? '🚀' : action === 'stop' ? '⏹️' : '🔄';
+        const actionEmoji = action === 'restart' ? '🔄' : '📋';
         toast({
-          title: `${actionEmoji} Bot ${action} initiated!`,
-          description: `Docker container ${action === 'restart' ? 'is restarting' : newStatus}`,
+          title: `${actionEmoji} ${action === 'restart' ? 'Bot restart initiated!' : 'Logs refreshed!'}`,
+          description: action === 'restart' ? 'Bot is restarting with latest code' : 'Latest container logs retrieved',
         });
       } else {
         throw new Error(data.error || 'Operation failed');
@@ -129,28 +129,6 @@ const BotRuntimeControls = ({ botId, userId, runtimeStatus, containerId, onStatu
           </span>
         )}
       </div>
-      
-      {runtimeStatus === 'stopped' || runtimeStatus === 'error' ? (
-        <Button 
-          onClick={() => handleAction('start')} 
-          disabled={isLoading}
-          size="sm"
-          className="bg-green-600 hover:bg-green-700"
-        >
-          <Play className="h-4 w-4 mr-1" />
-          Start Container
-        </Button>
-      ) : (
-        <Button 
-          onClick={() => handleAction('stop')} 
-          disabled={isLoading}
-          variant="outline"
-          size="sm"
-        >
-          <Square className="h-4 w-4 mr-1" />
-          Stop Container
-        </Button>
-      )}
       
       <Button 
         onClick={() => handleAction('restart')} 
