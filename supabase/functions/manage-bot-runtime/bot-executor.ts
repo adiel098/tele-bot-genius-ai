@@ -1,14 +1,12 @@
 
-import { Bot, webhookCallback } from "https://deno.land/x/grammy@v1.19.2/mod.ts";
-
-// Store active bot instances
-const activeBots = new Map<string, { bot: Bot; controller: AbortController }>();
+// Store active bot processes
+const activeBots = new Map<string, { process: Deno.Process; controller: AbortController }>();
 
 export async function startTelegramBot(botId: string, token: string, code: string): Promise<{ success: boolean; logs: string[]; error?: string; errorType?: string }> {
   const logs: string[] = [];
   
   try {
-    logs.push(`[${new Date().toISOString()}] ========== STARTING BOT ${botId} ==========`);
+    logs.push(`[${new Date().toISOString()}] ========== STARTING PYTHON BOT ${botId} ==========`);
     logs.push(`[${new Date().toISOString()}] Bot ID: ${botId}`);
     logs.push(`[${new Date().toISOString()}] Token length: ${token ? token.length : 'undefined'} characters`);
     logs.push(`[${new Date().toISOString()}] Code provided: ${code ? 'YES' : 'NO'}`);
@@ -16,10 +14,10 @@ export async function startTelegramBot(botId: string, token: string, code: strin
     
     // Always stop existing bot first to prevent conflicts
     if (activeBots.has(botId)) {
-      logs.push(`[${new Date().toISOString()}] EXISTING BOT DETECTED - stopping instance for ${botId}`);
+      logs.push(`[${new Date().toISOString()}] EXISTING BOT DETECTED - stopping process for ${botId}`);
       const stopResult = stopTelegramBot(botId);
       logs.push(...stopResult.logs);
-      // Wait longer for the previous instance to fully stop
+      // Wait for the previous instance to fully stop
       await new Promise(resolve => setTimeout(resolve, 3000));
       logs.push(`[${new Date().toISOString()}] Waited 3 seconds for previous instance to stop`);
     }
@@ -49,53 +47,8 @@ export async function startTelegramBot(botId: string, token: string, code: strin
     }
     logs.push(`[${new Date().toISOString()}] ✓ Token format is valid`);
 
-    logs.push(`[${new Date().toISOString()}] ========== BOT INSTANCE CREATION ==========`);
-    
-    // Create new bot instance with error handling
-    let botInstance: Bot;
-    try {
-      logs.push(`[${new Date().toISOString()}] Creating Bot instance with Grammy...`);
-      botInstance = new Bot(token);
-      logs.push(`[${new Date().toISOString()}] ✓ Bot instance created successfully`);
-    } catch (tokenError) {
-      logs.push(`[${new Date().toISOString()}] ERROR: Failed to create bot instance`);
-      logs.push(`[${new Date().toISOString()}] Error details: ${tokenError.message}`);
-      logs.push(`[${new Date().toISOString()}] Error stack: ${tokenError.stack || 'No stack trace'}`);
-      return { 
-        success: false, 
-        logs, 
-        error: "Failed to create bot instance. Please verify your bot token.",
-        errorType: "bot_creation_failed"
-      };
-    }
-    
-    const controller = new AbortController();
-    logs.push(`[${new Date().toISOString()}] ✓ Abort controller created`);
-    
-    // Create a custom console for logging
-    const customConsole = {
-      log: (...args: any[]) => {
-        const message = args.map(arg => 
-          typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-        ).join(' ');
-        logs.push(`[${new Date().toISOString()}] BOT-OUTPUT: ${message}`);
-      },
-      error: (...args: any[]) => {
-        const message = args.map(arg => 
-          typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-        ).join(' ');
-        logs.push(`[${new Date().toISOString()}] BOT-ERROR: ${message}`);
-      },
-      warn: (...args: any[]) => {
-        const message = args.map(arg => 
-          typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-        ).join(' ');
-        logs.push(`[${new Date().toISOString()}] BOT-WARN: ${message}`);
-      }
-    };
-
-    logs.push(`[${new Date().toISOString()}] ========== CODE ANALYSIS & EXECUTION ==========`);
-    logs.push(`[${new Date().toISOString()}] Original code preview (first 500 chars):`);
+    logs.push(`[${new Date().toISOString()}] ========== PYTHON CODE ANALYSIS ==========`);
+    logs.push(`[${new Date().toISOString()}] Code preview (first 500 chars):`);
     logs.push(`[${new Date().toISOString()}] ${code.substring(0, 500)}${code.length > 500 ? '...' : ''}`);
     
     if (!code || code.trim().length === 0) {
@@ -108,213 +61,173 @@ export async function startTelegramBot(botId: string, token: string, code: strin
       };
     }
     
-    // Check if this is Python code (which won't work in Deno)
-    const isPythonCode = code.includes('python-telegram-bot') || 
-                        code.includes('from telegram') || 
-                        code.includes('import telegram') ||
-                        code.includes('def ') ||
-                        code.includes('async def ') ||
-                        code.includes('Update, ContextTypes');
+    // Check if this is JavaScript code (which won't work in Python)
+    const isJavaScriptCode = code.includes('grammy') || 
+                            code.includes('import { Bot }') || 
+                            code.includes('new Bot(') ||
+                            code.includes('bot.start()') ||
+                            code.includes('const ') ||
+                            code.includes('=> {');
     
-    if (isPythonCode) {
-      logs.push(`[${new Date().toISOString()}] ========== PYTHON CODE DETECTED ==========`);
-      logs.push(`[${new Date().toISOString()}] ERROR: Generated code appears to be Python, but we need JavaScript/TypeScript for Deno runtime`);
-      logs.push(`[${new Date().toISOString()}] Python indicators found:`);
-      if (code.includes('python-telegram-bot')) logs.push(`[${new Date().toISOString()}] - python-telegram-bot library reference`);
-      if (code.includes('from telegram')) logs.push(`[${new Date().toISOString()}] - 'from telegram' import`);
-      if (code.includes('def ') || code.includes('async def ')) logs.push(`[${new Date().toISOString()}] - Python function definitions`);
-      if (code.includes('Update, ContextTypes')) logs.push(`[${new Date().toISOString()}] - Python-specific types`);
+    if (isJavaScriptCode) {
+      logs.push(`[${new Date().toISOString()}] ========== JAVASCRIPT CODE DETECTED ==========`);
+      logs.push(`[${new Date().toISOString()}] ERROR: Generated code appears to be JavaScript, but we need Python`);
+      logs.push(`[${new Date().toISOString()}] JavaScript indicators found:`);
+      if (code.includes('grammy')) logs.push(`[${new Date().toISOString()}] - Grammy library reference`);
+      if (code.includes('import { Bot }')) logs.push(`[${new Date().toISOString()}] - JavaScript Bot import`);
+      if (code.includes('const ')) logs.push(`[${new Date().toISOString()}] - JavaScript const declarations`);
+      if (code.includes('=> {')) logs.push(`[${new Date().toISOString()}] - JavaScript arrow functions`);
       
       return { 
         success: false, 
         logs, 
-        error: "Generated code is Python but we need JavaScript/TypeScript. Please regenerate the bot with JavaScript/TypeScript code for Grammy library.",
+        error: "Generated code is JavaScript but we need Python. Please regenerate the bot with Python code for python-telegram-bot library.",
         errorType: "wrong_language"
       };
     }
     
-    logs.push(`[${new Date().toISOString()}] ✓ Code appears to be JavaScript/TypeScript`);
+    logs.push(`[${new Date().toISOString()}] ✓ Code appears to be Python`);
     
-    try {
-      logs.push(`[${new Date().toISOString()}] ========== CODE CLEANING PROCESS ==========`);
-      
-      // Clean the code more aggressively - remove all imports and bot declarations
-      let cleanCode = code
-        // Remove all import statements (both ES6 and CommonJS)
-        .replace(/^import\s+.*$/gm, '')
-        .replace(/^from\s+.*?\s+import\s+.*$/gm, '')
-        .replace(/const\s+.*?\s*=\s*require\(.*?\);?\s*/g, '')
-        // Remove bot variable declarations and Bot constructor calls
-        .replace(/\b(const|let|var)\s+bot\s*=.*?$/gm, '')
-        .replace(/new\s+Bot\s*\(.*?\)/g, '')
-        .replace(/Bot\s*\(/g, 'botInstance.constructor(')
-        // Replace bot references with botInstance
-        .replace(/\bbot\./g, 'botInstance.')
-        .replace(/\bbot\s*=/g, 'botInstance =')
-        // Remove bot.start() calls since we handle that
-        .replace(/botInstance\.start\s*\(.*?\);?\s*/g, '')
-        .replace(/botInstance\.run_polling\s*\(.*?\);?\s*/g, '')
-        // Replace console references
-        .replace(/console\./g, 'customConsole.')
-        .trim();
-
-      logs.push(`[${new Date().toISOString()}] Original code length: ${code.length}`);
-      logs.push(`[${new Date().toISOString()}] Cleaned code length: ${cleanCode.length}`);
-      logs.push(`[${new Date().toISOString()}] Cleaned code preview (first 300 chars):`);
-      logs.push(`[${new Date().toISOString()}] ${cleanCode.substring(0, 300)}${cleanCode.length > 300 ? '...' : ''}`);
-
-      if (!cleanCode || cleanCode.trim().length === 0) {
-        logs.push(`[${new Date().toISOString()}] ERROR: After cleaning, no executable code remains`);
-        logs.push(`[${new Date().toISOString()}] This usually means the generated code was mostly imports and declarations`);
-        return { 
-          success: false, 
-          logs, 
-          error: "Generated code is empty after processing. Please regenerate your bot.",
-          errorType: "empty_processed_code"
-        };
-      }
-
-      logs.push(`[${new Date().toISOString()}] ========== JAVASCRIPT EXECUTION ==========`);
-      
-      // Create a safe execution environment
-      const executionCode = `
-        try {
-          ${cleanCode}
-          return { success: true, message: 'Generated code executed successfully' };
-        } catch (error) {
-          return { success: false, error: error.message, stack: error.stack, name: error.name };
-        }
-      `;
-
-      logs.push(`[${new Date().toISOString()}] Preparing function execution context...`);
-      logs.push(`[${new Date().toISOString()}] Available in context: botInstance, customConsole, Bot`);
-      
-      // Execute the code in a function context
-      const executeFunction = new Function('botInstance', 'customConsole', 'Bot', executionCode);
-      logs.push(`[${new Date().toISOString()}] Function created successfully, executing...`);
-      
-      const result = executeFunction(botInstance, customConsole, Bot);
-      
-      logs.push(`[${new Date().toISOString()}] ========== EXECUTION RESULT ==========`);
-      logs.push(`[${new Date().toISOString()}] Execution completed`);
-      logs.push(`[${new Date().toISOString()}] Result: ${JSON.stringify(result)}`);
-      
-      if (!result || !result.success) {
-        logs.push(`[${new Date().toISOString()}] ERROR: Generated code execution failed`);
-        logs.push(`[${new Date().toISOString()}] Error message: ${result?.error || 'Unknown error'}`);
-        logs.push(`[${new Date().toISOString()}] Error name: ${result?.name || 'Unknown'}`);
-        if (result?.stack) {
-          logs.push(`[${new Date().toISOString()}] Stack trace: ${result.stack}`);
-        }
-        logs.push(`[${new Date().toISOString()}] STRICT MODE: Bot will NOT start with fallback code`);
-        return { 
-          success: false, 
-          logs, 
-          error: `Code execution failed: ${result?.error || 'Unknown error'}`,
-          errorType: "code_execution_failed"
-        };
-      }
-      
-      logs.push(`[${new Date().toISOString()}] ✓ Generated code executed successfully`);
-      
-    } catch (codeError) {
-      logs.push(`[${new Date().toISOString()}] ERROR: Code execution failed with exception`);
-      logs.push(`[${new Date().toISOString()}] Exception: ${codeError.message}`);
-      logs.push(`[${new Date().toISOString()}] Exception name: ${codeError.name}`);
-      logs.push(`[${new Date().toISOString()}] Exception stack: ${codeError.stack || 'No stack trace'}`);
-      logs.push(`[${new Date().toISOString()}] STRICT MODE: No fallback handlers - bot MUST work with generated code`);
-      return { 
-        success: false, 
-        logs, 
-        error: `Code execution failed: ${codeError.message}`,
-        errorType: "code_execution_failed"
-      };
+    // Check for required Python imports
+    if (!code.includes('from telegram') && !code.includes('import telegram')) {
+      logs.push(`[${new Date().toISOString()}] WARNING: Code might be missing python-telegram-bot imports`);
     }
+
+    logs.push(`[${new Date().toISOString()}] ========== CREATING PYTHON RUNTIME ==========`);
     
-    // Store the bot instance BEFORE starting
-    activeBots.set(botId, { bot: botInstance, controller });
-    logs.push(`[${new Date().toISOString()}] ✓ Bot instance stored in active bots map`);
-    
-    logs.push(`[${new Date().toISOString()}] ========== TELEGRAM CONNECTION TEST ==========`);
+    // Create temporary directory for this bot
+    const tempDir = `/tmp/bot_${botId}`;
     
     try {
-      logs.push(`[${new Date().toISOString()}] Testing bot connection with getMe()...`);
+      // Create bot directory
+      await Deno.mkdir(tempDir, { recursive: true });
+      logs.push(`[${new Date().toISOString()}] ✓ Created temporary directory: ${tempDir}`);
       
-      // Test bot connection first with getMe
-      const botInfoPromise = botInstance.api.getMe();
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Bot token validation timeout after 10 seconds')), 10000)
-      );
+      // Write the Python code to main.py
+      const mainPyPath = `${tempDir}/main.py`;
+      await Deno.writeTextFile(mainPyPath, code);
+      logs.push(`[${new Date().toISOString()}] ✓ Written main.py file`);
       
-      const botInfo = await Promise.race([botInfoPromise, timeoutPromise]) as any;
+      // Create requirements.txt if not present in code
+      if (!code.includes('requirements.txt')) {
+        const requirementsContent = `python-telegram-bot>=20.0
+requests>=2.28.0
+httpx>=0.24.0`;
+        await Deno.writeTextFile(`${tempDir}/requirements.txt`, requirementsContent);
+        logs.push(`[${new Date().toISOString()}] ✓ Created requirements.txt`);
+      }
       
-      logs.push(`[${new Date().toISOString()}] ✓ Bot connected to Telegram successfully`);
-      logs.push(`[${new Date().toISOString()}] Bot info: @${botInfo.username} (${botInfo.first_name})`);
-      logs.push(`[${new Date().toISOString()}] Bot ID: ${botInfo.id}`);
-      logs.push(`[${new Date().toISOString()}] Can join groups: ${botInfo.can_join_groups}`);
-      logs.push(`[${new Date().toISOString()}] Can read all group messages: ${botInfo.can_read_all_group_messages}`);
+      // Set environment variable for bot token
+      const env = { 
+        BOT_TOKEN: token,
+        PYTHONPATH: tempDir,
+        PYTHONUNBUFFERED: "1"
+      };
       
-      logs.push(`[${new Date().toISOString()}] ========== STARTING BOT POLLING ==========`);
+      logs.push(`[${new Date().toISOString()}] ========== INSTALLING DEPENDENCIES ==========`);
       
-      // Start the bot with proper error handling
-      const startPromise = botInstance.start({
-        drop_pending_updates: true,
-        allowed_updates: ["message", "callback_query", "inline_query"]
+      // Install dependencies
+      const pipProcess = new Deno.Command("pip", {
+        args: ["install", "-r", `${tempDir}/requirements.txt`],
+        stdout: "piped",
+        stderr: "piped",
+        env
       });
       
-      const startTimeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Bot start operation timeout after 15 seconds')), 15000)
-      );
+      const pipResult = await pipProcess.output();
+      const pipStdout = new TextDecoder().decode(pipResult.stdout);
+      const pipStderr = new TextDecoder().decode(pipResult.stderr);
       
-      await Promise.race([startPromise, startTimeoutPromise]);
+      if (pipResult.code !== 0) {
+        logs.push(`[${new Date().toISOString()}] ERROR: Failed to install dependencies`);
+        logs.push(`[${new Date().toISOString()}] pip stdout: ${pipStdout}`);
+        logs.push(`[${new Date().toISOString()}] pip stderr: ${pipStderr}`);
+        return { 
+          success: false, 
+          logs, 
+          error: `Failed to install Python dependencies: ${pipStderr}`,
+          errorType: "dependency_install_failed"
+        };
+      }
       
-      logs.push(`[${new Date().toISOString()}] ✓ Bot started successfully with generated code ONLY`);
-      logs.push(`[${new Date().toISOString()}] ✓ No demo/fallback code is running`);
+      logs.push(`[${new Date().toISOString()}] ✓ Dependencies installed successfully`);
+      
+      logs.push(`[${new Date().toISOString()}] ========== STARTING PYTHON BOT PROCESS ==========`);
+      
+      // Start the Python bot process
+      const controller = new AbortController();
+      
+      const pythonProcess = new Deno.Command("python", {
+        args: [mainPyPath],
+        stdout: "piped",
+        stderr: "piped",
+        env,
+        signal: controller.signal
+      });
+      
+      const process = pythonProcess.spawn();
+      
+      // Store the process
+      activeBots.set(botId, { process, controller });
+      
+      logs.push(`[${new Date().toISOString()}] ✓ Python process started`);
+      logs.push(`[${new Date().toISOString()}] ✓ Bot is running with python-telegram-bot library`);
+      
+      // Monitor the process for a few seconds to check if it starts successfully
+      let processExited = false;
+      const processPromise = process.status.then(status => {
+        processExited = true;
+        return status;
+      });
+      
+      // Wait up to 10 seconds for the bot to start
+      const timeout = new Promise(resolve => setTimeout(resolve, 10000));
+      const result = await Promise.race([processPromise, timeout]);
+      
+      if (processExited) {
+        // Process exited, read output
+        const stdout = await process.output();
+        const stderr = new TextDecoder().decode(stdout.stderr);
+        const stdoutText = new TextDecoder().decode(stdout.stdout);
+        
+        logs.push(`[${new Date().toISOString()}] ERROR: Python process exited unexpectedly`);
+        logs.push(`[${new Date().toISOString()}] Exit code: ${(result as any)?.code || 'unknown'}`);
+        logs.push(`[${new Date().toISOString()}] Stdout: ${stdoutText}`);
+        logs.push(`[${new Date().toISOString()}] Stderr: ${stderr}`);
+        
+        // Clean up
+        activeBots.delete(botId);
+        await Deno.remove(tempDir, { recursive: true }).catch(() => {});
+        
+        return { 
+          success: false, 
+          logs, 
+          error: `Python bot process failed: ${stderr || stdoutText || 'Unknown error'}`,
+          errorType: "process_failed"
+        };
+      }
+      
+      logs.push(`[${new Date().toISOString()}] ✓ Bot process running successfully for 10+ seconds`);
       logs.push(`[${new Date().toISOString()}] ✓ Bot is ready to receive messages`);
-      logs.push(`[${new Date().toISOString()}] ========== BOT STARTUP COMPLETE ==========`);
+      logs.push(`[${new Date().toISOString()}] ========== PYTHON BOT STARTUP COMPLETE ==========`);
       
       return { success: true, logs };
       
-    } catch (startError) {
-      logs.push(`[${new Date().toISOString()}] ========== BOT START ERROR ==========`);
-      logs.push(`[${new Date().toISOString()}] ERROR: Failed to start bot with Telegram`);
-      logs.push(`[${new Date().toISOString()}] Error message: ${startError.message}`);
-      logs.push(`[${new Date().toISOString()}] Error name: ${startError.name || 'Unknown'}`);
-      logs.push(`[${new Date().toISOString()}] Error stack: ${startError.stack || 'No stack trace'}`);
+    } catch (processError) {
+      logs.push(`[${new Date().toISOString()}] ========== PYTHON PROCESS ERROR ==========`);
+      logs.push(`[${new Date().toISOString()}] ERROR: Failed to start Python process`);
+      logs.push(`[${new Date().toISOString()}] Error message: ${processError.message}`);
+      logs.push(`[${new Date().toISOString()}] Error stack: ${processError.stack || 'No stack trace'}`);
       
-      // Enhanced error detection and classification
-      let errorType = "unknown_error";
-      let userFriendlyError = "Failed to start bot. Please check your configuration.";
-      
-      if (startError.message.includes('409') || startError.message.includes('Conflict') || startError.message.includes('already running')) {
-        errorType = "bot_already_running";
-        userFriendlyError = "This bot is already running in another location. Please stop the other instance first or wait a few minutes before trying again.";
-        logs.push(`[${new Date().toISOString()}] ➤ DETECTED: Bot token conflict - another instance is running`);
-      } else if (startError.message.includes('401') || startError.message.includes('Unauthorized') || startError.message.includes('token')) {
-        errorType = "invalid_token";
-        userFriendlyError = "Invalid bot token. Please check your token from @BotFather and make sure it's correct.";
-        logs.push(`[${new Date().toISOString()}] ➤ DETECTED: Invalid bot token - check @BotFather`);
-      } else if (startError.message.includes('timeout') || startError.message.includes('network')) {
-        errorType = "network_timeout";
-        userFriendlyError = "Network timeout while connecting to Telegram. Please check your internet connection and try again.";
-        logs.push(`[${new Date().toISOString()}] ➤ DETECTED: Network timeout - check connectivity`);
-      } else if (startError.message.includes('rate') || startError.message.includes('limit')) {
-        errorType = "rate_limited";
-        userFriendlyError = "Rate limited by Telegram. Please wait a few minutes before trying again.";
-        logs.push(`[${new Date().toISOString()}] ➤ DETECTED: Rate limited by Telegram`);
-      } else {
-        logs.push(`[${new Date().toISOString()}] ➤ DETECTED: Unexpected error type`);
-      }
-      
-      // Remove from active bots on error
+      // Clean up
       activeBots.delete(botId);
-      logs.push(`[${new Date().toISOString()}] Bot removed from active bots map due to error`);
+      await Deno.remove(tempDir, { recursive: true }).catch(() => {});
       
       return { 
         success: false, 
         logs, 
-        error: userFriendlyError,
-        errorType 
+        error: `Failed to start Python bot: ${processError.message}`,
+        errorType: "process_start_failed"
       };
     }
     
@@ -337,55 +250,57 @@ export function stopTelegramBot(botId: string): { success: boolean; logs: string
   const logs: string[] = [];
   
   try {
-    logs.push(`[${new Date().toISOString()}] ========== STOPPING BOT ${botId} ==========`);
+    logs.push(`[${new Date().toISOString()}] ========== STOPPING PYTHON BOT ${botId} ==========`);
     
     const botInstance = activeBots.get(botId);
     
     if (!botInstance) {
-      logs.push(`[${new Date().toISOString()}] No active bot found for ${botId} - already stopped`);
+      logs.push(`[${new Date().toISOString()}] No active Python process found for ${botId} - already stopped`);
       logs.push(`[${new Date().toISOString()}] Current active bots: ${Array.from(activeBots.keys()).join(', ') || 'None'}`);
       return { success: true, logs };
     }
     
-    logs.push(`[${new Date().toISOString()}] Found active bot instance, proceeding with graceful shutdown...`);
+    logs.push(`[${new Date().toISOString()}] Found active Python process, proceeding with termination...`);
     
-    // Stop the bot gracefully
+    // Terminate the Python process
     try {
-      if (botInstance.bot && typeof botInstance.bot.stop === 'function') {
-        logs.push(`[${new Date().toISOString()}] Calling bot.stop()...`);
-        botInstance.bot.stop();
-        logs.push(`[${new Date().toISOString()}] ✓ Bot stopped gracefully`);
-      } else {
-        logs.push(`[${new Date().toISOString()}] Warning: bot.stop() method not available`);
-      }
-    } catch (stopError) {
-      logs.push(`[${new Date().toISOString()}] Warning during graceful stop: ${stopError.message}`);
-    }
-    
-    // Always abort the controller
-    try {
-      if (botInstance.controller && typeof botInstance.controller.abort === 'function') {
-        logs.push(`[${new Date().toISOString()}] Aborting controller...`);
+      if (botInstance.controller) {
+        logs.push(`[${new Date().toISOString()}] Aborting process controller...`);
         botInstance.controller.abort();
-        logs.push(`[${new Date().toISOString()}] ✓ Controller aborted`);
-      } else {
-        logs.push(`[${new Date().toISOString()}] Warning: controller.abort() method not available`);
+        logs.push(`[${new Date().toISOString()}] ✓ Process controller aborted`);
       }
     } catch (abortError) {
-      logs.push(`[${new Date().toISOString()}] Warning during abort: ${abortError.message}`);
+      logs.push(`[${new Date().toISOString()}] Warning during process abort: ${abortError.message}`);
+    }
+    
+    // Force kill the process if still running
+    try {
+      if (botInstance.process) {
+        logs.push(`[${new Date().toISOString()}] Killing Python process...`);
+        botInstance.process.kill();
+        logs.push(`[${new Date().toISOString()}] ✓ Python process killed`);
+      }
+    } catch (killError) {
+      logs.push(`[${new Date().toISOString()}] Warning during process kill: ${killError.message}`);
     }
     
     // Always remove from active bots
     activeBots.delete(botId);
     
-    logs.push(`[${new Date().toISOString()}] ✓ Bot ${botId} completely stopped and removed`);
+    // Clean up temporary directory
+    const tempDir = `/tmp/bot_${botId}`;
+    Deno.remove(tempDir, { recursive: true }).catch(error => {
+      logs.push(`[${new Date().toISOString()}] Warning: Failed to clean up temp directory: ${error.message}`);
+    });
+    
+    logs.push(`[${new Date().toISOString()}] ✓ Python bot ${botId} completely stopped and cleaned up`);
     logs.push(`[${new Date().toISOString()}] Remaining active bots: ${Array.from(activeBots.keys()).join(', ') || 'None'}`);
-    logs.push(`[${new Date().toISOString()}] ========== BOT STOP COMPLETE ==========`);
+    logs.push(`[${new Date().toISOString()}] ========== PYTHON BOT STOP COMPLETE ==========`);
     
     return { success: true, logs };
     
   } catch (error) {
-    logs.push(`[${new Date().toISOString()}] ERROR stopping bot: ${error.message}`);
+    logs.push(`[${new Date().toISOString()}] ERROR stopping Python bot: ${error.message}`);
     logs.push(`[${new Date().toISOString()}] Error stack: ${error.stack || 'No stack trace'}`);
     // Still remove from active bots even if there was an error
     activeBots.delete(botId);
@@ -401,13 +316,13 @@ export function getBotLogs(botId: string): string[] {
   const activeBotIds = Array.from(activeBots.keys());
   
   return [
-    `[${timestamp}] ========== BOT STATUS QUERY ==========`,
+    `[${timestamp}] ========== PYTHON BOT STATUS QUERY ==========`,
     `[${timestamp}] Bot ID: ${botId}`,
-    `[${timestamp}] Status: ${isActive ? 'RUNNING with generated code' : 'STOPPED'}`,
+    `[${timestamp}] Status: ${isActive ? 'RUNNING with Python code' : 'STOPPED'}`,
     `[${timestamp}] Total active bots: ${activeCount}`,
     `[${timestamp}] Active bot IDs: ${activeBotIds.join(', ') || 'None'}`,
-    `[${timestamp}] STRICT MODE: No demo/fallback code allowed`,
-    `[${timestamp}] Runtime: Deno with Grammy library`,
+    `[${timestamp}] Runtime: Python with python-telegram-bot library`,
+    `[${timestamp}] Process type: Native Python subprocess`,
     `[${timestamp}] ========== STATUS QUERY COMPLETE ==========`
   ];
 }
