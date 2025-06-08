@@ -1,72 +1,80 @@
 
-export async function generateBotCode(prompt: string, token: string): Promise<{ files: Record<string, string>, explanation: string }> {
-  const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
-  
-  if (!openaiApiKey) {
+import "https://deno.land/x/xhr@0.1.0/mod.ts";
+
+const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+
+interface BotCodeResult {
+  files: Record<string, string>;
+  explanation: string;
+}
+
+export async function generateBotCode(prompt: string, botToken: string): Promise<BotCodeResult> {
+  if (!openAIApiKey) {
     throw new Error('OpenAI API key not configured');
   }
 
-  const systemPrompt = `You are an expert Telegram bot developer. Create a complete, functional Telegram bot using the Grammy framework for Deno.
-
-IMPORTANT REQUIREMENTS:
-1. Use Grammy framework: import { Bot } from "https://deno.land/x/grammy@v1.19.2/mod.ts"
-2. The bot token will be provided via environment variable
-3. Create working, executable code that handles real Telegram messages
-4. Include proper error handling and logging
-5. Use console.log for all important events and messages
-6. Structure the code to work with the provided bot instance
-
-Example structure:
-\`\`\`javascript
-// The bot instance will be passed to this function
-// Don't create a new Bot instance, use the provided one
-
-// Add message handlers
-bot.command("start", (ctx) => {
-  console.log("User started the bot:", ctx.from?.username);
-  ctx.reply("Welcome! I'm your AI assistant.");
-});
-
-bot.on("message:text", (ctx) => {
-  console.log("Received message:", ctx.message.text);
-  // Handle the message
-});
-
-// Error handling
-bot.catch((err) => {
-  console.error("Bot error:", err);
-});
-
-console.log("Bot handlers configured successfully");
-\`\`\`
-
-Create a bot based on this prompt: "${prompt}"
-
-Return ONLY a JSON object with this structure:
-{
-  "files": {
-    "main.py": "// Bot code here - use the structure above",
-    "requirements.txt": "// Empty for Deno",
-    "health.py": "// Health check endpoint",
-    ".env": "BOT_TOKEN=${token}"
-  },
-  "explanation": "Brief explanation of what the bot does"
-}`;
+  console.log('Generating bot code with OpenAI...');
 
   try {
+    const systemPrompt = `You are an expert Telegram bot developer using the Grammy framework for Deno.
+
+IMPORTANT RULES:
+1. Generate code that works in Deno runtime environment
+2. Do NOT use import statements - the Bot class will be provided as a parameter
+3. Write code that can be executed with new Function()
+4. Use only basic JavaScript/TypeScript syntax
+5. The bot token will be automatically injected
+
+Generate a complete Telegram bot based on the user's request. The bot should:
+- Handle the /start command with a welcome message
+- Respond to user messages appropriately based on the prompt
+- Include error handling
+- Log important events to console
+
+Format your response as a JSON object with:
+{
+  "files": {
+    "main.py": "// Bot code here - do not include imports",
+    "requirements.txt": "grammy",
+    ".env": "BOT_TOKEN=${botToken}"
+  },
+  "explanation": "Brief explanation of what the bot does"
+}
+
+Write the bot code in the main.py file (it will be executed as JavaScript despite the .py extension). 
+The code should work with this execution pattern:
+const botFunction = new Function('bot', 'console', 'Bot', codeContent);
+botFunction(botInstance, customConsole, BotConstructor);
+
+EXAMPLE CODE STRUCTURE:
+// Handle start command
+bot.command('start', (ctx) => {
+  console.log('User started the bot');
+  ctx.reply('Welcome! I am your AI assistant.');
+});
+
+// Handle text messages
+bot.on('message:text', (ctx) => {
+  const userMessage = ctx.message.text;
+  console.log('Received message:', userMessage);
+  
+  // Your bot logic here
+  ctx.reply('Your response here');
+});
+
+Remember: NO import statements, use the provided bot parameter directly.`;
+
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openaiApiKey}`,
+        'Authorization': `Bearer ${openAIApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         messages: [
-          {
-            role: 'system',
-            content: systemPrompt
-          }
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: prompt }
         ],
         temperature: 0.7,
         max_tokens: 2000,
@@ -75,41 +83,56 @@ Return ONLY a JSON object with this structure:
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('OpenAI API error:', response.status, errorText);
-      throw new Error(`OpenAI API error: ${response.status}`);
+      console.error('OpenAI API error:', errorText);
+      throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
-    const content = data.choices[0]?.message?.content;
+    const generatedContent = data.choices[0].message.content;
 
-    if (!content) {
-      throw new Error('No content received from OpenAI');
-    }
+    console.log('Generated content:', generatedContent);
 
     // Parse the JSON response
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('Invalid JSON response from OpenAI');
+    let botCodeResult: BotCodeResult;
+    try {
+      botCodeResult = JSON.parse(generatedContent);
+    } catch (parseError) {
+      console.error('Failed to parse OpenAI response as JSON:', parseError);
+      
+      // Fallback: create a simple bot structure
+      botCodeResult = {
+        files: {
+          "main.py": `// Simple bot based on: ${prompt}
+bot.command('start', (ctx) => {
+  console.log('User started the bot');
+  ctx.reply('Hello! I am your AI assistant. How can I help you today?');
+});
+
+bot.on('message:text', (ctx) => {
+  const userMessage = ctx.message.text;
+  console.log('Received message:', userMessage);
+  
+  // Simple echo response
+  ctx.reply('I received your message: ' + userMessage + '. I am still learning how to respond properly!');
+});
+
+console.log('Bot code loaded successfully');`,
+          "requirements.txt": "grammy",
+          ".env": `BOT_TOKEN=${botToken}`
+        },
+        explanation: "A simple echo bot that responds to messages and handles the /start command."
+      };
     }
 
-    const result = JSON.parse(jsonMatch[0]);
-    
-    // Ensure .env file has the correct token
-    result.files['.env'] = `BOT_TOKEN=${token}`;
-    
-    // Create a simple health check
-    result.files['health.py'] = `
-// Simple health check for Deno
-export function healthCheck() {
-  return {
-    status: "healthy",
-    timestamp: new Date().toISOString(),
-    service: "telegram-bot"
-  };
-}
-`;
+    // Ensure the bot token is injected into the .env file
+    if (botCodeResult.files['.env']) {
+      botCodeResult.files['.env'] = botCodeResult.files['.env'].replace('${botToken}', botToken);
+    } else {
+      botCodeResult.files['.env'] = `BOT_TOKEN=${botToken}`;
+    }
 
-    return result;
+    console.log('Bot code generation completed successfully');
+    return botCodeResult;
 
   } catch (error) {
     console.error('Error generating bot code:', error);

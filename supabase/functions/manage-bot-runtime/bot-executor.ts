@@ -19,9 +19,6 @@ export async function startTelegramBot(botId: string, token: string, code: strin
     const bot = new Bot(token);
     const controller = new AbortController();
     
-    // Execute the bot code in a safe context
-    const botFunction = new Function('bot', 'console', code);
-    
     // Create a custom console for logging
     const customConsole = {
       log: (...args: any[]) => {
@@ -44,10 +41,38 @@ export async function startTelegramBot(botId: string, token: string, code: strin
       }
     };
 
-    // Execute bot code with custom console
-    botFunction(bot, customConsole);
-    
-    logs.push(`[${new Date().toISOString()}] Bot code executed successfully`);
+    // Execute bot code by creating a dynamic module
+    try {
+      // Replace any import statements with direct grammy usage
+      const cleanCode = code
+        .replace(/import\s+.*?from\s+['"].*?['"];?\s*/g, '')
+        .replace(/from\s+['"]grammy['"]/, '')
+        .replace(/import\s*\{\s*Bot\s*\}/, '// Bot is already available');
+
+      // Create a function that has access to Bot and console
+      const botFunction = new Function('bot', 'console', 'Bot', cleanCode);
+      
+      // Execute bot code with the bot instance, custom console, and Bot constructor
+      botFunction(bot, customConsole, Bot);
+      
+      logs.push(`[${new Date().toISOString()}] Bot code executed successfully`);
+      
+    } catch (codeError) {
+      logs.push(`[${new Date().toISOString()}] Error executing bot code: ${codeError.message}`);
+      
+      // Fallback: create a simple echo bot if the custom code fails
+      logs.push(`[${new Date().toISOString()}] Falling back to simple echo bot`);
+      
+      bot.on('message:text', (ctx) => {
+        customConsole.log(`Received message: ${ctx.message.text}`);
+        ctx.reply(`Echo: ${ctx.message.text}`);
+      });
+      
+      bot.command('start', (ctx) => {
+        customConsole.log('Start command received');
+        ctx.reply('Hello! I am your AI bot. Send me any message and I will echo it back.');
+      });
+    }
     
     // Start the bot
     await bot.start({
