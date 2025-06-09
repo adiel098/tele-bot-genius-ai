@@ -54,6 +54,10 @@ const WorkspaceLayout = ({
     setLogsHasErrors(hasErrorsDetected);
   }, []);
 
+  const handleLogsFixByAI = useCallback(async (errorLogs: string) => {
+    await onFixByAI(errorLogs);
+  }, [onFixByAI]);
+
   // Combine errors from props and logs
   const combinedHasErrors = hasErrors || logsHasErrors;
   const combinedErrorLogs = errorLogs || logsErrorContent;
@@ -85,7 +89,9 @@ const WorkspaceLayout = ({
         <Tabs defaultValue="files" className="h-full flex flex-col">
           <TabsList className="grid w-full grid-cols-2 mx-4 mt-4">
             <TabsTrigger value="files">Files</TabsTrigger>
-            <TabsTrigger value="logs">Runtime Logs</TabsTrigger>
+            <TabsTrigger value="logs" className={logsHasErrors ? "text-red-600" : ""}>
+              Runtime Logs {logsHasErrors && "⚠️"}
+            </TabsTrigger>
           </TabsList>
           
           <TabsContent value="files" className="flex-1 p-4">
@@ -93,7 +99,11 @@ const WorkspaceLayout = ({
           </TabsContent>
           
           <TabsContent value="logs" className="flex-1 p-4">
-            <BotRuntimeLogs botId={botId} onLogsUpdate={handleLogsUpdate} />
+            <BotRuntimeLogs 
+              botId={botId} 
+              onLogsUpdate={handleLogsUpdate}
+              onFixByAI={handleLogsFixByAI}
+            />
           </TabsContent>
         </Tabs>
       </div>

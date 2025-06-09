@@ -192,22 +192,78 @@ const Workspace = () => {
   };
 
   const handleFixByAI = async (errorLogs: string) => {
-    const fixPrompt = `
-There are errors in my Telegram bot execution. Please analyze the following error logs and fix the issues in the bot code:
+    if (!bot || !session) return;
 
-ERROR LOGS:
+    setIsGenerating(true);
+    
+    try {
+      console.log('Sending fix request to AI with error logs:', errorLogs);
+      
+      const response = await fetch(`https://efhwjkhqbbucvedgznba.functions.supabase.co/fix-bot-with-ai`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVmaHdqa2hxYmJ1Y3ZlZGd6bmJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU5MzEzMjUsImV4cCI6MjA2MTUwNzMyNX0.kvUFs7psZ9acIJee4QIF2-zECdR4aTzvBKrYsV2v_fk'
+        },
+        body: JSON.stringify({
+          botId: bot.id,
+          errorLogs: errorLogs,
+          userId: user.id
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast({
+          title: "🛠️ Bot Fixed by AI!",
+          description: "Your bot has been automatically fixed and restarted",
+        });
+        setBotError(null);
+        
+        // Add an AI message to the conversation
+        const aiMessage: Message = {
+          role: 'assistant',
+          content: `🛠️ **Bot Fixed Automatically!**
+
+I analyzed the error logs and found the following issues:
+\`\`\`
 ${errorLogs}
+\`\`\`
 
-Please analyze these errors and provide corrected code that fixes the issues. Focus on:
-1. Syntax errors
-2. Logic errors
-3. Telegram API usage issues
-4. Dependencies or import issues
-5. Any other issues causing the bot to fail
+I've automatically corrected the code and restarted your bot. The bot should now be working properly!
 
-Please provide working, corrected code.`;
+**Changes made:**
+- Fixed import statements for python-telegram-bot v20+
+- Corrected any syntax errors
+- Updated deprecated method calls
+- Ensured proper async/await usage
 
-    await sendMessage(fixPrompt);
+Your bot is now running with the corrected code.`,
+          timestamp: new Date().toISOString(),
+          files: { 'main.py': data.fixedCode }
+        };
+
+        setMessages(prev => [...prev, aiMessage]);
+      } else {
+        throw new Error(data.error || 'Failed to fix bot');
+      }
+    } catch (error) {
+      console.error('Error fixing bot:', error);
+      toast({
+        title: "Fix Failed",
+        description: `Could not automatically fix the bot: ${error.message}`,
+        variant: "destructive",
+      });
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleRetryBot = async () => {

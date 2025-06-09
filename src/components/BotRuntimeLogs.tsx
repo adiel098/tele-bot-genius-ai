@@ -3,26 +3,38 @@ import { useState, useEffect } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Wrench } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
 interface BotRuntimeLogsProps {
   botId: string;
   onLogsUpdate?: (logs: string, hasErrors: boolean) => void;
+  onFixByAI?: (errorLogs: string) => void;
 }
 
-const BotRuntimeLogs = ({ botId, onLogsUpdate }: BotRuntimeLogsProps) => {
+const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps) => {
   const [logs, setLogs] = useState<string>("");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [hasErrors, setHasErrors] = useState(false);
+  const [errorDetails, setErrorDetails] = useState<string>("");
   const { toast } = useToast();
 
   const checkForErrors = (logText: string) => {
-    return logText.includes('[ERROR]') || 
-           logText.includes('Error:') || 
-           logText.includes('Failed to') ||
-           logText.includes('offline') ||
-           logText.includes('administrator');
+    const errorKeywords = ['ERROR:', 'ImportError:', 'ModuleNotFoundError:', 'TypeError:', 'ValueError:', 'AttributeError:', 'Traceback', 'Exception:', 'cannot import'];
+    return errorKeywords.some(keyword => logText.includes(keyword));
+  };
+
+  const extractErrorDetails = (logText: string) => {
+    const lines = logText.split('\n');
+    const errorLines = lines.filter(line => 
+      line.includes('ERROR:') || 
+      line.includes('ImportError:') || 
+      line.includes('Traceback') ||
+      line.includes('cannot import') ||
+      line.includes('ModuleNotFoundError:')
+    );
+    return errorLines.join('\n');
   };
 
   const fetchLogs = async () => {
@@ -37,6 +49,7 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate }: BotRuntimeLogsProps) => {
         console.error('Error fetching logs:', error);
         const errorMessage = "Error loading logs: " + error.message;
         setLogs(errorMessage);
+        setHasErrors(true);
         if (onLogsUpdate) {
           onLogsUpdate(errorMessage, true);
         }
@@ -59,6 +72,12 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate }: BotRuntimeLogsProps) => {
       
       // Check if there are errors in the logs
       const hasErrorsInLogs = checkForErrors(logText) || data.runtime_status === 'error';
+      setHasErrors(hasErrorsInLogs);
+      
+      if (hasErrorsInLogs) {
+        const errorInfo = extractErrorDetails(logText);
+        setErrorDetails(errorInfo);
+      }
       
       // Notify parent component about logs update
       if (onLogsUpdate) {
@@ -68,6 +87,7 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate }: BotRuntimeLogsProps) => {
       console.error('Error:', error);
       const errorMessage = "Error loading logs: " + error.message;
       setLogs(errorMessage);
+      setHasErrors(true);
       if (onLogsUpdate) {
         onLogsUpdate(errorMessage, true);
       }
@@ -106,6 +126,13 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate }: BotRuntimeLogsProps) => {
     }
   };
 
+  const handleFixByAI = () => {
+    if (onFixByAI && (errorDetails || logs)) {
+      const errorContent = errorDetails || logs;
+      onFixByAI(errorContent);
+    }
+  };
+
   useEffect(() => {
     fetchLogs();
 
@@ -138,6 +165,12 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate }: BotRuntimeLogsProps) => {
             setLogs(logText);
             
             const hasErrorsInLogs = checkForErrors(logText) || payload.new.runtime_status === 'error';
+            setHasErrors(hasErrorsInLogs);
+            
+            if (hasErrorsInLogs) {
+              const errorInfo = extractErrorDetails(logText);
+              setErrorDetails(errorInfo);
+            }
             
             if (onLogsUpdate) {
               onLogsUpdate(logText, hasErrorsInLogs);
@@ -157,7 +190,7 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate }: BotRuntimeLogsProps) => {
       if (line.trim() === '') return null;
       
       let className = "text-gray-700";
-      if (line.includes('[ERROR]') || line.includes('Error:') || line.includes('Failed to') || line.includes('offline') || line.includes('administrator')) {
+      if (line.includes('[ERROR]') || line.includes('Error:') || line.includes('ImportError:') || line.includes('cannot import') || line.includes('Traceback')) {
         className = "text-red-600 font-medium";
       } else if (line.includes('[WARN]') || line.includes('Warning:')) {
         className = "text-yellow-600";
@@ -181,16 +214,29 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate }: BotRuntimeLogsProps) => {
         <CardTitle className="text-sm flex items-center justify-between">
           <div className="flex items-center">
             🐳 Docker Logs
-            <div className="ml-2 w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+            <div className={`ml-2 w-2 h-2 rounded-full animate-pulse ${hasErrors ? 'bg-red-500' : 'bg-green-500'}`}></div>
           </div>
-          <Button 
-            onClick={refreshLogs} 
-            disabled={isRefreshing}
-            variant="outline" 
-            size="sm"
-          >
-            <RefreshCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
-          </Button>
+          <div className="flex gap-2">
+            {hasErrors && onFixByAI && (
+              <Button 
+                onClick={handleFixByAI}
+                variant="outline" 
+                size="sm"
+                className="bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
+              >
+                <Wrench className="h-3 w-3 mr-1" />
+                Fix by AI
+              </Button>
+            )}
+            <Button 
+              onClick={refreshLogs} 
+              disabled={isRefreshing}
+              variant="outline" 
+              size="sm"
+            >
+              <RefreshCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
         </CardTitle>
       </CardHeader>
       <CardContent>
