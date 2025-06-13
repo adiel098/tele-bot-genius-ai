@@ -11,7 +11,6 @@ const corsHeaders = {
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const LOCAL_BOT_SERVER_URL = Deno.env.get('LOCAL_BOT_SERVER_URL') || 'http://localhost:3000';
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -119,43 +118,37 @@ Please provide the corrected Python code that fixes these errors. Return ONLY th
         contentType: 'text/plain'
       });
 
-    // Send the fixed code to the local bot server
-    const updateResponse = await fetch(`${LOCAL_BOT_SERVER_URL}/update_bot_code`, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true'
-      },
-      body: JSON.stringify({
+    // Instead of calling local server, we'll trigger a Railway redeploy
+    // This will happen through the normal bot restart process
+    const restartResponse = await supabase.functions.invoke('manage-bot-runtime', {
+      body: {
+        action: 'restart',
         botId: botId,
-        newCode: fixedCode,
-        token: bot.token
-      })
+        userId: userId
+      }
     });
 
-    const updateResult = await updateResponse.json();
-
-    if (updateResult.success) {
+    if (restartResponse.data?.success) {
       // Update bot status and logs
       await supabase
         .from('bots')
         .update({
-          runtime_status: 'running',
-          runtime_logs: `Bot fixed by AI and restarted successfully!\n\nFixed issues:\n${errorLogs}\n\nBot is now running with corrected code.`
+          runtime_status: 'starting',
+          runtime_logs: `Bot fixed by AI and redeployment initiated!\n\nFixed issues:\n${errorLogs}\n\nBot is being redeployed on Railway with corrected code.`
         })
         .eq('id', botId);
 
-      console.log('Bot fixed and restarted successfully');
+      console.log('Bot fixed and redeploy initiated successfully');
 
       return new Response(JSON.stringify({
         success: true,
-        message: 'Bot fixed by AI and restarted successfully!',
+        message: 'Bot fixed by AI and redeploy initiated successfully!',
         fixedCode: fixedCode
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     } else {
-      throw new Error(updateResult.error || 'Failed to update bot code');
+      throw new Error('Failed to restart bot on Railway');
     }
 
   } catch (error) {

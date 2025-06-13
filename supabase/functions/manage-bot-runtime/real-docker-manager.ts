@@ -1,19 +1,23 @@
 
-import { 
-  createContainer, 
-  stopDockerContainer, 
-  getDockerContainerStatusAsync, 
-  getDockerContainerLogs 
-} from './docker-operations.ts';
+import { RailwayManager } from './railway-manager.ts';
 
 export class RealDockerManager {
   
   static async createContainer(botId: string, code: string, token: string): Promise<{ success: boolean; logs: string[]; containerId?: string; error?: string }> {
-    return createContainer(botId, code, token);
+    // Use Railway instead of local Docker
+    const result = await RailwayManager.createBotDeployment(botId, code, token);
+    
+    return {
+      success: result.success,
+      logs: result.logs,
+      containerId: result.deploymentId, // Use deployment ID as container ID
+      error: result.error
+    };
   }
 
   static async stopContainer(botId: string, token?: string): Promise<{ success: boolean; logs: string[] }> {
-    return stopDockerContainer(botId, token);
+    // Use Railway to stop deployment
+    return RailwayManager.stopBotDeployment(botId);
   }
 
   static getContainerStatus(botId: string): { isRunning: boolean; containerId?: string } {
@@ -22,7 +26,8 @@ export class RealDockerManager {
   }
 
   static async getContainerStatusAsync(botId: string): Promise<{ isRunning: boolean; containerId?: string }> {
-    return getDockerContainerStatusAsync(botId);
+    // Use Railway to check deployment status
+    return RailwayManager.getDeploymentStatus(botId);
   }
 
   static getRunningContainers(): string[] {
@@ -31,6 +36,7 @@ export class RealDockerManager {
   }
 
   static async getContainerLogs(botId: string): Promise<string[]> {
-    return getDockerContainerLogs(botId);
+    // Use Railway to get deployment logs
+    return RailwayManager.getDeploymentLogs(botId);
   }
 }

@@ -7,21 +7,18 @@ const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// כתובת השרת המקומי שלך
-const LOCAL_BOT_SERVER_URL = Deno.env.get('LOCAL_BOT_SERVER_URL') || 'https://93ff-192-114-52-1.ngrok-free.app';
-
 export async function processWebhook(botId: string, webhookData: any, token: string): Promise<{ success: boolean; logs: string[]; response?: string }> {
   const logs: string[] = [];
   
   try {
-    logs.push(BotLogger.logSection(`PROCESSING WEBHOOK FOR LOCAL PYTHON BOT ${botId}`));
+    logs.push(BotLogger.logSection(`PROCESSING WEBHOOK FOR RAILWAY BOT ${botId}`));
     logs.push(BotLogger.log(botId, `Webhook data received: ${JSON.stringify(webhookData)}`));
     
-    // Check if the bot container is running via local server
-    const containerStatus = await RealDockerManager.getContainerStatusAsync(botId);
+    // Check if the bot deployment is running on Railway
+    const deploymentStatus = await RealDockerManager.getContainerStatusAsync(botId);
     
-    if (!containerStatus.isRunning || !containerStatus.containerId) {
-      logs.push(BotLogger.logError('Local Python bot container is not running'));
+    if (!deploymentStatus.isRunning || !deploymentStatus.containerId) {
+      logs.push(BotLogger.logError('Railway bot deployment is not running'));
       
       // Send fallback response
       if (webhookData.message) {
@@ -43,16 +40,16 @@ export async function processWebhook(botId: string, webhookData: any, token: str
       return { success: false, logs };
     }
 
-    // Forward webhook to the local Python server
-    logs.push(BotLogger.log(botId, 'Forwarding webhook to LOCAL Python server...'));
+    // Forward webhook to the Railway deployment
+    logs.push(BotLogger.log(botId, 'Forwarding webhook to Railway deployment...'));
     
-    const serverResponse = await forwardToLocalPythonServer(botId, webhookData, logs);
+    const serverResponse = await forwardToRailwayDeployment(botId, webhookData, logs, deploymentStatus.containerId!);
     
     if (serverResponse.success) {
-      logs.push(BotLogger.logSuccess('✅ LOCAL Python server processed webhook successfully'));
+      logs.push(BotLogger.logSuccess('✅ Railway deployment processed webhook successfully'));
       return { success: true, logs, response: serverResponse.response };
     } else {
-      logs.push(BotLogger.logError('❌ LOCAL Python server failed to process webhook'));
+      logs.push(BotLogger.logError('❌ Railway deployment failed to process webhook'));
       return { success: false, logs };
     }
     
@@ -62,34 +59,35 @@ export async function processWebhook(botId: string, webhookData: any, token: str
   }
 }
 
-// Forward webhook to the local Python server
-async function forwardToLocalPythonServer(
+// Forward webhook to the Railway deployment
+async function forwardToRailwayDeployment(
   botId: string, 
   webhookData: any, 
-  logs: string[]
+  logs: string[],
+  deploymentId: string
 ): Promise<{ success: boolean; response?: string }> {
   
-  logs.push(BotLogger.log(botId, `Calling LOCAL Python server: ${LOCAL_BOT_SERVER_URL}`));
-  
   try {
-    const webhookUrl = `${LOCAL_BOT_SERVER_URL}/webhook/${botId}`;
+    // Get deployment URL from Railway API
+    const deploymentUrl = `https://bot-${botId}.up.railway.app`; // Railway auto-generated URL pattern
+    const webhookUrl = `${deploymentUrl}/webhook/${botId}`;
+    
     logs.push(BotLogger.log(botId, `POST ${webhookUrl}`));
     
     const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 
-        'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true' // עבור ngrok
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify(webhookData)
     });
     
     if (!response.ok) {
-      throw new Error(`Local server responded with ${response.status}: ${response.statusText}`);
+      throw new Error(`Railway deployment responded with ${response.status}: ${response.statusText}`);
     }
     
     const result = await response.text();
-    logs.push(BotLogger.logSuccess(`✅ Local server response: ${result}`));
+    logs.push(BotLogger.logSuccess(`✅ Railway deployment response: ${result}`));
     
     return { 
       success: true, 
@@ -97,7 +95,7 @@ async function forwardToLocalPythonServer(
     };
     
   } catch (error) {
-    logs.push(BotLogger.logError(`❌ Error calling local Python server: ${error.message}`));
+    logs.push(BotLogger.logError(`❌ Error calling Railway deployment: ${error.message}`));
     return { success: false };
   }
 }
