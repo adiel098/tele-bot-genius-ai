@@ -2,11 +2,12 @@
 import { BotLogger } from './logger.ts';
 
 export async function setupTelegramWebhook(botId: string, token: string, logs: string[]): Promise<void> {
-  const webhookUrl = `https://efhwjkhqbbucvedgznba.supabase.co/functions/v1/telegram-webhook/${botId}`;
-  logs.push(BotLogger.log(botId, `Setting Telegram webhook: ${webhookUrl}`));
+  // Point webhook directly to Railway deployment where the bot is actually running
+  const webhookUrl = `https://bot-${botId}.up.railway.app/webhook`;
+  logs.push(BotLogger.log(botId, `Setting Telegram webhook to Railway deployment: ${webhookUrl}`));
   
   try {
-    console.log(`[${new Date().toISOString()}] Setting up Telegram webhook...`);
+    console.log(`[${new Date().toISOString()}] Setting up Telegram webhook to Railway...`);
     const webhookResponse = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -20,8 +21,9 @@ export async function setupTelegramWebhook(botId: string, token: string, logs: s
     console.log(`[${new Date().toISOString()}] Webhook response:`, JSON.stringify(webhookData, null, 2));
     
     if (webhookData.ok) {
-      logs.push(BotLogger.logSuccess('✅ Telegram webhook configured successfully'));
+      logs.push(BotLogger.logSuccess('✅ Telegram webhook configured to Railway deployment'));
       logs.push(BotLogger.log(botId, `Webhook URL: ${webhookUrl}`));
+      logs.push(BotLogger.log(botId, 'Bot will receive messages directly on Railway'));
     } else {
       logs.push(BotLogger.logWarning(`⚠️ Webhook setup warning: ${webhookData.description}`));
     }
