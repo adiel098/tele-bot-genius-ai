@@ -39,10 +39,10 @@ export class RailwayDeploymentManager {
         console.log(`[${new Date().toISOString()}] Project ID preview: ${projectId.substring(0, 8)}...`);
       }
 
-      logs.push(BotLogger.log(botId, 'Creating Railway service with real bot token...'));
-      console.log(`[${new Date().toISOString()}] Attempting to create Railway service with real bot token...`);
+      logs.push(BotLogger.log(botId, 'Creating Railway service (will use .env file for bot token)...'));
+      console.log(`[${new Date().toISOString()}] Creating Railway service - bot token will be read from .env file...`);
 
-      // Pass the real bot token to createService
+      // Create service without environment variables - rely on .env file
       const serviceResult = await RailwayApiClient.createService(projectId, botId, token);
 
       console.log(`[${new Date().toISOString()}] Service creation result: ${JSON.stringify(serviceResult, null, 2)}`);
@@ -59,7 +59,8 @@ export class RailwayDeploymentManager {
       const serviceId = serviceResult.serviceId!;
       console.log(`[${new Date().toISOString()}] ✅ Service created successfully: ${serviceId}`);
       logs.push(BotLogger.logSuccess(`✅ Railway service created: ${serviceId}`));
-      logs.push(BotLogger.logSuccess(`✅ Bot token properly configured in Railway environment`));
+      logs.push(BotLogger.logSuccess(`✅ Bot token configured in .env file - no Railway env vars needed`));
+      logs.push(BotLogger.log(botId, 'Service will automatically read bot token from .env file during deployment'));
 
       logs.push(BotLogger.logSuccess(`✅ Railway deployment created: ${serviceId}`));
       logs.push(BotLogger.log(botId, `Deployment URL: https://bot-${botId}.up.railway.app`));
