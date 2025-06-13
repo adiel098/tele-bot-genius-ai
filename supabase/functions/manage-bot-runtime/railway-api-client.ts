@@ -1,14 +1,15 @@
+
 import { BotLogger } from './logger.ts';
 
-const RAILWAY_REST_API_URL = 'https://backboard.railway.app';
+const RAILWAY_GRAPHQL_API_URL = 'https://backboard.railway.app/graphql/v2';
 const RAILWAY_API_TOKEN = Deno.env.get('RAILWAY_API_TOKEN');
 
 export class RailwayApiClient {
   
-  static async makeRequest(endpoint: string, method: string = 'GET', body?: any): Promise<Response> {
-    console.log(`[${new Date().toISOString()}] ========== RAILWAY API REQUEST DEBUG ==========`);
-    console.log(`[${new Date().toISOString()}] Endpoint: ${endpoint}`);
-    console.log(`[${new Date().toISOString()}] Method: ${method}`);
+  static async makeGraphQLRequest(query: string, variables?: any): Promise<Response> {
+    console.log(`[${new Date().toISOString()}] ========== RAILWAY GRAPHQL REQUEST DEBUG ==========`);
+    console.log(`[${new Date().toISOString()}] Query: ${query.substring(0, 100)}...`);
+    console.log(`[${new Date().toISOString()}] Variables: ${JSON.stringify(variables, null, 2)}`);
     console.log(`[${new Date().toISOString()}] Has API Token: ${RAILWAY_API_TOKEN ? 'YES' : 'NO'}`);
     
     if (!RAILWAY_API_TOKEN) {
@@ -18,27 +19,27 @@ export class RailwayApiClient {
 
     console.log(`[${new Date().toISOString()}] Token preview: ${RAILWAY_API_TOKEN.substring(0, 10)}...`);
 
-    const url = `${RAILWAY_REST_API_URL}${endpoint}`;
-    console.log(`[${new Date().toISOString()}] Full URL: ${url}`);
-    
+    const requestBody = {
+      query,
+      variables: variables || {}
+    };
+
     const options: RequestInit = {
-      method,
+      method: 'POST',
       headers: {
         'Authorization': `Bearer ${RAILWAY_API_TOKEN}`,
         'Content-Type': 'application/json',
       },
+      body: JSON.stringify(requestBody)
     };
 
-    if (body && method !== 'GET') {
-      options.body = JSON.stringify(body);
-      console.log(`[${new Date().toISOString()}] Request body: ${JSON.stringify(body, null, 2)}`);
-    }
-
+    console.log(`[${new Date().toISOString()}] Full URL: ${RAILWAY_GRAPHQL_API_URL}`);
+    console.log(`[${new Date().toISOString()}] Request body: ${JSON.stringify(requestBody, null, 2)}`);
     console.log(`[${new Date().toISOString()}] Request headers: ${JSON.stringify(options.headers, null, 2)}`);
 
     try {
-      console.log(`[${new Date().toISOString()}] Making HTTP request...`);
-      const response = await fetch(url, options);
+      console.log(`[${new Date().toISOString()}] Making GraphQL request...`);
+      const response = await fetch(RAILWAY_GRAPHQL_API_URL, options);
       
       console.log(`[${new Date().toISOString()}] Response status: ${response.status}`);
       console.log(`[${new Date().toISOString()}] Response statusText: ${response.statusText}`);
@@ -58,25 +59,39 @@ export class RailwayApiClient {
       return newResponse;
 
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] ❌ HTTP Request failed with error: ${error.message}`);
+      console.error(`[${new Date().toISOString()}] ❌ GraphQL Request failed with error: ${error.message}`);
       console.error(`[${new Date().toISOString()}] Error stack: ${error.stack}`);
       throw error;
     }
   }
 
-  // Test basic Railway API access
+  // Test basic Railway API access using GraphQL
   static async testRailwayConnection(): Promise<{ success: boolean; error?: string; data?: any }> {
     try {
       console.log(`[${new Date().toISOString()}] ========== TESTING RAILWAY CONNECTION ==========`);
       
-      // Try to get basic user/account info first
-      const response = await this.makeRequest('/api/v2/me');
+      const query = `
+        query {
+          me {
+            id
+            name
+            email
+          }
+        }
+      `;
+
+      const response = await this.makeGraphQLRequest(query);
       
       if (response.ok) {
-        const userData = await response.json();
+        const result = await response.json();
+        if (result.errors) {
+          console.error(`[${new Date().toISOString()}] ❌ GraphQL errors: ${JSON.stringify(result.errors)}`);
+          return { success: false, error: `GraphQL errors: ${result.errors.map((e: any) => e.message).join(', ')}` };
+        }
+        
         console.log(`[${new Date().toISOString()}] ✅ Railway API connection successful!`);
-        console.log(`[${new Date().toISOString()}] User data: ${JSON.stringify(userData, null, 2)}`);
-        return { success: true, data: userData };
+        console.log(`[${new Date().toISOString()}] User data: ${JSON.stringify(result.data.me, null, 2)}`);
+        return { success: true, data: result.data.me };
       } else {
         console.error(`[${new Date().toISOString()}] ❌ Railway API connection failed`);
         return { success: false, error: `HTTP ${response.status}: ${response.statusText}` };
@@ -87,22 +102,60 @@ export class RailwayApiClient {
     }
   }
 
-  // List all available projects
+  // List all available projects using GraphQL
   static async listProjects(): Promise<{ success: boolean; projects?: any[]; error?: string }> {
     try {
       console.log(`[${new Date().toISOString()}] ========== LISTING RAILWAY PROJECTS ==========`);
       
-      const response = await this.makeRequest('/api/v2/projects');
+      const query = `
+        query {
+          me {
+            projects {
+              edges {
+                node {
+                  id
+                  name
+                  services {
+                    edges {
+                      node {
+                        id
+                        name
+                      }
+                    }
+                  }
+                  environments {
+                    edges {
+                      node {
+                        id
+                        name
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `;
+
+      const response = await this.makeGraphQLRequest(query);
       
-      if (response.ok) {
-        const projects = await response.json();
-        console.log(`[${new Date().toISOString()}] ✅ Found ${projects.length} projects`);
-        console.log(`[${new Date().toISOString()}] Projects: ${JSON.stringify(projects, null, 2)}`);
-        return { success: true, projects };
-      } else {
+      if (!response.ok) {
         console.error(`[${new Date().toISOString()}] ❌ Failed to list projects`);
         return { success: false, error: `HTTP ${response.status}: ${response.statusText}` };
       }
+
+      const result = await response.json();
+      if (result.errors) {
+        console.error(`[${new Date().toISOString()}] ❌ GraphQL errors: ${JSON.stringify(result.errors)}`);
+        return { success: false, error: `GraphQL errors: ${result.errors.map((e: any) => e.message).join(', ')}` };
+      }
+
+      const projects = result.data.me.projects.edges.map((edge: any) => edge.node);
+      console.log(`[${new Date().toISOString()}] ✅ Found ${projects.length} projects`);
+      console.log(`[${new Date().toISOString()}] Projects: ${JSON.stringify(projects, null, 2)}`);
+      return { success: true, projects };
+
     } catch (error) {
       console.error(`[${new Date().toISOString()}] ❌ Error listing projects: ${error.message}`);
       return { success: false, error: error.message };
@@ -142,13 +195,29 @@ export class RailwayApiClient {
 
       console.log(`[${new Date().toISOString()}] ✅ Project found: ${targetProject.name} (${targetProject.id})`);
 
-      const response = await this.makeRequest(`/api/v2/projects/${projectId}/services`, 'POST', {
-        name: `bot-${botId}`,
-        source: {
-          type: 'repo',
-          repo: 'temporary'
+      // Create service using GraphQL mutation
+      const mutation = `
+        mutation serviceCreate($input: ServiceCreateInput!) {
+          serviceCreate(input: $input) {
+            id
+            name
+          }
         }
-      });
+      `;
+
+      const variables = {
+        input: {
+          projectId: projectId,
+          name: `bot-${botId}`,
+          source: {
+            image: "python:3.11-slim",
+            buildCommand: "pip install python-telegram-bot python-dotenv",
+            startCommand: "python main.py"
+          }
+        }
+      };
+
+      const response = await this.makeGraphQLRequest(mutation, variables);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -157,7 +226,13 @@ export class RailwayApiClient {
         return { success: false, error: `HTTP ${response.status}: ${response.statusText} - ${errorText}` };
       }
 
-      const serviceData = await response.json();
+      const result = await response.json();
+      if (result.errors) {
+        console.error(`[${new Date().toISOString()}] ❌ GraphQL errors: ${JSON.stringify(result.errors)}`);
+        return { success: false, error: `GraphQL errors: ${result.errors.map((e: any) => e.message).join(', ')}` };
+      }
+
+      const serviceData = result.data.serviceCreate;
       console.log(`[${new Date().toISOString()}] ✅ Service created successfully!`);
       console.log(`[${new Date().toISOString()}] Service data: ${JSON.stringify(serviceData, null, 2)}`);
       return { success: true, serviceId: serviceData.id };
@@ -176,15 +251,39 @@ export class RailwayApiClient {
       console.log(`[${new Date().toISOString()}] Service ID: ${serviceId}`);
       console.log(`[${new Date().toISOString()}] Variables: ${JSON.stringify(Object.keys(variables), null, 2)}`);
 
-      const response = await this.makeRequest(`/api/v2/projects/${projectId}/services/${serviceId}/variables`, 'POST', variables);
+      const mutation = `
+        mutation variableCollectionUpsert($input: VariableCollectionUpsertInput!) {
+          variableCollectionUpsert(input: $input) {
+            id
+          }
+        }
+      `;
+
+      const variableInputs = Object.entries(variables).map(([name, value]) => ({
+        name,
+        value
+      }));
+
+      const variablesInput = {
+        input: {
+          projectId: projectId,
+          serviceId: serviceId,
+          variables: variableInputs
+        }
+      };
+
+      const response = await this.makeGraphQLRequest(mutation, variablesInput);
       
       if (response.ok) {
-        console.log(`[${new Date().toISOString()}] ✅ Environment variables set successfully`);
-        return true;
-      } else {
-        console.error(`[${new Date().toISOString()}] ❌ Failed to set environment variables`);
-        return false;
+        const result = await response.json();
+        if (!result.errors) {
+          console.log(`[${new Date().toISOString()}] ✅ Environment variables set successfully`);
+          return true;
+        }
       }
+      
+      console.error(`[${new Date().toISOString()}] ❌ Failed to set environment variables`);
+      return false;
     } catch (error) {
       console.error(`[${new Date().toISOString()}] ❌ Error setting environment variables: ${error.message}`);
       return false;
@@ -197,15 +296,28 @@ export class RailwayApiClient {
       console.log(`[${new Date().toISOString()}] Project ID: ${projectId}`);
       console.log(`[${new Date().toISOString()}] Service ID: ${serviceId}`);
 
-      const response = await this.makeRequest(`/api/v2/projects/${projectId}/services/${serviceId}`, 'DELETE');
+      const mutation = `
+        mutation serviceDelete($id: String!) {
+          serviceDelete(id: $id)
+        }
+      `;
+
+      const variables = {
+        id: serviceId
+      };
+
+      const response = await this.makeGraphQLRequest(mutation, variables);
       
       if (response.ok) {
-        console.log(`[${new Date().toISOString()}] ✅ Service deleted successfully`);
-        return true;
-      } else {
-        console.error(`[${new Date().toISOString()}] ❌ Failed to delete service`);
-        return false;
+        const result = await response.json();
+        if (!result.errors) {
+          console.log(`[${new Date().toISOString()}] ✅ Service deleted successfully`);
+          return true;
+        }
       }
+      
+      console.error(`[${new Date().toISOString()}] ❌ Failed to delete service`);
+      return false;
     } catch (error) {
       console.error(`[${new Date().toISOString()}] ❌ Error deleting service: ${error.message}`);
       return false;
@@ -217,14 +329,45 @@ export class RailwayApiClient {
       console.log(`[${new Date().toISOString()}] ========== GETTING RAILWAY SERVICES ==========`);
       console.log(`[${new Date().toISOString()}] Project ID: ${projectId}`);
 
-      const response = await this.makeRequest(`/api/v2/projects/${projectId}/services`);
+      const query = `
+        query project($id: String!) {
+          project(id: $id) {
+            services {
+              edges {
+                node {
+                  id
+                  name
+                  deployments {
+                    edges {
+                      node {
+                        id
+                        status
+                        createdAt
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `;
+
+      const variables = { id: projectId };
+      const response = await this.makeGraphQLRequest(query, variables);
       
       if (!response.ok) {
         console.error(`[${new Date().toISOString()}] ❌ Failed to get services`);
         return [];
       }
 
-      const services = await response.json();
+      const result = await response.json();
+      if (result.errors) {
+        console.error(`[${new Date().toISOString()}] ❌ GraphQL errors: ${JSON.stringify(result.errors)}`);
+        return [];
+      }
+
+      const services = result.data.project.services.edges.map((edge: any) => edge.node);
       console.log(`[${new Date().toISOString()}] ✅ Found ${services.length} services`);
       console.log(`[${new Date().toISOString()}] Services: ${JSON.stringify(services, null, 2)}`);
       return services;
@@ -241,14 +384,38 @@ export class RailwayApiClient {
       console.log(`[${new Date().toISOString()}] Project ID: ${projectId}`);
       console.log(`[${new Date().toISOString()}] Service ID: ${serviceId}`);
 
-      const response = await this.makeRequest(`/api/v2/projects/${projectId}/services/${serviceId}/deployments`);
+      const query = `
+        query service($id: String!) {
+          service(id: $id) {
+            deployments {
+              edges {
+                node {
+                  id
+                  status
+                  createdAt
+                  logs
+                }
+              }
+            }
+          }
+        }
+      `;
+
+      const variables = { id: serviceId };
+      const response = await this.makeGraphQLRequest(query, variables);
       
       if (!response.ok) {
         console.error(`[${new Date().toISOString()}] ❌ Failed to get deployments`);
         return [];
       }
 
-      const deployments = await response.json();
+      const result = await response.json();
+      if (result.errors) {
+        console.error(`[${new Date().toISOString()}] ❌ GraphQL errors: ${JSON.stringify(result.errors)}`);
+        return [];
+      }
+
+      const deployments = result.data.service.deployments.edges.map((edge: any) => edge.node);
       console.log(`[${new Date().toISOString()}] ✅ Found ${deployments.length} deployments`);
       console.log(`[${new Date().toISOString()}] Deployments: ${JSON.stringify(deployments, null, 2)}`);
       return deployments;
