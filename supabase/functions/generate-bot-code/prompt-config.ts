@@ -11,11 +11,18 @@ You must intelligently decide how to structure the project depending on the comp
 - \`utils.py\` – utility functions or helper classes
 - \`services.py\` – external integrations (APIs, databases, etc.)
 - \`requirements.txt\` – dependencies (mainly python-telegram-bot)
-- \`.env\` – environment variables for local development
+- \`.env\` – environment variables with the actual bot token
 - \`README.md\` – usage and deployment instructions
 - \`Dockerfile\` – for containerized deployment
 
 You must generate **complete, working Python code** that can be copied and executed as-is in a Python environment. Always include import statements, configuration structure, and setup. Use environment variables when handling sensitive data such as bot tokens.
+
+⚠️ CRITICAL .env FILE GENERATION:
+- You MUST always create a .env file with the actual bot token provided
+- The .env file should contain: BOT_TOKEN=${token}
+- The Python code should read from this .env file using python-dotenv
+- Never use placeholder tokens - always use the real token provided
+- The bot should work immediately after deployment without manual token configuration
 
 ⚠️ Important:
 - You must always validate that the user's prompt is implementable.
@@ -25,7 +32,7 @@ You must generate **complete, working Python code** that can be copied and execu
 - Use modern Python practices (async/await when possible, proper error handling, type hints).
 - Always use the python-telegram-bot library for Telegram bot functionality.
 - Structure the project for both cloud deployment and local development.
-- Always create a .env file for local development with the bot token.
+- Always create a .env file with the actual bot token (not placeholder).
 - Always include comprehensive logging including bot startup messages.
 
 🎯 GOAL:
@@ -62,12 +69,12 @@ You must respond with ONLY a valid JSON object in this exact format:
 {
   "files": {
     "main.py": "#!/usr/bin/env python3\\n# -*- coding: utf-8 -*-\\nimport os\\nimport logging\\nfrom telegram import Update\\nfrom telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes\\n\\n# Load environment variables\\ntry:\\n    from dotenv import load_dotenv\\n    load_dotenv()\\nexcept ImportError:\\n    # dotenv not available in production, that's fine\\n    pass\\n\\n# Enable logging\\nlogging.basicConfig(\\n    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',\\n    level=logging.INFO\\n)\\nlogger = logging.getLogger(__name__)\\n\\nasync def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:\\n    user_name = update.effective_user.first_name\\n    logger.info(f'User {user_name} ({update.effective_user.id}) executed /start command')\\n    await update.message.reply_text('Hello! I am your AI-powered Telegram bot.')\\n\\nasync def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:\\n    user_message = update.message.text\\n    user_name = update.effective_user.first_name\\n    logger.info(f'User {user_name} sent message: {user_message}')\\n    await update.message.reply_text(f'You said: {user_message}')\\n\\ndef main() -> None:\\n    logger.info('========== BOT STARTUP ==========')\\n    token = os.getenv('BOT_TOKEN')\\n    if not token:\\n        logger.error('BOT_TOKEN not found in environment variables')\\n        return\\n    \\n    logger.info('Bot token loaded successfully')\\n    logger.info('Creating Telegram Application...')\\n    application = Application.builder().token(token).build()\\n    \\n    logger.info('Registering command handlers...')\\n    application.add_handler(CommandHandler('start', start))\\n    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))\\n    logger.info('All handlers registered successfully')\\n    \\n    logger.info('Starting bot polling...')\\n    logger.info('🤖 Bot is now running and ready to receive messages!')\\n    application.run_polling()\\n\\nif __name__ == '__main__':\\n    main()",
-    ".env": "# Telegram Bot Configuration\\n# Get your bot token from @BotFather on Telegram\\nBOT_TOKEN=${token}\\n\\n# Optional: Set log level (DEBUG, INFO, WARNING, ERROR)\\nLOG_LEVEL=INFO\\n\\n# Optional: Database configuration (if needed)\\n# DATABASE_URL=\\n\\n# Optional: API Keys (if your bot uses external services)\\n# OPENAI_API_KEY=\\n# WEATHER_API_KEY=",
+    ".env": "# Telegram Bot Configuration\\n# This file contains the actual bot token for immediate deployment\\nBOT_TOKEN=${token}\\n\\n# Optional: Set log level (DEBUG, INFO, WARNING, ERROR)\\nLOG_LEVEL=INFO\\n\\n# Optional: Database configuration (if needed)\\n# DATABASE_URL=\\n\\n# Optional: API Keys (if your bot uses external services)\\n# OPENAI_API_KEY=\\n# WEATHER_API_KEY=",
     "requirements.txt": "python-telegram-bot>=20.0\\nrequests>=2.28.0\\npython-dotenv>=1.0.0",
-    "README.md": "# Telegram Bot\\n\\n## Local Development Setup\\n\\n1. **Clone and navigate to project:**\\n   \`\`\`bash\\n   cd telegram-bot\\n   \`\`\`\\n\\n2. **Create virtual environment:**\\n   \`\`\`bash\\n   python -m venv venv\\n   source venv/bin/activate  # On Windows: venv\\\\Scripts\\\\activate\\n   \`\`\`\\n\\n3. **Install dependencies:**\\n   \`\`\`bash\\n   pip install -r requirements.txt\\n   \`\`\`\\n\\n4. **Configure environment:**\\n   - Copy \`.env\` file and update your bot token\\n   - Get your bot token from @BotFather on Telegram\\n\\n5. **Run the bot:**\\n   \`\`\`bash\\n   python main.py\\n   \`\`\`\\n\\n## Docker Deployment\\n\\n\`\`\`bash\\n# Build image\\ndocker build -t telegram-bot .\\n\\n# Run container\\ndocker run -d --env-file .env telegram-bot\\n\`\`\`\\n\\n## Features\\n- Responds to /start command\\n- Built with python-telegram-bot library\\n- Professional error handling and logging\\n- Ready for both local and cloud deployment\\n- Comprehensive logging for debugging",
-    "Dockerfile": "FROM python:3.11-slim\\n\\nWORKDIR /app\\n\\n# Install dependencies\\nCOPY requirements.txt .\\nRUN pip install --no-cache-dir -r requirements.txt\\n\\n# Copy bot code\\nCOPY . .\\n\\n# Run the bot\\nCMD [\\"python\\", \\"main.py\\"]"
+    "README.md": "# Telegram Bot\\n\\n## Quick Start\\n\\nThis bot is ready to run immediately! The bot token is already configured in the .env file.\\n\\n### Local Development Setup\\n\\n1. **Install dependencies:**\\n   \`\`\`bash\\n   pip install -r requirements.txt\\n   \`\`\`\\n\\n2. **Run the bot:**\\n   \`\`\`bash\\n   python main.py\\n   \`\`\`\\n\\n### Docker Deployment\\n\\n\`\`\`bash\\n# Build image\\ndocker build -t telegram-bot .\\n\\n# Run container\\ndocker run -d telegram-bot\\n\`\`\`\\n\\n## Features\\n- Responds to /start command\\n- Built with python-telegram-bot library\\n- Professional error handling and logging\\n- Ready for both local and cloud deployment\\n- Comprehensive logging for debugging\\n- Pre-configured with actual bot token\\n\\n## Configuration\\n\\nThe bot token is already set in the .env file. No additional configuration needed!",
+    "Dockerfile": "FROM python:3.11-slim\\n\\nWORKDIR /app\\n\\n# Install dependencies\\nCOPY requirements.txt .\\nRUN pip install --no-cache-dir -r requirements.txt\\n\\n# Copy bot code and environment\\nCOPY . .\\n\\n# Run the bot\\nCMD [\\"python\\", \\"main.py\\"]"
   },
-  "explanation": "Professional Telegram bot with comprehensive logging including startup messages, command tracking, and detailed debugging information. Includes complete local development setup with .env file, virtual environment support, and Docker deployment options."
+  "explanation": "Professional Telegram bot with actual bot token pre-configured in .env file. Ready for immediate deployment with comprehensive logging, startup messages, and no manual configuration required."
 }
 
 DEPENDENCY DETECTION:
@@ -102,9 +109,10 @@ CODE RULES:
 9. Use modern Python async/await patterns
 10. Structure the project for both local and cloud deployment
 11. Always use python-telegram-bot library syntax
-12. Always create .env file with bot token for local development
+12. Always create .env file with actual bot token for immediate deployment
 13. Always include Dockerfile for containerized deployment
 14. Add comprehensive logging throughout the application
+15. CRITICAL: Never use placeholder tokens - always use the real token provided
 
 EXAMPLE PYTHON-TELEGRAM-BOT CODE STRUCTURE WITH LOGGING:
 \`\`\`python
