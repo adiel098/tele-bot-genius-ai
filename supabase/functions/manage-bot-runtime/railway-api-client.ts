@@ -1,4 +1,3 @@
-
 import { BotLogger } from './logger.ts';
 
 const RAILWAY_REST_API_URL = 'https://backboard.railway.app';
@@ -65,12 +64,83 @@ export class RailwayApiClient {
     }
   }
 
+  // Test basic Railway API access
+  static async testRailwayConnection(): Promise<{ success: boolean; error?: string; data?: any }> {
+    try {
+      console.log(`[${new Date().toISOString()}] ========== TESTING RAILWAY CONNECTION ==========`);
+      
+      // Try to get basic user/account info first
+      const response = await this.makeRequest('/api/v2/me');
+      
+      if (response.ok) {
+        const userData = await response.json();
+        console.log(`[${new Date().toISOString()}] ✅ Railway API connection successful!`);
+        console.log(`[${new Date().toISOString()}] User data: ${JSON.stringify(userData, null, 2)}`);
+        return { success: true, data: userData };
+      } else {
+        console.error(`[${new Date().toISOString()}] ❌ Railway API connection failed`);
+        return { success: false, error: `HTTP ${response.status}: ${response.statusText}` };
+      }
+    } catch (error) {
+      console.error(`[${new Date().toISOString()}] ❌ Railway connection test failed: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // List all available projects
+  static async listProjects(): Promise<{ success: boolean; projects?: any[]; error?: string }> {
+    try {
+      console.log(`[${new Date().toISOString()}] ========== LISTING RAILWAY PROJECTS ==========`);
+      
+      const response = await this.makeRequest('/api/v2/projects');
+      
+      if (response.ok) {
+        const projects = await response.json();
+        console.log(`[${new Date().toISOString()}] ✅ Found ${projects.length} projects`);
+        console.log(`[${new Date().toISOString()}] Projects: ${JSON.stringify(projects, null, 2)}`);
+        return { success: true, projects };
+      } else {
+        console.error(`[${new Date().toISOString()}] ❌ Failed to list projects`);
+        return { success: false, error: `HTTP ${response.status}: ${response.statusText}` };
+      }
+    } catch (error) {
+      console.error(`[${new Date().toISOString()}] ❌ Error listing projects: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  }
+
   static async createService(projectId: string, botId: string): Promise<{ success: boolean; serviceId?: string; error?: string }> {
     try {
       console.log(`[${new Date().toISOString()}] ========== CREATING RAILWAY SERVICE ==========`);
       console.log(`[${new Date().toISOString()}] Project ID: ${projectId}`);
       console.log(`[${new Date().toISOString()}] Bot ID: ${botId}`);
       console.log(`[${new Date().toISOString()}] Service name will be: bot-${botId}`);
+
+      // First, test the connection and list projects
+      console.log(`[${new Date().toISOString()}] Testing Railway connection first...`);
+      const connectionTest = await this.testRailwayConnection();
+      if (!connectionTest.success) {
+        return { success: false, error: `Connection test failed: ${connectionTest.error}` };
+      }
+
+      console.log(`[${new Date().toISOString()}] Listing available projects...`);
+      const projectsList = await this.listProjects();
+      if (!projectsList.success) {
+        return { success: false, error: `Failed to list projects: ${projectsList.error}` };
+      }
+
+      // Check if the project ID we're trying to use exists
+      const targetProject = projectsList.projects?.find(p => p.id === projectId);
+      if (!targetProject) {
+        console.error(`[${new Date().toISOString()}] ❌ Project ${projectId} not found in available projects!`);
+        console.log(`[${new Date().toISOString()}] Available project IDs: ${projectsList.projects?.map(p => p.id).join(', ')}`);
+        return { 
+          success: false, 
+          error: `Project ${projectId} not found. Available projects: ${projectsList.projects?.map(p => `${p.name} (${p.id})`).join(', ')}` 
+        };
+      }
+
+      console.log(`[${new Date().toISOString()}] ✅ Project found: ${targetProject.name} (${targetProject.id})`);
 
       const response = await this.makeRequest(`/api/v2/projects/${projectId}/services`, 'POST', {
         name: `bot-${botId}`,
