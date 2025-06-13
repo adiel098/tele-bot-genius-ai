@@ -1,4 +1,3 @@
-
 import { BotLogger } from './logger.ts';
 
 const RAILWAY_GRAPHQL_API_URL = 'https://backboard.railway.app/graphql/v2';
@@ -102,10 +101,10 @@ export class RailwayApiClient {
     }
   }
 
-  // List all available projects using GraphQL
-  static async listProjects(): Promise<{ success: boolean; projects?: any[]; error?: string }> {
+  // Enhanced project listing that includes both personal and organization projects
+  static async listAllProjects(): Promise<{ success: boolean; projects?: any[]; error?: string }> {
     try {
-      console.log(`[${new Date().toISOString()}] ========== LISTING RAILWAY PROJECTS ==========`);
+      console.log(`[${new Date().toISOString()}] ========== LISTING ALL RAILWAY PROJECTS ==========`);
       
       const query = `
         query {
@@ -115,6 +114,10 @@ export class RailwayApiClient {
                 node {
                   id
                   name
+                  team {
+                    id
+                    name
+                  }
                   services {
                     edges {
                       node {
@@ -128,6 +131,38 @@ export class RailwayApiClient {
                       node {
                         id
                         name
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            teams {
+              edges {
+                node {
+                  id
+                  name
+                  projects {
+                    edges {
+                      node {
+                        id
+                        name
+                        services {
+                          edges {
+                            node {
+                              id
+                              name
+                            }
+                          }
+                        }
+                        environments {
+                          edges {
+                            node {
+                              id
+                              name
+                            }
+                          }
+                        }
                       }
                     }
                   }
@@ -151,15 +186,43 @@ export class RailwayApiClient {
         return { success: false, error: `GraphQL errors: ${result.errors.map((e: any) => e.message).join(', ')}` };
       }
 
-      const projects = result.data.me.projects.edges.map((edge: any) => edge.node);
-      console.log(`[${new Date().toISOString()}] ✅ Found ${projects.length} projects`);
-      console.log(`[${new Date().toISOString()}] Projects: ${JSON.stringify(projects, null, 2)}`);
-      return { success: true, projects };
+      // Combine personal and team projects
+      const personalProjects = result.data.me.projects.edges.map((edge: any) => ({
+        ...edge.node,
+        source: 'personal'
+      }));
+
+      const teamProjects: any[] = [];
+      result.data.me.teams.edges.forEach((teamEdge: any) => {
+        const team = teamEdge.node;
+        team.projects.edges.forEach((projectEdge: any) => {
+          teamProjects.push({
+            ...projectEdge.node,
+            source: 'team',
+            teamName: team.name,
+            teamId: team.id
+          });
+        });
+      });
+
+      const allProjects = [...personalProjects, ...teamProjects];
+      
+      console.log(`[${new Date().toISOString()}] ✅ Found ${personalProjects.length} personal projects and ${teamProjects.length} team projects`);
+      console.log(`[${new Date().toISOString()}] Personal projects: ${JSON.stringify(personalProjects, null, 2)}`);
+      console.log(`[${new Date().toISOString()}] Team projects: ${JSON.stringify(teamProjects, null, 2)}`);
+      console.log(`[${new Date().toISOString()}] All project IDs: ${allProjects.map(p => `${p.name} (${p.id})`).join(', ')}`);
+      
+      return { success: true, projects: allProjects };
 
     } catch (error) {
       console.error(`[${new Date().toISOString()}] ❌ Error listing projects: ${error.message}`);
       return { success: false, error: error.message };
     }
+  }
+
+  // Legacy method for backwards compatibility
+  static async listProjects(): Promise<{ success: boolean; projects?: any[]; error?: string }> {
+    return this.listAllProjects();
   }
 
   static async createService(projectId: string, botId: string): Promise<{ success: boolean; serviceId?: string; error?: string }> {
@@ -177,7 +240,7 @@ export class RailwayApiClient {
       }
 
       console.log(`[${new Date().toISOString()}] Listing available projects...`);
-      const projectsList = await this.listProjects();
+      const projectsList = await this.listAllProjects();
       if (!projectsList.success) {
         return { success: false, error: `Failed to list projects: ${projectsList.error}` };
       }
@@ -186,14 +249,17 @@ export class RailwayApiClient {
       const targetProject = projectsList.projects?.find(p => p.id === projectId);
       if (!targetProject) {
         console.error(`[${new Date().toISOString()}] ❌ Project ${projectId} not found in available projects!`);
-        console.log(`[${new Date().toISOString()}] Available project IDs: ${projectsList.projects?.map(p => p.id).join(', ')}`);
+        console.log(`[${new Date().toISOString()}] Available project IDs: ${projectsList.projects?.map(p => `${p.name} (${p.id}) [${p.source}]`).join(', ')}`);
         return { 
           success: false, 
-          error: `Project ${projectId} not found. Available projects: ${projectsList.projects?.map(p => `${p.name} (${p.id})`).join(', ')}` 
+          error: `Project ${projectId} not found. Available projects: ${projectsList.projects?.map(p => `${p.name} (${p.id}) [${p.source}${p.teamName ? ` - ${p.teamName}` : ''}]`).join(', ')}` 
         };
       }
 
-      console.log(`[${new Date().toISOString()}] ✅ Project found: ${targetProject.name} (${targetProject.id})`);
+      console.log(`[${new Date().toISOString()}] ✅ Project found: ${targetProject.name} (${targetProject.id}) [${targetProject.source}]`);
+      if (targetProject.teamName) {
+        console.log(`[${new Date().toISOString()}] Project belongs to team: ${targetProject.teamName}`);
+      }
 
       // Create service using GraphQL mutation
       const mutation = `
@@ -210,9 +276,10 @@ export class RailwayApiClient {
           projectId: projectId,
           name: `bot-${botId}`,
           source: {
-            image: "python:3.11-slim",
-            buildCommand: "pip install python-telegram-bot python-dotenv",
-            startCommand: "python main.py"
+            image: "python:3.11-slim"
+          },
+          variables: {
+            BOT_TOKEN: "placeholder"
           }
         }
       };
