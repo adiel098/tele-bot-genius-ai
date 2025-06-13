@@ -11,38 +11,67 @@ export class RailwayDeploymentManager {
       logs.push(BotLogger.logSection('CREATING RAILWAY DEPLOYMENT'));
       logs.push(BotLogger.log(botId, 'Preparing bot deployment on Railway...'));
       
+      console.log(`[${new Date().toISOString()}] ========== RAILWAY DEPLOYMENT CREATION START ==========`);
+      
       const projectId = Deno.env.get('RAILWAY_PROJECT_ID');
       const environmentId = Deno.env.get('RAILWAY_ENVIRONMENT_ID');
 
+      console.log(`[${new Date().toISOString()}] Environment variables check:`);
+      console.log(`[${new Date().toISOString()}] RAILWAY_PROJECT_ID: ${projectId ? 'SET' : 'MISSING'}`);
+      console.log(`[${new Date().toISOString()}] RAILWAY_ENVIRONMENT_ID: ${environmentId ? 'SET' : 'MISSING'}`);
+      console.log(`[${new Date().toISOString()}] RAILWAY_API_TOKEN: ${Deno.env.get('RAILWAY_API_TOKEN') ? 'SET' : 'MISSING'}`);
+
       if (!projectId || !environmentId) {
-        throw new Error('Railway project ID or environment ID not configured');
+        const missingVars = [];
+        if (!projectId) missingVars.push('RAILWAY_PROJECT_ID');
+        if (!environmentId) missingVars.push('RAILWAY_ENVIRONMENT_ID');
+        
+        console.error(`[${new Date().toISOString()}] ❌ Missing environment variables: ${missingVars.join(', ')}`);
+        throw new Error(`Railway configuration incomplete. Missing: ${missingVars.join(', ')}`);
+      }
+
+      if (projectId) {
+        console.log(`[${new Date().toISOString()}] Project ID preview: ${projectId.substring(0, 8)}...`);
       }
 
       logs.push(BotLogger.log(botId, 'Creating Railway service via REST API...'));
+      console.log(`[${new Date().toISOString()}] Attempting to create Railway service...`);
 
       const serviceResult = await RailwayApiClient.createService(projectId, botId);
 
+      console.log(`[${new Date().toISOString()}] Service creation result: ${JSON.stringify(serviceResult, null, 2)}`);
+
       if (!serviceResult.success) {
+        console.error(`[${new Date().toISOString()}] ❌ Service creation failed: ${serviceResult.error}`);
         // If REST API fails, create a fallback deployment
-        logs.push(BotLogger.log(botId, 'REST API failed, using simplified deployment...'));
+        logs.push(BotLogger.log(botId, `REST API failed: ${serviceResult.error}`));
+        logs.push(BotLogger.log(botId, 'Using simplified deployment...'));
         return this.createFallbackDeployment(botId, logs);
       }
 
       const serviceId = serviceResult.serviceId!;
+      console.log(`[${new Date().toISOString()}] ✅ Service created successfully: ${serviceId}`);
       logs.push(BotLogger.log(botId, `Railway service created: ${serviceId}`));
 
       // Set environment variables
+      console.log(`[${new Date().toISOString()}] Setting environment variables...`);
       const envSuccess = await RailwayApiClient.setEnvironmentVariables(projectId, serviceId, {
         BOT_TOKEN: token,
         PORT: '8000'
       });
 
       if (envSuccess) {
+        console.log(`[${new Date().toISOString()}] ✅ Environment variables set successfully`);
         logs.push(BotLogger.log(botId, 'Environment variables set successfully'));
+      } else {
+        console.error(`[${new Date().toISOString()}] ❌ Failed to set environment variables`);
+        logs.push(BotLogger.logWarning('Failed to set environment variables'));
       }
 
       logs.push(BotLogger.logSuccess(`✅ Railway deployment created: ${serviceId}`));
       logs.push(BotLogger.log(botId, `Deployment URL: https://bot-${botId}.up.railway.app`));
+
+      console.log(`[${new Date().toISOString()}] ========== RAILWAY DEPLOYMENT CREATION SUCCESS ==========`);
 
       return {
         success: true,
@@ -51,6 +80,10 @@ export class RailwayDeploymentManager {
       };
 
     } catch (error) {
+      console.error(`[${new Date().toISOString()}] ========== RAILWAY DEPLOYMENT CREATION FAILED ==========`);
+      console.error(`[${new Date().toISOString()}] Error: ${error.message}`);
+      console.error(`[${new Date().toISOString()}] Stack: ${error.stack}`);
+      
       logs.push(BotLogger.logError(`❌ Railway deployment failed: ${error.message}`));
       return this.createFallbackDeployment(botId, logs);
     }
@@ -58,7 +91,13 @@ export class RailwayDeploymentManager {
 
   private static createFallbackDeployment(botId: string, logs: string[]): { success: boolean; logs: string[]; deploymentId: string } {
     const fallbackId = `fallback-${botId}-${Date.now()}`;
+    
+    console.log(`[${new Date().toISOString()}] ========== CREATING FALLBACK DEPLOYMENT ==========`);
+    console.log(`[${new Date().toISOString()}] Fallback ID: ${fallbackId}`);
+    console.log(`[${new Date().toISOString()}] NOTE: This is NOT a real deployment - bot will not respond to messages!`);
+    
     logs.push(BotLogger.log(botId, 'Creating fallback deployment...'));
+    logs.push(BotLogger.logWarning('⚠️ This is a fallback - bot will NOT respond to messages!'));
     logs.push(BotLogger.logSuccess(`✅ Fallback deployment created: ${fallbackId}`));
     
     return {
