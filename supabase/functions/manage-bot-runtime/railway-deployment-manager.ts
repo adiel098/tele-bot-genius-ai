@@ -1,4 +1,3 @@
-
 import { BotLogger } from './logger.ts';
 import { RailwayApiClient } from './railway-api-client.ts';
 
@@ -20,6 +19,7 @@ export class RailwayDeploymentManager {
       console.log(`[${new Date().toISOString()}] RAILWAY_PROJECT_ID: ${projectId ? 'SET' : 'MISSING'}`);
       console.log(`[${new Date().toISOString()}] RAILWAY_ENVIRONMENT_ID: ${environmentId ? 'SET' : 'MISSING'}`);
       console.log(`[${new Date().toISOString()}] RAILWAY_API_TOKEN: ${Deno.env.get('RAILWAY_API_TOKEN') ? 'SET' : 'MISSING'}`);
+      console.log(`[${new Date().toISOString()}] Bot token length: ${token?.length || 0}`);
 
       if (!projectId || !environmentId) {
         const missingVars = [];
@@ -30,43 +30,36 @@ export class RailwayDeploymentManager {
         throw new Error(`Railway configuration incomplete. Missing: ${missingVars.join(', ')}`);
       }
 
+      if (!token || token.length < 20) {
+        console.error(`[${new Date().toISOString()}] ❌ Invalid bot token provided`);
+        throw new Error('Invalid bot token provided for Railway deployment');
+      }
+
       if (projectId) {
         console.log(`[${new Date().toISOString()}] Project ID preview: ${projectId.substring(0, 8)}...`);
       }
 
-      logs.push(BotLogger.log(botId, 'Creating Railway service via REST API...'));
-      console.log(`[${new Date().toISOString()}] Attempting to create Railway service...`);
+      logs.push(BotLogger.log(botId, 'Creating Railway service with real bot token...'));
+      console.log(`[${new Date().toISOString()}] Attempting to create Railway service with real bot token...`);
 
-      const serviceResult = await RailwayApiClient.createService(projectId, botId);
+      // Pass the real bot token to createService
+      const serviceResult = await RailwayApiClient.createService(projectId, botId, token);
 
       console.log(`[${new Date().toISOString()}] Service creation result: ${JSON.stringify(serviceResult, null, 2)}`);
 
       if (!serviceResult.success) {
         console.error(`[${new Date().toISOString()}] ❌ Service creation failed: ${serviceResult.error}`);
-        // If REST API fails, create a fallback deployment
-        logs.push(BotLogger.log(botId, `REST API failed: ${serviceResult.error}`));
-        logs.push(BotLogger.log(botId, 'Using simplified deployment...'));
+        logs.push(BotLogger.logError(`❌ Railway service creation failed: ${serviceResult.error}`));
+        
+        // If Railway fails completely, create a fallback deployment
+        logs.push(BotLogger.log(botId, 'Railway API failed, using simplified deployment...'));
         return this.createFallbackDeployment(botId, logs);
       }
 
       const serviceId = serviceResult.serviceId!;
       console.log(`[${new Date().toISOString()}] ✅ Service created successfully: ${serviceId}`);
-      logs.push(BotLogger.log(botId, `Railway service created: ${serviceId}`));
-
-      // Set environment variables
-      console.log(`[${new Date().toISOString()}] Setting environment variables...`);
-      const envSuccess = await RailwayApiClient.setEnvironmentVariables(projectId, serviceId, {
-        BOT_TOKEN: token,
-        PORT: '8000'
-      });
-
-      if (envSuccess) {
-        console.log(`[${new Date().toISOString()}] ✅ Environment variables set successfully`);
-        logs.push(BotLogger.log(botId, 'Environment variables set successfully'));
-      } else {
-        console.error(`[${new Date().toISOString()}] ❌ Failed to set environment variables`);
-        logs.push(BotLogger.logWarning('Failed to set environment variables'));
-      }
+      logs.push(BotLogger.logSuccess(`✅ Railway service created: ${serviceId}`));
+      logs.push(BotLogger.logSuccess(`✅ Bot token properly configured in Railway environment`));
 
       logs.push(BotLogger.logSuccess(`✅ Railway deployment created: ${serviceId}`));
       logs.push(BotLogger.log(botId, `Deployment URL: https://bot-${botId}.up.railway.app`));

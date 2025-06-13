@@ -225,12 +225,13 @@ export class RailwayApiClient {
     return this.listAllProjects();
   }
 
-  static async createService(projectId: string, botId: string): Promise<{ success: boolean; serviceId?: string; error?: string }> {
+  static async createService(projectId: string, botId: string, botToken: string): Promise<{ success: boolean; serviceId?: string; error?: string }> {
     try {
       console.log(`[${new Date().toISOString()}] ========== CREATING RAILWAY SERVICE ==========`);
       console.log(`[${new Date().toISOString()}] Project ID: ${projectId}`);
       console.log(`[${new Date().toISOString()}] Bot ID: ${botId}`);
       console.log(`[${new Date().toISOString()}] Service name will be: bot-${botId}`);
+      console.log(`[${new Date().toISOString()}] Bot token provided: ${botToken ? 'YES' : 'NO'}`);
 
       // First, test the connection and list projects
       console.log(`[${new Date().toISOString()}] Testing Railway connection first...`);
@@ -261,7 +262,7 @@ export class RailwayApiClient {
         console.log(`[${new Date().toISOString()}] Project belongs to team: ${targetProject.teamName}`);
       }
 
-      // Create service using GraphQL mutation
+      // Create service using GraphQL mutation with the REAL bot token from the start
       const mutation = `
         mutation serviceCreate($input: ServiceCreateInput!) {
           serviceCreate(input: $input) {
@@ -277,13 +278,12 @@ export class RailwayApiClient {
           name: `bot-${botId}`,
           source: {
             image: "python:3.11-slim"
-          },
-          variables: {
-            BOT_TOKEN: "placeholder"
           }
+          // NOTE: We're NOT setting variables here initially - we'll set them separately
         }
       };
 
+      console.log(`[${new Date().toISOString()}] Creating service WITHOUT initial environment variables...`);
       const response = await this.makeGraphQLRequest(mutation, variables);
 
       if (!response.ok) {
@@ -302,6 +302,29 @@ export class RailwayApiClient {
       const serviceData = result.data.serviceCreate;
       console.log(`[${new Date().toISOString()}] ✅ Service created successfully!`);
       console.log(`[${new Date().toISOString()}] Service data: ${JSON.stringify(serviceData, null, 2)}`);
+
+      // Now set environment variables with the REAL token
+      console.log(`[${new Date().toISOString()}] Setting environment variables with real bot token...`);
+      const envSuccess = await this.setEnvironmentVariables(projectId, serviceData.id, {
+        BOT_TOKEN: botToken,
+        PORT: '8000'
+      });
+
+      if (!envSuccess) {
+        console.error(`[${new Date().toISOString()}] ❌ CRITICAL: Failed to set environment variables with real token!`);
+        // This is critical - without the real token, the bot won't work
+        return { success: false, error: 'Failed to set bot token in Railway environment variables' };
+      }
+
+      console.log(`[${new Date().toISOString()}] ✅ Environment variables set successfully with real bot token`);
+
+      // Validate that the token was actually set correctly
+      const validationSuccess = await this.validateEnvironmentVariables(projectId, serviceData.id, botToken);
+      if (!validationSuccess) {
+        console.error(`[${new Date().toISOString()}] ❌ CRITICAL: Token validation failed!`);
+        return { success: false, error: 'Bot token was not properly set in Railway' };
+      }
+
       return { success: true, serviceId: serviceData.id };
 
     } catch (error) {
@@ -317,42 +340,114 @@ export class RailwayApiClient {
       console.log(`[${new Date().toISOString()}] Project ID: ${projectId}`);
       console.log(`[${new Date().toISOString()}] Service ID: ${serviceId}`);
       console.log(`[${new Date().toISOString()}] Variables: ${JSON.stringify(Object.keys(variables), null, 2)}`);
+      console.log(`[${new Date().toISOString()}] BOT_TOKEN length: ${variables.BOT_TOKEN?.length || 0}`);
 
+      // Use a different mutation approach that's more reliable
       const mutation = `
-        mutation variableCollectionUpsert($input: VariableCollectionUpsertInput!) {
-          variableCollectionUpsert(input: $input) {
+        mutation variableUpsert($input: VariableUpsertInput!) {
+          variableUpsert(input: $input) {
             id
+            name
+            value
           }
         }
       `;
 
-      const variableInputs = Object.entries(variables).map(([name, value]) => ({
-        name,
-        value
-      }));
+      // Set each variable individually for better error handling
+      for (const [name, value] of Object.entries(variables)) {
+        console.log(`[${new Date().toISOString()}] Setting variable: ${name} = ${name === 'BOT_TOKEN' ? `${value.substring(0, 10)}...` : value}`);
+        
+        const variablesInput = {
+          input: {
+            projectId: projectId,
+            serviceId: serviceId,
+            name: name,
+            value: value
+          }
+        };
 
-      const variablesInput = {
-        input: {
-          projectId: projectId,
-          serviceId: serviceId,
-          variables: variableInputs
+        const response = await this.makeGraphQLRequest(mutation, variablesInput);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`[${new Date().toISOString()}] ❌ Failed to set variable ${name}: ${errorText}`);
+          return false;
         }
-      };
 
-      const response = await this.makeGraphQLRequest(mutation, variablesInput);
-      
-      if (response.ok) {
         const result = await response.json();
-        if (!result.errors) {
-          console.log(`[${new Date().toISOString()}] ✅ Environment variables set successfully`);
-          return true;
+        if (result.errors) {
+          console.error(`[${new Date().toISOString()}] ❌ GraphQL errors setting ${name}: ${JSON.stringify(result.errors)}`);
+          return false;
         }
+
+        console.log(`[${new Date().toISOString()}] ✅ Variable ${name} set successfully`);
       }
+
+      console.log(`[${new Date().toISOString()}] ✅ All environment variables set successfully`);
+      return true;
       
-      console.error(`[${new Date().toISOString()}] ❌ Failed to set environment variables`);
-      return false;
     } catch (error) {
       console.error(`[${new Date().toISOString()}] ❌ Error setting environment variables: ${error.message}`);
+      return false;
+    }
+  }
+
+  static async validateEnvironmentVariables(projectId: string, serviceId: string, expectedBotToken: string): Promise<boolean> {
+    try {
+      console.log(`[${new Date().toISOString()}] ========== VALIDATING ENVIRONMENT VARIABLES ==========`);
+      
+      const query = `
+        query service($id: String!) {
+          service(id: $id) {
+            variables {
+              edges {
+                node {
+                  name
+                  value
+                }
+              }
+            }
+          }
+        }
+      `;
+
+      const variables = { id: serviceId };
+      const response = await this.makeGraphQLRequest(query, variables);
+      
+      if (!response.ok) {
+        console.error(`[${new Date().toISOString()}] ❌ Failed to validate environment variables`);
+        return false;
+      }
+
+      const result = await response.json();
+      if (result.errors) {
+        console.error(`[${new Date().toISOString()}] ❌ GraphQL errors: ${JSON.stringify(result.errors)}`);
+        return false;
+      }
+
+      const serviceVariables = result.data.service.variables.edges.map((edge: any) => edge.node);
+      const botTokenVar = serviceVariables.find((v: any) => v.name === 'BOT_TOKEN');
+      
+      if (!botTokenVar) {
+        console.error(`[${new Date().toISOString()}] ❌ BOT_TOKEN variable not found!`);
+        return false;
+      }
+
+      if (botTokenVar.value === 'placeholder') {
+        console.error(`[${new Date().toISOString()}] ❌ BOT_TOKEN is still set to placeholder!`);
+        return false;
+      }
+
+      if (botTokenVar.value !== expectedBotToken) {
+        console.error(`[${new Date().toISOString()}] ❌ BOT_TOKEN mismatch! Expected: ${expectedBotToken.substring(0, 10)}..., Got: ${botTokenVar.value.substring(0, 10)}...`);
+        return false;
+      }
+
+      console.log(`[${new Date().toISOString()}] ✅ BOT_TOKEN validation successful!`);
+      return true;
+
+    } catch (error) {
+      console.error(`[${new Date().toISOString()}] ❌ Error validating environment variables: ${error.message}`);
       return false;
     }
   }
