@@ -1,8 +1,7 @@
-
 import { BotLogger } from './logger.ts';
 
 export async function setupTelegramWebhook(botId: string, token: string, logs: string[]): Promise<void> {
-  // Point webhook directly to Railway deployment where the bot is actually running
+  // Point webhook directly to Railway deployment where the bot template is running
   const webhookUrl = `https://bot-${botId}.up.railway.app/webhook`;
   logs.push(BotLogger.log(botId, `Setting Telegram webhook to Railway deployment: ${webhookUrl}`));
   
@@ -36,10 +35,10 @@ export async function setupTelegramWebhook(botId: string, token: string, logs: s
     if (webhookData.ok) {
       logs.push(BotLogger.logSuccess('✅ Telegram webhook configured to Railway deployment'));
       logs.push(BotLogger.log(botId, `Webhook URL: ${webhookUrl}`));
-      logs.push(BotLogger.log(botId, 'Bot will receive messages directly on Railway'));
+      logs.push(BotLogger.log(botId, 'Bot template deployed - webhook is set'));
       
       // Wait longer before verifying
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      await new Promise(resolve => setTimeout(resolve, 5000));
       
       // Verify webhook was set correctly
       const verifyResponse = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`);
@@ -50,9 +49,10 @@ export async function setupTelegramWebhook(botId: string, token: string, logs: s
       if (verifyData.ok && verifyData.result.url === webhookUrl) {
         logs.push(BotLogger.logSuccess('✅ Webhook verification successful'));
         logs.push(BotLogger.log(botId, `Webhook set to: ${verifyData.result.url}`));
+        logs.push(BotLogger.log(botId, 'Railway template is deployed and webhook is active'));
       } else if (verifyData.ok && verifyData.result.url === '') {
-        logs.push(BotLogger.logWarning(`⚠️ Webhook is empty - Railway deployment may not be ready yet`));
-        logs.push(BotLogger.log(botId, 'Railway may need time to deploy the bot code'));
+        logs.push(BotLogger.logWarning(`⚠️ Webhook is empty - Railway template may still be deploying`));
+        logs.push(BotLogger.log(botId, 'Template deployment may need more time'));
       } else {
         logs.push(BotLogger.logWarning(`⚠️ Webhook verification failed: ${JSON.stringify(verifyData.result)}`));
       }

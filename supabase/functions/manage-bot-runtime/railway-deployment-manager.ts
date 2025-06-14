@@ -39,10 +39,10 @@ export class RailwayDeploymentManager {
         console.log(`[${new Date().toISOString()}] Project ID preview: ${projectId.substring(0, 8)}...`);
       }
 
-      logs.push(BotLogger.log(botId, 'Creating Railway service with bot code...'));
-      console.log(`[${new Date().toISOString()}] Creating Railway service with actual bot code...`);
+      logs.push(BotLogger.log(botId, 'Creating Railway service with Flask template...'));
+      console.log(`[${new Date().toISOString()}] Creating Railway service with Flask template...`);
 
-      // Create service and deploy code in one go
+      // Create service using Flask template and configure environment
       const serviceResult = await RailwayApiClient.createService(projectId, botId, token);
 
       console.log(`[${new Date().toISOString()}] Service creation result: ${JSON.stringify(serviceResult, null, 2)}`);
@@ -58,17 +58,19 @@ export class RailwayDeploymentManager {
 
       const serviceId = serviceResult.serviceId!;
       console.log(`[${new Date().toISOString()}] ✅ Service created successfully: ${serviceId}`);
-      logs.push(BotLogger.logSuccess(`✅ Railway service created with bot code: ${serviceId}`));
+      logs.push(BotLogger.logSuccess(`✅ Railway service created with Flask template: ${serviceId}`));
       logs.push(BotLogger.logSuccess(`✅ Bot will run at: https://bot-${botId}.up.railway.app`));
-      logs.push(BotLogger.log(botId, 'Railway deployment is starting and deploying bot code...'));
+      logs.push(BotLogger.log(botId, 'Railway deployment is starting with Flask template...'));
+      logs.push(BotLogger.log(botId, 'Environment variables configured with bot token'));
 
-      // Wait longer for deployment to initialize and deploy
-      logs.push(BotLogger.log(botId, 'Waiting for Railway to build and deploy bot...'));
-      await new Promise(resolve => setTimeout(resolve, 10000));
+      // Wait for deployment to initialize
+      logs.push(BotLogger.log(botId, 'Waiting for Railway to build and deploy template...'));
+      await new Promise(resolve => setTimeout(resolve, 15000));
       
-      logs.push(BotLogger.logSuccess(`✅ Railway deployment created with code: ${serviceId}`));
+      logs.push(BotLogger.logSuccess(`✅ Railway deployment created: ${serviceId}`));
       logs.push(BotLogger.log(botId, `Deployment URL: https://bot-${botId}.up.railway.app`));
-      logs.push(BotLogger.log(botId, 'Bot code is being built on Railway - check Railway dashboard for build logs'));
+      logs.push(BotLogger.log(botId, 'Flask template deployed - you need to replace with your bot code'));
+      logs.push(BotLogger.log(botId, 'Check Railway dashboard to see deployment progress'));
 
       console.log(`[${new Date().toISOString()}] ========== RAILWAY DEPLOYMENT CREATION SUCCESS ==========`);
 
@@ -203,9 +205,9 @@ export class RailwayDeploymentManager {
         ...deployments.slice(0, 5).map((d: any) => 
           BotLogger.log(botId, `Deployment ${d.id}: ${d.status || 'unknown'} (${d.createdAt || 'no date'})`)
         ),
-        BotLogger.log(botId, 'Bot code is deployed on Railway'),
+        BotLogger.log(botId, 'Bot deployed using Flask template on Railway'),
         BotLogger.log(botId, 'Check Railway dashboard for detailed build and runtime logs'),
-        BotLogger.log(botId, 'If webhook is empty, the bot may still be building'),
+        BotLogger.log(botId, 'Note: Template needs to be replaced with actual bot code'),
         BotLogger.logSection('END OF RAILWAY LOGS')
       ];
 
