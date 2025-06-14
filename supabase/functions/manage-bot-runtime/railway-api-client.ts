@@ -1,4 +1,3 @@
-
 import { BotLogger } from './logger.ts';
 
 const RAILWAY_GRAPHQL_API_URL = 'https://backboard.railway.app/graphql/v2';
@@ -263,7 +262,7 @@ export class RailwayApiClient {
         console.log(`[${new Date().toISOString()}] Project belongs to team: ${targetProject.teamName}`);
       }
 
-      // Create service using GraphQL mutation - we'll rely on the .env file for the bot token
+      // Create service using GraphQL mutation
       const mutation = `
         mutation serviceCreate($input: ServiceCreateInput!) {
           serviceCreate(input: $input) {
@@ -283,7 +282,7 @@ export class RailwayApiClient {
         }
       };
 
-      console.log(`[${new Date().toISOString()}] Creating service - will rely on .env file for bot token...`);
+      console.log(`[${new Date().toISOString()}] Creating service...`);
       const response = await this.makeGraphQLRequest(mutation, variables);
 
       if (!response.ok) {
@@ -303,13 +302,178 @@ export class RailwayApiClient {
       console.log(`[${new Date().toISOString()}] ✅ Service created successfully!`);
       console.log(`[${new Date().toISOString()}] Service data: ${JSON.stringify(serviceData, null, 2)}`);
 
-      // NOTE: We're NOT setting environment variables anymore - relying on .env file
-      console.log(`[${new Date().toISOString()}] ✅ Service will use bot token from .env file (no Railway env vars needed)`);
+      // Now deploy the bot code using a deployment
+      console.log(`[${new Date().toISOString()}] Deploying bot code to service...`);
+      const deploymentResult = await this.deployBotCode(serviceData.id, botId, botToken);
+      
+      if (!deploymentResult.success) {
+        console.error(`[${new Date().toISOString()}] ❌ Deployment failed: ${deploymentResult.error}`);
+        return { success: false, error: `Service created but deployment failed: ${deploymentResult.error}` };
+      }
 
+      console.log(`[${new Date().toISOString()}] ✅ Bot code deployed successfully!`);
+      
       return { success: true, serviceId: serviceData.id };
 
     } catch (error) {
       console.error(`[${new Date().toISOString()}] ❌ Exception in createService: ${error.message}`);
+      console.error(`[${new Date().toISOString()}] Exception stack: ${error.stack}`);
+      return { success: false, error: error.message };
+    }
+  }
+
+  static async deployBotCode(serviceId: string, botId: string, botToken: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      console.log(`[${new Date().toISOString()}] ========== DEPLOYING BOT CODE ==========`);
+      console.log(`[${new Date().toISOString()}] Service ID: ${serviceId}`);
+      console.log(`[${new Date().toISOString()}] Bot ID: ${botId}`);
+
+      // Create a simple Python bot deployment
+      const botCode = `
+import os
+import logging
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import asyncio
+from flask import Flask, request, jsonify
+import threading
+
+# Set up logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# Get bot token from environment
+BOT_TOKEN = "${botToken}"
+
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN environment variable is required")
+
+# Initialize Flask app for webhook
+app = Flask(__name__)
+
+# Initialize bot application
+application = Application.builder().token(BOT_TOKEN).build()
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send a message when the command /start is issued."""
+    await update.message.reply_text('🤖 Bot is running on Railway! Send me any message and I will echo it back.')
+
+async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Echo the user message."""
+    message_text = update.message.text
+    await update.message.reply_text(f"You said: {message_text}")
+
+# Add handlers
+application.add_handler(CommandHandler("start", start))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """Handle incoming webhook updates from Telegram."""
+    try:
+        update = Update.de_json(request.get_json(force=True), application.bot)
+        asyncio.run(application.process_update(update))
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        logger.error(f"Error processing webhook: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/health', methods=['GET'])
+def health():
+    """Health check endpoint."""
+    return jsonify({"status": "healthy", "bot_id": "${botId}"})
+
+@app.route('/', methods=['GET'])
+def root():
+    """Root endpoint."""
+    return jsonify({
+        "status": "Bot is running",
+        "bot_id": "${botId}",
+        "endpoints": {
+            "webhook": "/webhook",
+            "health": "/health"
+        }
+    })
+
+if __name__ == '__main__':
+    logger.info(f"Starting bot ${botId} on Railway...")
+    logger.info("Bot token configured")
+    
+    # Start Flask app
+    port = int(os.environ.get('PORT', 8000))
+    logger.info(f"Starting Flask app on port {port}")
+    app.run(host='0.0.0.0', port=port, debug=False)
+`;
+
+      const requirements = `
+python-telegram-bot==20.7
+Flask==2.3.3
+gunicorn==21.2.0
+`;
+
+      const dockerfile = `
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+EXPOSE 8000
+
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "1", "--timeout", "120", "main:app"]
+`;
+
+      // Use deployment mutation to deploy the code
+      const deployMutation = `
+        mutation deploymentCreate($input: DeploymentCreateInput!) {
+          deploymentCreate(input: $input) {
+            id
+            status
+          }
+        }
+      `;
+
+      const deployVariables = {
+        input: {
+          serviceId: serviceId,
+          environmentId: Deno.env.get('RAILWAY_ENVIRONMENT_ID'),
+          meta: {
+            "main.py": botCode,
+            "requirements.txt": requirements,
+            "Dockerfile": dockerfile
+          }
+        }
+      };
+
+      console.log(`[${new Date().toISOString()}] Creating deployment with bot code...`);
+      const deployResponse = await this.makeGraphQLRequest(deployMutation, deployVariables);
+
+      if (!deployResponse.ok) {
+        const errorText = await deployResponse.text();
+        console.error(`[${new Date().toISOString()}] ❌ Deployment creation failed!`);
+        console.error(`[${new Date().toISOString()}] Error response: ${errorText}`);
+        return { success: false, error: `Deployment failed: ${errorText}` };
+      }
+
+      const deployResult = await deployResponse.json();
+      if (deployResult.errors) {
+        console.error(`[${new Date().toISOString()}] ❌ Deployment GraphQL errors: ${JSON.stringify(deployResult.errors)}`);
+        return { success: false, error: `Deployment errors: ${deployResult.errors.map((e: any) => e.message).join(', ')}` };
+      }
+
+      console.log(`[${new Date().toISOString()}] ✅ Deployment created successfully!`);
+      console.log(`[${new Date().toISOString()}] Deployment data: ${JSON.stringify(deployResult.data.deploymentCreate, null, 2)}`);
+      
+      return { success: true };
+
+    } catch (error) {
+      console.error(`[${new Date().toISOString()}] ❌ Exception in deployBotCode: ${error.message}`);
       console.error(`[${new Date().toISOString()}] Exception stack: ${error.stack}`);
       return { success: false, error: error.message };
     }

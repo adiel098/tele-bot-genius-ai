@@ -1,4 +1,3 @@
-
 import { BotLogger } from './logger.ts';
 import { RailwayApiClient } from './railway-api-client.ts';
 
@@ -40,10 +39,10 @@ export class RailwayDeploymentManager {
         console.log(`[${new Date().toISOString()}] Project ID preview: ${projectId.substring(0, 8)}...`);
       }
 
-      logs.push(BotLogger.log(botId, 'Creating Railway service (will use .env file for bot token)...'));
-      console.log(`[${new Date().toISOString()}] Creating Railway service - bot token will be read from .env file...`);
+      logs.push(BotLogger.log(botId, 'Creating Railway service with bot code...'));
+      console.log(`[${new Date().toISOString()}] Creating Railway service with actual bot code...`);
 
-      // Create service without environment variables - rely on .env file
+      // Create service and deploy code in one go
       const serviceResult = await RailwayApiClient.createService(projectId, botId, token);
 
       console.log(`[${new Date().toISOString()}] Service creation result: ${JSON.stringify(serviceResult, null, 2)}`);
@@ -59,15 +58,17 @@ export class RailwayDeploymentManager {
 
       const serviceId = serviceResult.serviceId!;
       console.log(`[${new Date().toISOString()}] ✅ Service created successfully: ${serviceId}`);
-      logs.push(BotLogger.logSuccess(`✅ Railway service created: ${serviceId}`));
+      logs.push(BotLogger.logSuccess(`✅ Railway service created with bot code: ${serviceId}`));
       logs.push(BotLogger.logSuccess(`✅ Bot will run at: https://bot-${botId}.up.railway.app`));
-      logs.push(BotLogger.log(botId, 'Railway deployment is starting...'));
+      logs.push(BotLogger.log(botId, 'Railway deployment is starting and deploying bot code...'));
 
-      // Wait for deployment to initialize
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Wait longer for deployment to initialize and deploy
+      logs.push(BotLogger.log(botId, 'Waiting for Railway to build and deploy bot...'));
+      await new Promise(resolve => setTimeout(resolve, 10000));
       
-      logs.push(BotLogger.logSuccess(`✅ Railway deployment created: ${serviceId}`));
+      logs.push(BotLogger.logSuccess(`✅ Railway deployment created with code: ${serviceId}`));
       logs.push(BotLogger.log(botId, `Deployment URL: https://bot-${botId}.up.railway.app`));
+      logs.push(BotLogger.log(botId, 'Bot code is being built on Railway - check Railway dashboard for build logs'));
 
       console.log(`[${new Date().toISOString()}] ========== RAILWAY DEPLOYMENT CREATION SUCCESS ==========`);
 
@@ -200,9 +201,11 @@ export class RailwayDeploymentManager {
         BotLogger.log(botId, `Deployment URL: https://bot-${botId}.up.railway.app`),
         BotLogger.log(botId, `Deployments found: ${deployments.length}`),
         ...deployments.slice(0, 5).map((d: any) => 
-          BotLogger.log(botId, `Deployment ${d.id}: ${d.status || 'unknown'}`)
+          BotLogger.log(botId, `Deployment ${d.id}: ${d.status || 'unknown'} (${d.createdAt || 'no date'})`)
         ),
-        BotLogger.log(botId, 'Bot is running on Railway - check Railway dashboard for detailed logs'),
+        BotLogger.log(botId, 'Bot code is deployed on Railway'),
+        BotLogger.log(botId, 'Check Railway dashboard for detailed build and runtime logs'),
+        BotLogger.log(botId, 'If webhook is empty, the bot may still be building'),
         BotLogger.logSection('END OF RAILWAY LOGS')
       ];
 

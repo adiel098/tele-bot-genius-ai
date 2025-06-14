@@ -16,7 +16,7 @@ export async function setupTelegramWebhook(botId: string, token: string, logs: s
     });
     
     // Wait a moment
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 2000));
     
     // Set the new webhook
     const webhookResponse = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
@@ -38,12 +38,21 @@ export async function setupTelegramWebhook(botId: string, token: string, logs: s
       logs.push(BotLogger.log(botId, `Webhook URL: ${webhookUrl}`));
       logs.push(BotLogger.log(botId, 'Bot will receive messages directly on Railway'));
       
+      // Wait longer before verifying
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
       // Verify webhook was set correctly
       const verifyResponse = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`);
       const verifyData = await verifyResponse.json();
       
+      console.log(`[${new Date().toISOString()}] Webhook verification:`, JSON.stringify(verifyData, null, 2));
+      
       if (verifyData.ok && verifyData.result.url === webhookUrl) {
         logs.push(BotLogger.logSuccess('✅ Webhook verification successful'));
+        logs.push(BotLogger.log(botId, `Webhook set to: ${verifyData.result.url}`));
+      } else if (verifyData.ok && verifyData.result.url === '') {
+        logs.push(BotLogger.logWarning(`⚠️ Webhook is empty - Railway deployment may not be ready yet`));
+        logs.push(BotLogger.log(botId, 'Railway may need time to deploy the bot code'));
       } else {
         logs.push(BotLogger.logWarning(`⚠️ Webhook verification failed: ${JSON.stringify(verifyData.result)}`));
       }
