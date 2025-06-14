@@ -8,12 +8,25 @@ export async function setupTelegramWebhook(botId: string, token: string, logs: s
   
   try {
     console.log(`[${new Date().toISOString()}] Setting up Telegram webhook to Railway...`);
+    
+    // First, delete any existing webhook
+    await fetch(`https://api.telegram.org/bot${token}/deleteWebhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+    // Wait a moment
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Set the new webhook
     const webhookResponse = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         url: webhookUrl,
-        allowed_updates: ["message", "callback_query"]
+        allowed_updates: ["message", "callback_query"],
+        max_connections: 40,
+        drop_pending_updates: true
       })
     });
     
@@ -24,6 +37,16 @@ export async function setupTelegramWebhook(botId: string, token: string, logs: s
       logs.push(BotLogger.logSuccess('✅ Telegram webhook configured to Railway deployment'));
       logs.push(BotLogger.log(botId, `Webhook URL: ${webhookUrl}`));
       logs.push(BotLogger.log(botId, 'Bot will receive messages directly on Railway'));
+      
+      // Verify webhook was set correctly
+      const verifyResponse = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`);
+      const verifyData = await verifyResponse.json();
+      
+      if (verifyData.ok && verifyData.result.url === webhookUrl) {
+        logs.push(BotLogger.logSuccess('✅ Webhook verification successful'));
+      } else {
+        logs.push(BotLogger.logWarning(`⚠️ Webhook verification failed: ${JSON.stringify(verifyData.result)}`));
+      }
     } else {
       logs.push(BotLogger.logWarning(`⚠️ Webhook setup warning: ${webhookData.description}`));
     }
@@ -36,7 +59,11 @@ export async function setupTelegramWebhook(botId: string, token: string, logs: s
 export async function removeTelegramWebhook(botId: string, token: string, logs: string[]): Promise<void> {
   try {
     logs.push(BotLogger.log(botId, 'Cleaning up Telegram webhook...'));
-    const webhookResponse = await fetch(`https://api.telegram.org/bot${token}/deleteWebhook`);
+    const webhookResponse = await fetch(`https://api.telegram.org/bot${token}/deleteWebhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ drop_pending_updates: true })
+    });
     const webhookData = await webhookResponse.json();
     
     if (webhookData.ok) {
