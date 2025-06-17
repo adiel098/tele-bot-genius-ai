@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -121,8 +122,8 @@ const Index = () => {
       const result = await response.json();
       if (result.success) {
         toast({
-          title: "הבוט נוצר בהצלחה! 🎉",
-          description: "הבוט שלך פעיל ומוכן לשימוש"
+          title: "Bot created successfully! 🎉",
+          description: "Your bot is active and ready to use"
         });
         navigate(`/workspace/${data.id}`);
       } else {
@@ -131,8 +132,8 @@ const Index = () => {
     } catch (error) {
       console.error('Error:', error);
       toast({
-        title: "שגיאה",
-        description: "אירעה שגיאה בלתי צפויה. אנא נסה שוב.",
+        title: "Error",
+        description: "An unexpected error occurred. Please try again.",
         variant: "destructive"
       });
     } finally {

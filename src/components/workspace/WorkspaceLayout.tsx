@@ -98,7 +98,7 @@ const WorkspaceLayout = ({
         <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
           <TabsList className="grid w-full grid-cols-2 mx-4 mt-4">
             <TabsTrigger value="files" className="relative">
-              קבצים
+              Files
               {filesCount > 0 && (
                 <Badge variant="secondary" className="ml-2 text-xs">
                   {filesCount}
@@ -106,10 +106,10 @@ const WorkspaceLayout = ({
               )}
             </TabsTrigger>
             <TabsTrigger value="logs" className={`relative ${logsHasErrors ? "text-red-600" : ""}`}>
-              לוגי זמן אמת
+              Runtime Logs
               {logsHasErrors && (
                 <Badge variant="destructive" className="ml-2 text-xs">
-                  שגיאות
+                  Errors
                 </Badge>
               )}
               {!logsHasErrors && (

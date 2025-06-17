@@ -68,8 +68,8 @@ const ExistingBots = () => {
       if (error) {
         console.error('Error fetching bots:', error);
         toast({
-          title: "שגיאה",
-          description: "לא ניתן לטעון את הבוטים",
+          title: "Error",
+          description: "Unable to load bots",
           variant: "destructive",
         });
         return;
@@ -84,7 +84,7 @@ const ExistingBots = () => {
   };
 
   const handleDeleteBot = async (botId: string, botName: string) => {
-    if (!confirm(`האם אתה בטוח שברצונך למחוק את הבוט "${botName}"?`)) {
+    if (!confirm(`Are you sure you want to delete the bot "${botName}"?`)) {
       return;
     }
 
@@ -98,16 +98,16 @@ const ExistingBots = () => {
       if (error) throw error;
 
       toast({
-        title: "בוט נמחק בהצלחה! 🗑️",
-        description: `הבוט "${botName}" נמחק`,
+        title: "Bot deleted successfully! 🗑️",
+        description: `Bot "${botName}" has been deleted`,
       });
 
       fetchUserBots();
     } catch (error) {
       console.error('Error deleting bot:', error);
       toast({
-        title: "שגיאה",
-        description: "לא ניתן למחוק את הבוט",
+        title: "Error",
+        description: "Unable to delete bot",
         variant: "destructive",
       });
     }
@@ -131,13 +131,13 @@ const ExistingBots = () => {
   const getStatusText = (status: string) => {
     switch (status) {
       case 'running':
-        return 'פועל';
+        return 'Running';
       case 'stopped':
-        return 'מופסק';
+        return 'Stopped';
       case 'error':
-        return 'שגיאה';
+        return 'Error';
       case 'creating':
-        return 'נוצר';
+        return 'Creating';
       default:
         return status;
     }
@@ -146,7 +146,7 @@ const ExistingBots = () => {
   if (!user) {
     return (
       <div className="text-center py-8">
-        <p className="text-gray-600">התחבר כדי לראות את הבוטים שלך</p>
+        <p className="text-gray-600">Sign in to view your bots</p>
       </div>
     );
   }
@@ -155,7 +155,7 @@ const ExistingBots = () => {
     return (
       <div className="text-center py-8">
         <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-        <p className="text-gray-600">טוען בוטים...</p>
+        <p className="text-gray-600">Loading bots...</p>
       </div>
     );
   }
@@ -164,10 +164,10 @@ const ExistingBots = () => {
     return (
       <div className="text-center py-12">
         <Bot className="w-16 h-16 mx-auto text-gray-400 mb-4" />
-        <h3 className="text-xl font-semibold text-gray-900 mb-2">אין לך בוטים עדיין</h3>
-        <p className="text-gray-600 mb-6">צור את הבוט הראשון שלך ותתחיל לבנות!</p>
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">No bots yet</h3>
+        <p className="text-gray-600 mb-6">Create your first bot and start building!</p>
         <Button onClick={() => navigate('/create-bot')} className="bg-blue-600 hover:bg-blue-700">
-          צור בוט חדש
+          Create New Bot
         </Button>
       </div>
     );
@@ -176,9 +176,9 @@ const ExistingBots = () => {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">הבוטים שלי ({bots.length})</h2>
+        <h2 className="text-2xl font-bold text-gray-900">My Bots ({bots.length})</h2>
         <Button onClick={() => navigate('/create-bot')} className="bg-blue-600 hover:bg-blue-700">
-          צור בוט חדש
+          Create New Bot
         </Button>
       </div>
 
@@ -203,13 +203,13 @@ const ExistingBots = () => {
               <div className="space-y-3">
                 <div className="flex items-center text-sm text-gray-600">
                   <Calendar className="w-4 h-4 mr-2" />
-                  נוצר: {new Date(bot.created_at).toLocaleDateString('he-IL')}
+                  Created: {new Date(bot.created_at).toLocaleDateString('en-US')}
                 </div>
                 
                 {bot.last_restart && (
                   <div className="flex items-center text-sm text-gray-600">
                     <Play className="w-4 h-4 mr-2" />
-                    הפעלה אחרונה: {new Date(bot.last_restart).toLocaleDateString('he-IL')}
+                    Last restart: {new Date(bot.last_restart).toLocaleDateString('en-US')}
                   </div>
                 )}
 
@@ -219,7 +219,7 @@ const ExistingBots = () => {
                     className="flex-1 bg-blue-600 hover:bg-blue-700"
                     size="sm"
                   >
-                    פתח
+                    Open
                   </Button>
                   <Button
                     onClick={() => handleDeleteBot(bot.id, bot.name)}

@@ -104,7 +104,7 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
 
       if (error) {
         console.error('Error fetching logs:', error);
-        const errorMessage = "שגיאה בטעינת לוגים: " + error.message;
+        const errorMessage = "Error loading logs: " + error.message;
         setLogs(errorMessage);
         setHasErrors(true);
         if (onLogsUpdate) {
@@ -113,16 +113,16 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
         return;
       }
 
-      let logText = "אין לוגים זמינים";
+      let logText = "No logs available";
       
       if (data.runtime_logs && data.runtime_logs.trim()) {
         logText = data.runtime_logs;
       } else if (data.runtime_status === 'creating') {
-        logText = "הבוט נוצר... אנא המתן.";
+        logText = "Bot is being created... Please wait.";
       } else if (data.runtime_status === 'stopped') {
-        logText = "הבוט מופסק. לחץ 'הפעל מחדש' כדי להתחיל את הבוט.";
+        logText = "Bot is stopped. Click 'Restart' to start the bot.";
       } else if (data.runtime_status === 'error') {
-        logText = "הבוט נתקל בשגיאה. בדוק את הלוגים למעלה לפרטים.";
+        logText = "Bot encountered an error. Check the logs above for details.";
       }
       
       setLogs(logText);
@@ -148,7 +148,7 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
       }
     } catch (error) {
       console.error('Error:', error);
-      const errorMessage = "שגיאה בטעינת לוגים: " + error.message;
+      const errorMessage = "Error loading logs: " + error.message;
       setLogs(errorMessage);
       setHasErrors(true);
       if (onLogsUpdate) {
@@ -173,8 +173,8 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
       if (data.success) {
         await fetchLogs(); // Refresh the logs from database
         toast({
-          title: "לוגים רוענו! 📋",
-          description: "לוגי הקונטיינר העדכניים נטענו",
+          title: "Logs refreshed! 📋",
+          description: "Latest container logs loaded",
         });
         
         // Scroll to bottom after refresh
@@ -187,8 +187,8 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
     } catch (error) {
       console.error('Error refreshing logs:', error);
       toast({
-        title: "שגיאה",
-        description: "לא ניתן לרענן את הלוגים",
+        title: "Error",
+        description: "Unable to refresh logs",
         variant: "destructive",
       });
     } finally {
@@ -197,7 +197,7 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
   };
 
   const clearLogs = async () => {
-    if (!confirm('האם אתה בטוח שברצונך לנקות את הלוגים?')) return;
+    if (!confirm('Are you sure you want to clear the logs?')) return;
     
     try {
       const { error } = await supabase
@@ -213,14 +213,14 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
       setHasErrors(false);
       
       toast({
-        title: "לוגים נוקו! 🧹",
-        description: "לוגי הבוט נוקו בהצלחה",
+        title: "Logs cleared! 🧹",
+        description: "Bot logs cleared successfully",
       });
     } catch (error) {
       console.error('Error clearing logs:', error);
       toast({
-        title: "שגיאה",
-        description: "לא ניתן לנקות את הלוגים",
+        title: "Error",
+        description: "Unable to clear logs",
         variant: "destructive",
       });
     }
@@ -238,8 +238,8 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
     URL.revokeObjectURL(url);
     
     toast({
-      title: "לוגים הורדו! 💾",
-      description: "קובץ הלוגים נשמר במחשב שלך",
+      title: "Logs downloaded! 💾",
+      description: "Log file saved to your computer",
     });
   };
 
@@ -283,16 +283,16 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
         },
         (payload) => {
           if (payload.new?.runtime_logs !== undefined) {
-            let logText = payload.new.runtime_logs || "אין לוגים זמינים";
+            let logText = payload.new.runtime_logs || "No logs available";
             
             // Add status-based messages if no logs
-            if (!logText.trim() || logText === "אין לוגים זמינים") {
+            if (!logText.trim() || logText === "No logs available") {
               if (payload.new.runtime_status === 'creating') {
-                logText = "הבוט נוצר... אנא המתן.";
+                logText = "Bot is being created... Please wait.";
               } else if (payload.new.runtime_status === 'stopped') {
-                logText = "הבוט מופסק. לחץ 'הפעל מחדש' כדי להתחיל את הבוט.";
+                logText = "Bot is stopped. Click 'Restart' to start the bot.";
               } else if (payload.new.runtime_status === 'error') {
-                logText = "הבוט נתקל בשגיאה. אנא בדוק את הקונפיגורציה.";
+                logText = "Bot encountered an error. Please check the configuration.";
               }
             }
             
@@ -356,14 +356,14 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
       <CardHeader>
         <CardTitle className="text-sm flex items-center justify-between">
           <div className="flex items-center">
-            🐳 לוגי Docker
+            🐳 Docker Logs
             <div className={`ml-2 w-2 h-2 rounded-full ${hasErrors ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`}></div>
             <Badge variant="outline" className="ml-2 text-xs">
-              {logCount} שורות
+              {logCount} lines
             </Badge>
             {autoRefresh && (
               <Badge variant="secondary" className="ml-2 text-xs">
-                רענון אוטומטי
+                Auto-refresh
               </Badge>
             )}
           </div>
@@ -376,7 +376,7 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
                 className="bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
               >
                 <Wrench className="h-3 w-3 mr-1" />
-                תיקון AI
+                AI Fix
               </Button>
             )}
             <Button 
@@ -417,7 +417,7 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
           <div className="relative flex-1">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
             <Input
-              placeholder="חפש בלוגים..."
+              placeholder="Search logs..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-8 text-sm"
@@ -432,9 +432,9 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
                 size="sm"
                 className="text-xs"
               >
-                {filter === 'all' ? 'הכל' : 
-                 filter === 'errors' ? 'שגיאות' :
-                 filter === 'warnings' ? 'אזהרות' : 'מידע'}
+                {filter === 'all' ? 'All' : 
+                 filter === 'errors' ? 'Errors' :
+                 filter === 'warnings' ? 'Warnings' : 'Info'}
               </Button>
             ))}
           </div>
@@ -444,7 +444,7 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
         <ScrollArea className="h-[300px]" ref={scrollRef}>
           <div className="space-y-1 p-3 bg-gray-50 rounded-md font-mono text-sm">
             {filteredLogs ? formatLogs(filteredLogs) : (
-              <div className="text-gray-500 text-sm">טוען לוגים...</div>
+              <div className="text-gray-500 text-sm">Loading logs...</div>
             )}
           </div>
         </ScrollArea>
