@@ -41,30 +41,79 @@ export class RailwayServiceCreator {
         throw new Error('Invalid bot token format. Please check your token from @BotFather.');
       }
 
-      // Get actual bot code from database
+      // Get bot info to find user_id
       const { data: botData, error: botError } = await supabase
         .from('bots')
-        .select('files')
+        .select('user_id')
         .eq('id', botId)
         .single();
 
-      if (botError || !botData?.files) {
-        console.error(`[${new Date().toISOString()}] ❌ Failed to get bot files: ${botError?.message}`);
-        logs.push(BotLogger.logError(`❌ Failed to get bot files: ${botError?.message || 'No files found'}`));
-        throw new Error('Failed to get bot files from database');
+      if (botError || !botData) {
+        console.error(`[${new Date().toISOString()}] ❌ Failed to get bot info: ${botError?.message}`);
+        logs.push(BotLogger.logError(`❌ Failed to get bot info: ${botError?.message || 'Bot not found'}`));
+        throw new Error('Failed to get bot info from database');
       }
 
-      const botFiles = botData.files as Record<string, string>;
-      const mainPyContent = botFiles['main.py'];
+      const userId = botData.user_id;
+      logs.push(BotLogger.log(botId, `Getting bot files from storage for user: ${userId}`));
 
-      if (!mainPyContent) {
-        console.error(`[${new Date().toISOString()}] ❌ No main.py file found in bot files`);
-        logs.push(BotLogger.logError('❌ No main.py file found in bot files'));
-        throw new Error('No main.py file found in bot files');
+      // Get bot files from Supabase Storage
+      const { data: files, error: filesError } = await supabase.storage
+        .from('bot-files')
+        .list(`${userId}/${botId}`);
+
+      if (filesError || !files || files.length === 0) {
+        console.error(`[${new Date().toISOString()}] ❌ Failed to list bot files: ${filesError?.message}`);
+        logs.push(BotLogger.logError(`❌ Failed to get bot files from storage: ${filesError?.message || 'No files found'}`));
+        throw new Error('Failed to get bot files from storage');
       }
 
-      logs.push(BotLogger.log(botId, 'Bot files retrieved from database'));
+      // Download main.py file
+      const mainFile = files.find(f => f.name === 'main.py');
+      if (!mainFile) {
+        console.error(`[${new Date().toISOString()}] ❌ No main.py file found`);
+        logs.push(BotLogger.logError('❌ No main.py file found in storage'));
+        throw new Error('No main.py file found in storage');
+      }
+
+      const { data: mainFileData, error: downloadError } = await supabase.storage
+        .from('bot-files')
+        .download(`${userId}/${botId}/${mainFile.name}`);
+
+      if (downloadError || !mainFileData) {
+        console.error(`[${new Date().toISOString()}] ❌ Failed to download main.py: ${downloadError?.message}`);
+        logs.push(BotLogger.logError(`❌ Failed to download main.py: ${downloadError?.message || 'Download failed'}`));
+        throw new Error('Failed to download main.py file');
+      }
+
+      const mainPyContent = await mainFileData.text();
+      logs.push(BotLogger.log(botId, 'Bot files retrieved from storage'));
       logs.push(BotLogger.log(botId, `Main.py size: ${mainPyContent.length} characters`));
+
+      // Download other files if they exist
+      const botFiles: Record<string, string> = {
+        'main.py': mainPyContent
+      };
+
+      // Try to get other common files
+      const commonFiles = ['requirements.txt', '.env', 'Dockerfile', 'README.md'];
+      for (const fileName of commonFiles) {
+        const file = files.find(f => f.name === fileName);
+        if (file) {
+          try {
+            const { data: fileData } = await supabase.storage
+              .from('bot-files')
+              .download(`${userId}/${botId}/${fileName}`);
+            
+            if (fileData) {
+              botFiles[fileName] = await fileData.text();
+              logs.push(BotLogger.log(botId, `Downloaded ${fileName}`));
+            }
+          } catch (error) {
+            console.warn(`[${new Date().toISOString()}] Warning: Could not download ${fileName}: ${error.message}`);
+          }
+        }
+      }
 
       logs.push(BotLogger.log(botId, 'Creating Railway service with actual bot code...'));
       console.log(`[${new Date().toISOString()}] Creating Railway service with actual bot code...`);
