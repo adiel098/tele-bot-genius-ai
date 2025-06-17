@@ -1,9 +1,11 @@
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Wrench } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { RefreshCw, Wrench, Search, Filter, Download, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -15,13 +17,23 @@ interface BotRuntimeLogsProps {
 
 const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps) => {
   const [logs, setLogs] = useState<string>("");
+  const [filteredLogs, setFilteredLogs] = useState<string>("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasErrors, setHasErrors] = useState(false);
   const [errorDetails, setErrorDetails] = useState<string>("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [logFilter, setLogFilter] = useState<'all' | 'errors' | 'warnings' | 'info'>('all');
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [logCount, setLogCount] = useState(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   const checkForErrors = (logText: string) => {
-    const errorKeywords = ['ERROR:', 'ImportError:', 'ModuleNotFoundError:', 'TypeError:', 'ValueError:', 'AttributeError:', 'Traceback', 'Exception:', 'cannot import'];
+    const errorKeywords = [
+      'ERROR:', 'ImportError:', 'ModuleNotFoundError:', 'TypeError:', 
+      'ValueError:', 'AttributeError:', 'Traceback', 'Exception:', 
+      'cannot import', 'SyntaxError:', 'IndentationError:', 'NameError:'
+    ];
     return errorKeywords.some(keyword => logText.includes(keyword));
   };
 
@@ -32,9 +44,54 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
       line.includes('ImportError:') || 
       line.includes('Traceback') ||
       line.includes('cannot import') ||
-      line.includes('ModuleNotFoundError:')
+      line.includes('ModuleNotFoundError:') ||
+      line.includes('SyntaxError:') ||
+      line.includes('Exception:')
     );
     return errorLines.join('\n');
+  };
+
+  const filterLogsByType = (logText: string, filter: string) => {
+    if (filter === 'all') return logText;
+    
+    const lines = logText.split('\n');
+    let filteredLines: string[] = [];
+    
+    switch (filter) {
+      case 'errors':
+        filteredLines = lines.filter(line => 
+          line.includes('ERROR') || line.includes('Exception') || 
+          line.includes('Traceback') || line.includes('ImportError') ||
+          line.includes('SyntaxError')
+        );
+        break;
+      case 'warnings':
+        filteredLines = lines.filter(line => 
+          line.includes('WARNING') || line.includes('WARN')
+        );
+        break;
+      case 'info':
+        filteredLines = lines.filter(line => 
+          line.includes('INFO') || line.includes('SUCCESS') || 
+          line.includes('✅') || line.includes('started')
+        );
+        break;
+    }
+    
+    return filteredLines.join('\n');
+  };
+
+  const applyFilters = (logText: string) => {
+    let filtered = filterLogsByType(logText, logFilter);
+    
+    if (searchTerm) {
+      const lines = filtered.split('\n');
+      filtered = lines.filter(line => 
+        line.toLowerCase().includes(searchTerm.toLowerCase())
+      ).join('\n');
+    }
+    
+    return filtered;
   };
 
   const fetchLogs = async () => {
@@ -47,7 +104,7 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
 
       if (error) {
         console.error('Error fetching logs:', error);
-        const errorMessage = "Error loading logs: " + error.message;
+        const errorMessage = "שגיאה בטעינת לוגים: " + error.message;
         setLogs(errorMessage);
         setHasErrors(true);
         if (onLogsUpdate) {
@@ -56,19 +113,25 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
         return;
       }
 
-      let logText = "No logs available";
+      let logText = "אין לוגים זמינים";
       
       if (data.runtime_logs && data.runtime_logs.trim()) {
         logText = data.runtime_logs;
       } else if (data.runtime_status === 'creating') {
-        logText = "Bot is being created... Please wait.";
+        logText = "הבוט נוצר... אנא המתן.";
       } else if (data.runtime_status === 'stopped') {
-        logText = "Bot is stopped. Click 'Restart' to start the bot.";
+        logText = "הבוט מופסק. לחץ 'הפעל מחדש' כדי להתחיל את הבוט.";
       } else if (data.runtime_status === 'error') {
-        logText = "Bot encountered an error. Check the logs above for details.";
+        logText = "הבוט נתקל בשגיאה. בדוק את הלוגים למעלה לפרטים.";
       }
       
       setLogs(logText);
+      const filtered = applyFilters(logText);
+      setFilteredLogs(filtered);
+      
+      // Count log lines
+      const lineCount = logText.split('\n').filter(line => line.trim()).length;
+      setLogCount(lineCount);
       
       // Check if there are errors in the logs
       const hasErrorsInLogs = checkForErrors(logText) || data.runtime_status === 'error';
@@ -85,7 +148,7 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
       }
     } catch (error) {
       console.error('Error:', error);
-      const errorMessage = "Error loading logs: " + error.message;
+      const errorMessage = "שגיאה בטעינת לוגים: " + error.message;
       setLogs(errorMessage);
       setHasErrors(true);
       if (onLogsUpdate) {
@@ -110,20 +173,74 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
       if (data.success) {
         await fetchLogs(); // Refresh the logs from database
         toast({
-          title: "Logs refreshed! 📋",
-          description: "Latest container logs have been retrieved",
+          title: "לוגים רוענו! 📋",
+          description: "לוגי הקונטיינר העדכניים נטענו",
         });
+        
+        // Scroll to bottom after refresh
+        setTimeout(() => {
+          if (scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+          }
+        }, 100);
       }
     } catch (error) {
       console.error('Error refreshing logs:', error);
       toast({
-        title: "Error",
-        description: "Failed to refresh logs",
+        title: "שגיאה",
+        description: "לא ניתן לרענן את הלוגים",
         variant: "destructive",
       });
     } finally {
       setIsRefreshing(false);
     }
+  };
+
+  const clearLogs = async () => {
+    if (!confirm('האם אתה בטוח שברצונך לנקות את הלוגים?')) return;
+    
+    try {
+      const { error } = await supabase
+        .from('bots')
+        .update({ runtime_logs: '' })
+        .eq('id', botId);
+
+      if (error) throw error;
+
+      setLogs('');
+      setFilteredLogs('');
+      setLogCount(0);
+      setHasErrors(false);
+      
+      toast({
+        title: "לוגים נוקו! 🧹",
+        description: "לוגי הבוט נוקו בהצלחה",
+      });
+    } catch (error) {
+      console.error('Error clearing logs:', error);
+      toast({
+        title: "שגיאה",
+        description: "לא ניתן לנקות את הלוגים",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const downloadLogs = () => {
+    const blob = new Blob([logs], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bot-${botId}-logs-${new Date().toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    toast({
+      title: "לוגים הורדו! 💾",
+      description: "קובץ הלוגים נשמר במחשב שלך",
+    });
   };
 
   const handleFixByAI = () => {
@@ -132,6 +249,23 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
       onFixByAI(errorContent);
     }
   };
+
+  // Apply filters when search term or log filter changes
+  useEffect(() => {
+    const filtered = applyFilters(logs);
+    setFilteredLogs(filtered);
+  }, [searchTerm, logFilter, logs]);
+
+  // Auto-refresh functionality
+  useEffect(() => {
+    if (!autoRefresh) return;
+    
+    const interval = setInterval(() => {
+      fetchLogs();
+    }, 5000); // Refresh every 5 seconds
+    
+    return () => clearInterval(interval);
+  }, [autoRefresh, botId]);
 
   useEffect(() => {
     fetchLogs();
@@ -149,20 +283,25 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
         },
         (payload) => {
           if (payload.new?.runtime_logs !== undefined) {
-            let logText = payload.new.runtime_logs || "No logs available";
+            let logText = payload.new.runtime_logs || "אין לוגים זמינים";
             
             // Add status-based messages if no logs
-            if (!logText.trim() || logText === "No logs available") {
+            if (!logText.trim() || logText === "אין לוגים זמינים") {
               if (payload.new.runtime_status === 'creating') {
-                logText = "Bot is being created... Please wait.";
+                logText = "הבוט נוצר... אנא המתן.";
               } else if (payload.new.runtime_status === 'stopped') {
-                logText = "Bot is stopped. Click 'Restart' to start the bot.";
+                logText = "הבוט מופסק. לחץ 'הפעל מחדש' כדי להתחיל את הבוט.";
               } else if (payload.new.runtime_status === 'error') {
-                logText = "Bot encountered an error. Please check the configuration.";
+                logText = "הבוט נתקל בשגיאה. אנא בדוק את הקונפיגורציה.";
               }
             }
             
             setLogs(logText);
+            const filtered = applyFilters(logText);
+            setFilteredLogs(filtered);
+            
+            const lineCount = logText.split('\n').filter(line => line.trim()).length;
+            setLogCount(lineCount);
             
             const hasErrorsInLogs = checkForErrors(logText) || payload.new.runtime_status === 'error';
             setHasErrors(hasErrorsInLogs);
@@ -183,25 +322,29 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [botId, onLogsUpdate]);
+  }, [botId, onLogsUpdate, searchTerm, logFilter]);
 
   const formatLogs = (logText: string) => {
     return logText.split('\n').map((line, index) => {
       if (line.trim() === '') return null;
       
-      let className = "text-gray-700";
-      if (line.includes('[ERROR]') || line.includes('Error:') || line.includes('ImportError:') || line.includes('cannot import') || line.includes('Traceback')) {
-        className = "text-red-600 font-medium";
+      let className = "text-gray-700 text-sm font-mono leading-relaxed";
+      if (line.includes('[ERROR]') || line.includes('Error:') || line.includes('ImportError:') || 
+          line.includes('cannot import') || line.includes('Traceback') || line.includes('Exception:')) {
+        className = "text-red-600 font-medium text-sm font-mono leading-relaxed bg-red-50 px-2 py-1 rounded";
       } else if (line.includes('[WARN]') || line.includes('Warning:')) {
-        className = "text-yellow-600";
+        className = "text-yellow-600 text-sm font-mono leading-relaxed bg-yellow-50 px-2 py-1 rounded";
       } else if (line.includes('[INFO]') || line.includes('Container') || line.includes('started') || line.includes('SUCCESS')) {
-        className = "text-blue-600";
+        className = "text-blue-600 text-sm font-mono leading-relaxed";
       } else if (line.includes('successfully') || line.includes('✅')) {
-        className = "text-green-600";
+        className = "text-green-600 text-sm font-mono leading-relaxed bg-green-50 px-2 py-1 rounded";
       }
       
       return (
-        <div key={index} className={`${className} text-sm font-mono`}>
+        <div key={index} className={className}>
+          <span className="text-gray-400 text-xs mr-2">
+            {String(index + 1).padStart(3, '0')}
+          </span>
           {line}
         </div>
       );
@@ -213,8 +356,16 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
       <CardHeader>
         <CardTitle className="text-sm flex items-center justify-between">
           <div className="flex items-center">
-            🐳 Docker Logs
-            <div className={`ml-2 w-2 h-2 rounded-full animate-pulse ${hasErrors ? 'bg-red-500' : 'bg-green-500'}`}></div>
+            🐳 לוגי Docker
+            <div className={`ml-2 w-2 h-2 rounded-full ${hasErrors ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`}></div>
+            <Badge variant="outline" className="ml-2 text-xs">
+              {logCount} שורות
+            </Badge>
+            {autoRefresh && (
+              <Badge variant="secondary" className="ml-2 text-xs">
+                רענון אוטומטי
+              </Badge>
+            )}
           </div>
           <div className="flex gap-2">
             {hasErrors && onFixByAI && (
@@ -225,9 +376,16 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
                 className="bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
               >
                 <Wrench className="h-3 w-3 mr-1" />
-                Fix by AI
+                תיקון AI
               </Button>
             )}
+            <Button 
+              onClick={() => setAutoRefresh(!autoRefresh)}
+              variant={autoRefresh ? "default" : "outline"}
+              size="sm"
+            >
+              {autoRefresh ? "⏸️" : "▶️"}
+            </Button>
             <Button 
               onClick={refreshLogs} 
               disabled={isRefreshing}
@@ -236,14 +394,57 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
             >
               <RefreshCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
             </Button>
+            <Button 
+              onClick={downloadLogs}
+              variant="outline" 
+              size="sm"
+            >
+              <Download className="h-3 w-3" />
+            </Button>
+            <Button 
+              onClick={clearLogs}
+              variant="outline" 
+              size="sm"
+              className="text-red-600 hover:bg-red-50"
+            >
+              <Trash2 className="h-3 w-3" />
+            </Button>
           </div>
         </CardTitle>
+        
+        {/* Filters and Search */}
+        <div className="flex gap-2 mt-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder="חפש בלוגים..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-8 text-sm"
+            />
+          </div>
+          <div className="flex gap-1">
+            {(['all', 'errors', 'warnings', 'info'] as const).map((filter) => (
+              <Button
+                key={filter}
+                onClick={() => setLogFilter(filter)}
+                variant={logFilter === filter ? "default" : "outline"}
+                size="sm"
+                className="text-xs"
+              >
+                {filter === 'all' ? 'הכל' : 
+                 filter === 'errors' ? 'שגיאות' :
+                 filter === 'warnings' ? 'אזהרות' : 'מידע'}
+              </Button>
+            ))}
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
-        <ScrollArea className="h-[300px]">
-          <div className="space-y-1 p-2 bg-gray-50 rounded-md">
-            {logs ? formatLogs(logs) : (
-              <div className="text-gray-500 text-sm">Loading logs...</div>
+        <ScrollArea className="h-[300px]" ref={scrollRef}>
+          <div className="space-y-1 p-3 bg-gray-50 rounded-md font-mono text-sm">
+            {filteredLogs ? formatLogs(filteredLogs) : (
+              <div className="text-gray-500 text-sm">טוען לוגים...</div>
             )}
           </div>
         </ScrollArea>

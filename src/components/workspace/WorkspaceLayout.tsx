@@ -1,6 +1,7 @@
 
 import { useState, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 import BotRuntimeLogs from "@/components/BotRuntimeLogs";
 import FilesPanel from "./FilesPanel";
 import ChatInterface from "./ChatInterface";
@@ -48,11 +49,17 @@ const WorkspaceLayout = ({
 }: WorkspaceLayoutProps) => {
   const [logsHasErrors, setLogsHasErrors] = useState(false);
   const [logsErrorContent, setLogsErrorContent] = useState("");
+  const [activeTab, setActiveTab] = useState("files");
 
   const handleLogsUpdate = useCallback((logs: string, hasErrorsDetected: boolean) => {
     setLogsErrorContent(logs);
     setLogsHasErrors(hasErrorsDetected);
-  }, []);
+    
+    // Auto-switch to logs tab if errors are detected
+    if (hasErrorsDetected && activeTab === "files") {
+      setActiveTab("logs");
+    }
+  }, [activeTab]);
 
   const handleLogsFixByAI = useCallback(async (errorLogs: string) => {
     await onFixByAI(errorLogs);
@@ -61,6 +68,8 @@ const WorkspaceLayout = ({
   // Combine errors from props and logs
   const combinedHasErrors = hasErrors || logsHasErrors;
   const combinedErrorLogs = errorLogs || logsErrorContent;
+
+  const filesCount = Object.keys(latestFiles).length;
 
   return (
     <div className="flex h-[calc(100vh-73px)]">
@@ -86,11 +95,26 @@ const WorkspaceLayout = ({
 
       {/* Side Panel */}
       <div className="w-96 border-l border-gray-200 bg-white">
-        <Tabs defaultValue="files" className="h-full flex flex-col">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
           <TabsList className="grid w-full grid-cols-2 mx-4 mt-4">
-            <TabsTrigger value="files">Files</TabsTrigger>
-            <TabsTrigger value="logs" className={logsHasErrors ? "text-red-600" : ""}>
-              Runtime Logs {logsHasErrors && "⚠️"}
+            <TabsTrigger value="files" className="relative">
+              קבצים
+              {filesCount > 0 && (
+                <Badge variant="secondary" className="ml-2 text-xs">
+                  {filesCount}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="logs" className={`relative ${logsHasErrors ? "text-red-600" : ""}`}>
+              לוגי זמן אמת
+              {logsHasErrors && (
+                <Badge variant="destructive" className="ml-2 text-xs">
+                  שגיאות
+                </Badge>
+              )}
+              {!logsHasErrors && (
+                <div className="ml-2 w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+              )}
             </TabsTrigger>
           </TabsList>
           
