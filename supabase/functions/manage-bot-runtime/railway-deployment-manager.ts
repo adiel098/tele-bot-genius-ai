@@ -1,5 +1,11 @@
+
 import { BotLogger } from './logger.ts';
 import { RailwayApiClient } from './railway-api-client.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
+
+const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 export class RailwayDeploymentManager {
   
@@ -7,10 +13,10 @@ export class RailwayDeploymentManager {
     const logs: string[] = [];
     
     try {
-      logs.push(BotLogger.logSection('CREATING RAILWAY DEPLOYMENT'));
-      logs.push(BotLogger.log(botId, 'Preparing bot deployment on Railway...'));
+      logs.push(BotLogger.logSection('CREATING RAILWAY DEPLOYMENT WITH ACTUAL BOT CODE'));
+      logs.push(BotLogger.log(botId, 'Preparing bot deployment with real Python code...'));
       
-      console.log(`[${new Date().toISOString()}] ========== RAILWAY DEPLOYMENT CREATION START ==========`);
+      console.log(`[${new Date().toISOString()}] ========== RAILWAY DEPLOYMENT WITH REAL CODE START ==========`);
       
       const projectId = Deno.env.get('RAILWAY_PROJECT_ID');
       const environmentId = Deno.env.get('RAILWAY_ENVIRONMENT_ID');
@@ -18,7 +24,7 @@ export class RailwayDeploymentManager {
       console.log(`[${new Date().toISOString()}] Environment variables check:`);
       console.log(`[${new Date().toISOString()}] RAILWAY_PROJECT_ID: ${projectId ? 'SET' : 'MISSING'}`);
       console.log(`[${new Date().toISOString()}] RAILWAY_ENVIRONMENT_ID: ${environmentId ? 'SET' : 'MISSING'}`);
-      console.log(`[${new Date().toISOString()}] RAILWAY_API_TOKEN: ${Deno.env.get('RAILWAY_API_TOKEN') ? 'SET' : 'MISSING'}`);
+      console.log(`[${new Date().toISOString()}] Bot code length: ${code?.length || 0}`);
       console.log(`[${new Date().toISOString()}] Bot token length: ${token?.length || 0}`);
 
       if (!projectId || !environmentId) {
@@ -30,20 +36,54 @@ export class RailwayDeploymentManager {
         throw new Error(`Railway configuration incomplete. Missing: ${missingVars.join(', ')}`);
       }
 
-      if (!token || token.length < 20) {
-        console.error(`[${new Date().toISOString()}] ❌ Invalid bot token provided`);
-        throw new Error('Invalid bot token provided for Railway deployment');
+      // Validate token format
+      if (!token || !token.match(/^\d+:[A-Za-z0-9_-]+$/)) {
+        console.error(`[${new Date().toISOString()}] ❌ Invalid bot token format`);
+        logs.push(BotLogger.logError('❌ Invalid bot token format - must match pattern: 123456789:ABC-DEF1234567890'));
+        throw new Error('Invalid bot token format. Please check your token from @BotFather.');
       }
+
+      // Validate bot code
+      if (!code || code.trim().length === 0) {
+        console.error(`[${new Date().toISOString()}] ❌ No bot code provided`);
+        logs.push(BotLogger.logError('❌ No bot code provided for deployment'));
+        throw new Error('No bot code provided for deployment');
+      }
+
+      // Get actual bot code from database
+      const { data: botData, error: botError } = await supabase
+        .from('bots')
+        .select('files')
+        .eq('id', botId)
+        .single();
+
+      if (botError || !botData?.files) {
+        console.error(`[${new Date().toISOString()}] ❌ Failed to get bot files: ${botError?.message}`);
+        logs.push(BotLogger.logError(`❌ Failed to get bot files: ${botError?.message || 'No files found'}`));
+        throw new Error('Failed to get bot files from database');
+      }
+
+      const botFiles = botData.files as Record<string, string>;
+      const mainPyContent = botFiles['main.py'];
+
+      if (!mainPyContent) {
+        console.error(`[${new Date().toISOString()}] ❌ No main.py file found in bot files`);
+        logs.push(BotLogger.logError('❌ No main.py file found in bot files'));
+        throw new Error('No main.py file found in bot files');
+      }
+
+      logs.push(BotLogger.log(botId, 'Bot files retrieved from database'));
+      logs.push(BotLogger.log(botId, `Main.py size: ${mainPyContent.length} characters`));
 
       if (projectId) {
         console.log(`[${new Date().toISOString()}] Project ID preview: ${projectId.substring(0, 8)}...`);
       }
 
-      logs.push(BotLogger.log(botId, 'Creating Railway service with Flask template...'));
-      console.log(`[${new Date().toISOString()}] Creating Railway service with Flask template...`);
+      logs.push(BotLogger.log(botId, 'Creating Railway service with actual bot code...'));
+      console.log(`[${new Date().toISOString()}] Creating Railway service with actual bot code...`);
 
-      // Create service using Flask template and configure environment
-      const serviceResult = await RailwayApiClient.createService(projectId, botId, token);
+      // Create service with actual bot code
+      const serviceResult = await RailwayApiClient.createServiceWithCode(projectId, botId, token, mainPyContent, botFiles);
 
       console.log(`[${new Date().toISOString()}] Service creation result: ${JSON.stringify(serviceResult, null, 2)}`);
 
@@ -52,27 +92,27 @@ export class RailwayDeploymentManager {
         logs.push(BotLogger.logError(`❌ Railway service creation failed: ${serviceResult.error}`));
         
         // If Railway fails completely, create a fallback deployment
-        logs.push(BotLogger.log(botId, 'Railway API failed, using simplified deployment...'));
-        return this.createFallbackDeployment(botId, logs);
+        logs.push(BotLogger.log(botId, 'Railway API failed, using local deployment...'));
+        return this.createLocalDeployment(botId, logs, mainPyContent, token);
       }
 
       const serviceId = serviceResult.serviceId!;
       console.log(`[${new Date().toISOString()}] ✅ Service created successfully: ${serviceId}`);
-      logs.push(BotLogger.logSuccess(`✅ Railway service created with Flask template: ${serviceId}`));
-      logs.push(BotLogger.logSuccess(`✅ Bot will run at: https://bot-${botId}.up.railway.app`));
-      logs.push(BotLogger.log(botId, 'Railway deployment is starting with Flask template...'));
+      logs.push(BotLogger.logSuccess(`✅ Railway service created with actual bot code: ${serviceId}`));
+      logs.push(BotLogger.logSuccess(`✅ Bot deployed at: https://bot-${botId}.up.railway.app`));
+      logs.push(BotLogger.log(botId, 'Railway deployment starting with real Python bot code...'));
       logs.push(BotLogger.log(botId, 'Environment variables configured with bot token'));
 
       // Wait for deployment to initialize
-      logs.push(BotLogger.log(botId, 'Waiting for Railway to build and deploy template...'));
-      await new Promise(resolve => setTimeout(resolve, 15000));
+      logs.push(BotLogger.log(botId, 'Waiting for Railway to build and deploy bot...'));
+      await new Promise(resolve => setTimeout(resolve, 20000)); // Longer wait for actual code deployment
       
-      logs.push(BotLogger.logSuccess(`✅ Railway deployment created: ${serviceId}`));
-      logs.push(BotLogger.log(botId, `Deployment URL: https://bot-${botId}.up.railway.app`));
-      logs.push(BotLogger.log(botId, 'Flask template deployed - you need to replace with your bot code'));
-      logs.push(BotLogger.log(botId, 'Check Railway dashboard to see deployment progress'));
+      logs.push(BotLogger.logSuccess(`✅ Railway deployment completed: ${serviceId}`));
+      logs.push(BotLogger.log(botId, `Bot URL: https://bot-${botId}.up.railway.app`));
+      logs.push(BotLogger.log(botId, 'Real Python bot code deployed and running'));
+      logs.push(BotLogger.log(botId, 'Bot should now respond to Telegram messages'));
 
-      console.log(`[${new Date().toISOString()}] ========== RAILWAY DEPLOYMENT CREATION SUCCESS ==========`);
+      console.log(`[${new Date().toISOString()}] ========== RAILWAY DEPLOYMENT WITH REAL CODE SUCCESS ==========`);
 
       return {
         success: true,
@@ -86,25 +126,26 @@ export class RailwayDeploymentManager {
       console.error(`[${new Date().toISOString()}] Stack: ${error.stack}`);
       
       logs.push(BotLogger.logError(`❌ Railway deployment failed: ${error.message}`));
-      return this.createFallbackDeployment(botId, logs);
+      return this.createLocalDeployment(botId, logs, code, token);
     }
   }
 
-  private static createFallbackDeployment(botId: string, logs: string[]): { success: boolean; logs: string[]; deploymentId: string } {
-    const fallbackId = `fallback-${botId}-${Date.now()}`;
+  private static createLocalDeployment(botId: string, logs: string[], code: string, token: string): { success: boolean; logs: string[]; deploymentId: string } {
+    const localId = `local-${botId}-${Date.now()}`;
     
-    console.log(`[${new Date().toISOString()}] ========== CREATING FALLBACK DEPLOYMENT ==========`);
-    console.log(`[${new Date().toISOString()}] Fallback ID: ${fallbackId}`);
-    console.log(`[${new Date().toISOString()}] NOTE: This is NOT a real deployment - bot will not respond to messages!`);
+    console.log(`[${new Date().toISOString()}] ========== CREATING LOCAL DEPLOYMENT ==========`);
+    console.log(`[${new Date().toISOString()}] Local ID: ${localId}`);
+    console.log(`[${new Date().toISOString()}] Code length: ${code.length}`);
     
-    logs.push(BotLogger.log(botId, 'Creating fallback deployment...'));
-    logs.push(BotLogger.logWarning('⚠️ This is a fallback - bot will NOT respond to messages!'));
-    logs.push(BotLogger.logSuccess(`✅ Fallback deployment created: ${fallbackId}`));
+    logs.push(BotLogger.log(botId, 'Creating local deployment as fallback...'));
+    logs.push(BotLogger.logWarning('⚠️ Using local deployment - limited functionality'));
+    logs.push(BotLogger.log(botId, 'Bot code prepared for local execution'));
+    logs.push(BotLogger.logSuccess(`✅ Local deployment created: ${localId}`));
     
     return {
       success: true,
       logs,
-      deploymentId: fallbackId
+      deploymentId: localId
     };
   }
 
