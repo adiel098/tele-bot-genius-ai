@@ -1,4 +1,3 @@
-
 import { BotLogger } from './logger.ts';
 
 export class RailwayConfigValidator {
@@ -9,14 +8,23 @@ export class RailwayConfigValidator {
     const missingVars: string[] = [];
     
     logs.push(BotLogger.logSection('RAILWAY CONFIGURATION VALIDATION'));
+    logs.push(BotLogger.log('', 'Debugging environment variables access...'));
+    
+    // Debug: Log all available environment variables (safely)
+    const allEnvVars = Object.keys(Deno.env.toObject());
+    logs.push(BotLogger.log('', `Total environment variables available: ${allEnvVars.length}`));
+    logs.push(BotLogger.log('', `Railway-related env vars found: ${allEnvVars.filter(key => key.includes('RAILWAY')).join(', ')}`));
     
     for (const varName of requiredVars) {
       const value = Deno.env.get(varName);
-      if (!value) {
+      logs.push(BotLogger.log('', `Checking ${varName}...`));
+      logs.push(BotLogger.log('', `Raw value type: ${typeof value}, length: ${value ? value.length : 'N/A'}`));
+      
+      if (!value || value.trim() === '') {
         missingVars.push(varName);
-        logs.push(BotLogger.logError(`❌ Missing environment variable: ${varName}`));
+        logs.push(BotLogger.logError(`❌ Missing or empty environment variable: ${varName}`));
       } else {
-        logs.push(BotLogger.logSuccess(`✅ ${varName}: SET`));
+        logs.push(BotLogger.logSuccess(`✅ ${varName}: SET (length: ${value.length})`));
       }
     }
     
@@ -30,6 +38,10 @@ export class RailwayConfigValidator {
       missingVars.forEach(varName => {
         logs.push(BotLogger.log('', `  - ${varName}`));
       });
+      logs.push(BotLogger.log('', 'If you believe these secrets are already set, try:'));
+      logs.push(BotLogger.log('', '  1. Wait a few minutes for secrets to propagate'));
+      logs.push(BotLogger.log('', '  2. Remove and re-add the secrets'));
+      logs.push(BotLogger.log('', '  3. Check for extra spaces or invisible characters'));
     }
     
     return { isValid, missingVars, logs };
