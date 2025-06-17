@@ -1,6 +1,7 @@
 
 import { BotLogger } from './logger.ts';
 import { RailwayApiClient } from './railway-api-client.ts';
+import { RailwayHealthChecker } from './railway-health-checker.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -18,30 +19,29 @@ export class RailwayServiceCreator {
       
       console.log(`[${new Date().toISOString()}] ========== RAILWAY SERVICE CREATION START ==========`);
       
-      const projectId = Deno.env.get('RAILWAY_PROJECT_ID');
-      const environmentId = Deno.env.get('RAILWAY_ENVIRONMENT_ID');
-
-      console.log(`[${new Date().toISOString()}] Environment variables check:`);
-      console.log(`[${new Date().toISOString()}] RAILWAY_PROJECT_ID: ${projectId ? 'SET' : 'MISSING'}`);
-      console.log(`[${new Date().toISOString()}] RAILWAY_ENVIRONMENT_ID: ${environmentId ? 'SET' : 'MISSING'}`);
-
-      if (!projectId || !environmentId) {
-        const missingVars = [];
-        if (!projectId) missingVars.push('RAILWAY_PROJECT_ID');
-        if (!environmentId) missingVars.push('RAILWAY_ENVIRONMENT_ID');
-        
-        console.error(`[${new Date().toISOString()}] ❌ Missing environment variables: ${missingVars.join(', ')}`);
-        throw new Error(`Railway configuration incomplete. Missing: ${missingVars.join(', ')}`);
+      // Step 1: Perform comprehensive health check
+      logs.push(BotLogger.log(botId, 'Performing Railway health check...'));
+      const healthCheck = await RailwayHealthChecker.performHealthCheck();
+      logs.push(...healthCheck.logs);
+      
+      if (!healthCheck.isHealthy) {
+        console.error(`[${new Date().toISOString()}] ❌ Railway health check failed`);
+        const errorMessage = `Railway health check failed. Issues: ${healthCheck.issues.join(', ')}`;
+        logs.push(BotLogger.logError(errorMessage));
+        throw new Error(errorMessage);
       }
+      
+      const projectId = Deno.env.get('RAILWAY_PROJECT_ID')!;
+      const environmentId = Deno.env.get('RAILWAY_ENVIRONMENT_ID')!;
 
-      // Validate token format
+      // Step 2: Validate token format
       if (!token || !token.match(/^\d+:[A-Za-z0-9_-]+$/)) {
         console.error(`[${new Date().toISOString()}] ❌ Invalid bot token format`);
         logs.push(BotLogger.logError('❌ Invalid bot token format - must match pattern: 123456789:ABC-DEF1234567890'));
         throw new Error('Invalid bot token format. Please check your token from @BotFather.');
       }
 
-      // Get bot info to find user_id
+      // Step 3: Get bot info to find user_id
       const { data: botData, error: botError } = await supabase
         .from('bots')
         .select('user_id')
@@ -57,7 +57,7 @@ export class RailwayServiceCreator {
       const userId = botData.user_id;
       logs.push(BotLogger.log(botId, `Getting bot files from storage for user: ${userId}`));
 
-      // Get bot files from Supabase Storage
+      // Step 4: Get bot files from Supabase Storage
       const { data: files, error: filesError } = await supabase.storage
         .from('bot-files')
         .list(`${userId}/${botId}`);
@@ -68,7 +68,7 @@ export class RailwayServiceCreator {
         throw new Error('Failed to get bot files from storage');
       }
 
-      // Download main.py file
+      // Step 5: Download main.py file
       const mainFile = files.find(f => f.name === 'main.py');
       if (!mainFile) {
         console.error(`[${new Date().toISOString()}] ❌ No main.py file found`);
@@ -90,7 +90,7 @@ export class RailwayServiceCreator {
       logs.push(BotLogger.log(botId, 'Bot files retrieved from storage'));
       logs.push(BotLogger.log(botId, `Main.py size: ${mainPyContent.length} characters`));
 
-      // Download other files if they exist
+      // Step 6: Download other files if they exist
       const botFiles: Record<string, string> = {
         'main.py': mainPyContent
       };
@@ -115,10 +115,10 @@ export class RailwayServiceCreator {
         }
       }
 
-      logs.push(BotLogger.log(botId, 'Creating Railway service with actual bot code...'));
+      // Step 7: Create service with actual bot code
+      logs.push(BotLogger.log(botId, 'Creating Railway service with validated configuration...'));
       console.log(`[${new Date().toISOString()}] Creating Railway service with actual bot code...`);
 
-      // Create service with actual bot code
       const serviceResult = await RailwayApiClient.createServiceWithCode(projectId, botId, token, mainPyContent, botFiles);
 
       console.log(`[${new Date().toISOString()}] Service creation result: ${JSON.stringify(serviceResult, null, 2)}`);
@@ -136,7 +136,7 @@ export class RailwayServiceCreator {
       logs.push(BotLogger.log(botId, 'Railway deployment starting with real Python bot code...'));
       logs.push(BotLogger.log(botId, 'Environment variables configured with bot token'));
 
-      // Wait for deployment to initialize
+      // Step 8: Wait for deployment to initialize
       logs.push(BotLogger.log(botId, 'Waiting for Railway to build and deploy bot...'));
       await new Promise(resolve => setTimeout(resolve, 20000)); // Wait for deployment
       

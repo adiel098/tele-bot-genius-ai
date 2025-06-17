@@ -1,5 +1,6 @@
 
 import { BotLogger } from './logger.ts';
+import { RailwayConfigValidator } from './railway-config-validator.ts';
 
 export class RailwayApiClient {
   private static async makeRequest(query: string, variables: any): Promise<any> {
@@ -41,9 +42,13 @@ export class RailwayApiClient {
           console.error('Failed to parse error response as text');
         }
 
-        // Special handling for 404 - likely means project/environment doesn't exist
+        // Special handling for specific error cases
         if (response.status === 404) {
-          throw new Error(`Railway project or environment not found. Please check RAILWAY_PROJECT_ID and RAILWAY_ENVIRONMENT_ID configuration. Status: ${response.status}`);
+          throw new Error(`Railway project or environment not found. Please verify RAILWAY_PROJECT_ID and RAILWAY_ENVIRONMENT_ID in your Supabase secrets. Status: ${response.status}. Details: ${errorDetails}`);
+        }
+        
+        if (response.status === 401 || response.status === 403) {
+          throw new Error(`Railway API authentication failed. Please verify RAILWAY_API_TOKEN in your Supabase secrets. Status: ${response.status}. Details: ${errorDetails}`);
         }
 
         throw new Error(`Railway API request failed with status: ${response.status}. Details: ${errorDetails}`);
@@ -54,7 +59,14 @@ export class RailwayApiClient {
 
       if (result.errors) {
         console.error('GraphQL errors:', JSON.stringify(result.errors, null, 2));
-        throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+        
+        // Check for specific error types
+        const errorMessages = result.errors.map((e: any) => e.message).join(', ');
+        if (errorMessages.includes('not found') || errorMessages.includes('does not exist')) {
+          throw new Error(`Railway resource not found. Please verify your RAILWAY_PROJECT_ID and RAILWAY_ENVIRONMENT_ID configuration. GraphQL errors: ${errorMessages}`);
+        }
+        
+        throw new Error(`GraphQL errors: ${errorMessages}`);
       }
 
       return result;
@@ -64,29 +76,62 @@ export class RailwayApiClient {
     }
   }
 
+  static async validateConfigurationBeforeRequest(): Promise<{ isValid: boolean; logs: string[]; error?: string }> {
+    const logs: string[] = [];
+    
+    try {
+      logs.push(BotLogger.logSection('RAILWAY CONFIGURATION PRE-VALIDATION'));
+      
+      // Step 1: Check environment variables
+      const envValidation = RailwayConfigValidator.validateEnvironmentVariables();
+      logs.push(...envValidation.logs);
+      
+      if (!envValidation.isValid) {
+        return {
+          isValid: false,
+          logs,
+          error: `Missing Railway configuration: ${envValidation.missingVars.join(', ')}`
+        };
+      }
+      
+      // Step 2: Test basic connectivity (quick check)
+      logs.push(BotLogger.log('', 'Testing Railway API connectivity...'));
+      
+      const connectionTest = await RailwayConfigValidator.validateRailwayConnection();
+      logs.push(...connectionTest.logs);
+      
+      if (!connectionTest.isValid) {
+        return {
+          isValid: false,
+          logs,
+          error: connectionTest.error || 'Railway API connection failed'
+        };
+      }
+      
+      logs.push(BotLogger.logSuccess('✅ Railway configuration validated successfully'));
+      return { isValid: true, logs };
+      
+    } catch (error) {
+      logs.push(BotLogger.logError(`❌ Configuration validation failed: ${error.message}`));
+      return {
+        isValid: false,
+        logs,
+        error: error.message
+      };
+    }
+  }
+
   static async createService(projectId: string, botId: string, token: string): Promise<{ success: boolean; serviceId?: string; error?: string }> {
     try {
       console.log(`[${new Date().toISOString()}] Creating Railway service with template...`);
       console.log(`[${new Date().toISOString()}] Project ID: ${projectId}`);
       console.log(`[${new Date().toISOString()}] Bot ID: ${botId}`);
 
-      // Validate project exists first
-      const projectQuery = `
-        query GetProject($projectId: String!) {
-          project(id: $projectId) {
-            id
-            name
-          }
-        }
-      `;
-
-      const projectResult = await this.makeRequest(projectQuery, { projectId });
-      
-      if (!projectResult.data?.project) {
-        throw new Error(`Railway project ${projectId} not found. Please check your RAILWAY_PROJECT_ID.`);
+      // Pre-validate configuration
+      const validation = await this.validateConfigurationBeforeRequest();
+      if (!validation.isValid) {
+        throw new Error(validation.error || 'Railway configuration validation failed');
       }
-
-      console.log(`[${new Date().toISOString()}] ✅ Project found: ${projectResult.data.project.name}`);
 
       const serviceName = `bot-${botId}`;
       
@@ -167,7 +212,13 @@ export class RailwayApiClient {
 
   static async getServices(projectId: string): Promise<any[]> {
     try {
-      // First validate project exists
+      // Pre-validate configuration
+      const validation = await this.validateConfigurationBeforeRequest();
+      if (!validation.isValid) {
+        console.error(`Railway configuration invalid: ${validation.error}`);
+        return [];
+      }
+
       const projectQuery = `
         query GetProject($projectId: String!) {
           project(id: $projectId) {
@@ -265,23 +316,11 @@ export class RailwayApiClient {
       console.log(`[${new Date().toISOString()}] Code length: ${mainPyContent.length}`);
       console.log(`[${new Date().toISOString()}] Files count: ${Object.keys(allFiles).length}`);
 
-      // First validate project exists
-      const projectQuery = `
-        query GetProject($projectId: String!) {
-          project(id: $projectId) {
-            id
-            name
-          }
-        }
-      `;
-
-      const projectResult = await this.makeRequest(projectQuery, { projectId });
-      
-      if (!projectResult.data?.project) {
-        throw new Error(`Railway project ${projectId} not found. Please verify RAILWAY_PROJECT_ID in your environment variables.`);
+      // Pre-validate configuration with detailed logging
+      const validation = await this.validateConfigurationBeforeRequest();
+      if (!validation.isValid) {
+        throw new Error(validation.error || 'Railway configuration validation failed');
       }
-
-      console.log(`[${new Date().toISOString()}] ✅ Project validated: ${projectResult.data.project.name}`);
 
       // For now, create a basic service since direct code deployment via GraphQL is complex
       return await this.createService(projectId, botId, token);
