@@ -1,3 +1,4 @@
+
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
@@ -261,8 +262,7 @@ async function downloadBotFiles(userId: string, botId: string) {
 }
 
 function generateDockerfile(files: Record<string, string>) {
-  return `
-# Multi-stage build for optimized bot container
+  return `# Multi-stage build for optimized bot container
 FROM python:3.11-slim as builder
 
 # Install build dependencies
@@ -303,5 +303,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \\
 EXPOSE 8080
 
 # Run the bot
-CMD ["python", "main.py"]
-`;
+CMD ["python", "main.py"]`;
+}
