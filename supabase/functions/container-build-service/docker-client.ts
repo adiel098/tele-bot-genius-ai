@@ -1,9 +1,13 @@
 
+import { TarBuilder } from './tar-builder.ts';
+
 export class DockerClient {
   private dockerHost: string;
+  private apiVersion: string;
   
   constructor() {
-    this.dockerHost = Deno.env.get('DOCKER_HOST') || 'npipe://./pipe/docker_engine';
+    this.dockerHost = Deno.env.get('DOCKER_HOST') || 'http://localhost:2375';
+    this.apiVersion = 'v1.41'; // Will be auto-detected
   }
 
   async buildImage(botId: string, dockerfile: string, files: Record<string, string>): Promise<{ success: boolean; imageTag: string; logs: string[] }> {
@@ -13,37 +17,76 @@ export class DockerClient {
     try {
       logs.push(`[BUILD] Starting Docker build for bot ${botId}`);
       logs.push(`[BUILD] Image tag: ${imageTag}`);
+      logs.push(`[BUILD] Docker host: ${this.dockerHost}`);
       
-      // Create build context as tar stream
+      // Test Docker connection first
+      const connectionTest = await this.testDockerConnection();
+      if (!connectionTest.success) {
+        logs.push(`[BUILD] ❌ Docker connection failed: ${connectionTest.error}`);
+        return { success: false, imageTag: '', logs };
+      }
+      logs.push(`[BUILD] ✅ Docker connection successful`);
+      
+      // Create proper TAR build context
       const buildContext = await this.createBuildContext(dockerfile, files);
-      logs.push(`[BUILD] Build context created (${buildContext.length} bytes)`);
+      logs.push(`[BUILD] ✅ Build context created (${buildContext.length} bytes)`);
       
       // Build image using Docker HTTP API
-      const buildResponse = await this.callDockerAPI('/build', {
+      const buildUrl = `${this.dockerHost}/${this.apiVersion}/build`;
+      const params = new URLSearchParams({
+        t: imageTag,
+        dockerfile: 'Dockerfile',
+        rm: 'true',
+        forcerm: 'true',
+        pull: 'true'
+      });
+      
+      logs.push(`[BUILD] Sending build request to: ${buildUrl}?${params.toString()}`);
+      
+      const buildResponse = await fetch(`${buildUrl}?${params.toString()}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-tar',
+          'Content-Length': buildContext.length.toString()
         },
-        body: buildContext,
-        params: new URLSearchParams({
-          t: imageTag,
-          dockerfile: 'Dockerfile',
-          rm: 'true',
-          forcerm: 'true'
-        })
+        body: buildContext
       });
       
+      logs.push(`[BUILD] Build response status: ${buildResponse.status} ${buildResponse.statusText}`);
+      
       if (buildResponse.ok) {
+        // Parse build output
+        const buildOutput = await buildResponse.text();
+        const buildLines = buildOutput.split('\n').filter(line => line.trim());
+        
+        for (const line of buildLines) {
+          if (line.trim()) {
+            try {
+              const parsed = JSON.parse(line);
+              if (parsed.stream) {
+                logs.push(`[BUILD] ${parsed.stream.trim()}`);
+              } else if (parsed.error) {
+                logs.push(`[BUILD] ❌ ${parsed.error}`);
+                return { success: false, imageTag: '', logs };
+              }
+            } catch {
+              logs.push(`[BUILD] ${line}`);
+            }
+          }
+        }
+        
         logs.push(`[BUILD] ✅ Image built successfully: ${imageTag}`);
         return { success: true, imageTag, logs };
       } else {
-        const error = await buildResponse.text();
-        logs.push(`[BUILD] ❌ Build failed: ${error}`);
+        const errorText = await buildResponse.text();
+        logs.push(`[BUILD] ❌ Build failed with status ${buildResponse.status}`);
+        logs.push(`[BUILD] ❌ Error: ${errorText}`);
         return { success: false, imageTag: '', logs };
       }
       
     } catch (error) {
-      logs.push(`[BUILD] ❌ Error: ${error.message}`);
+      logs.push(`[BUILD] ❌ Exception: ${error.message}`);
+      logs.push(`[BUILD] ❌ Stack: ${error.stack}`);
       return { success: false, imageTag: '', logs };
     }
   }
@@ -54,14 +97,43 @@ export class DockerClient {
     try {
       logs.push(`[PUSH] Pushing image: ${imageTag}`);
       
-      const pushResponse = await this.callDockerAPI(`/images/${encodeURIComponent(imageTag)}/push`, {
+      const pushUrl = `${this.dockerHost}/${this.apiVersion}/images/${encodeURIComponent(imageTag)}/push`;
+      const headers: Record<string, string> = {};
+      
+      // Add registry auth if available
+      const registryAuth = await this.getRegistryAuth();
+      if (registryAuth) {
+        headers['X-Registry-Auth'] = registryAuth;
+        logs.push(`[PUSH] Using registry authentication`);
+      }
+      
+      const pushResponse = await fetch(pushUrl, {
         method: 'POST',
-        headers: {
-          'X-Registry-Auth': await this.getRegistryAuth()
-        }
+        headers
       });
       
+      logs.push(`[PUSH] Push response status: ${pushResponse.status}`);
+      
       if (pushResponse.ok) {
+        const pushOutput = await pushResponse.text();
+        const pushLines = pushOutput.split('\n').filter(line => line.trim());
+        
+        for (const line of pushLines) {
+          if (line.trim()) {
+            try {
+              const parsed = JSON.parse(line);
+              if (parsed.status) {
+                logs.push(`[PUSH] ${parsed.status}`);
+              } else if (parsed.error) {
+                logs.push(`[PUSH] ❌ ${parsed.error}`);
+                return { success: false, logs };
+              }
+            } catch {
+              logs.push(`[PUSH] ${line}`);
+            }
+          }
+        }
+        
         logs.push(`[PUSH] ✅ Image pushed successfully`);
         return { success: true, logs };
       } else {
@@ -71,7 +143,7 @@ export class DockerClient {
       }
       
     } catch (error) {
-      logs.push(`[PUSH] ❌ Error: ${error.message}`);
+      logs.push(`[PUSH] ❌ Exception: ${error.message}`);
       return { success: false, logs };
     }
   }
@@ -82,83 +154,57 @@ export class DockerClient {
     try {
       logs.push(`[CLEANUP] Removing image: ${imageTag}`);
       
-      const removeResponse = await this.callDockerAPI(`/images/${encodeURIComponent(imageTag)}`, {
+      const removeUrl = `${this.dockerHost}/${this.apiVersion}/images/${encodeURIComponent(imageTag)}`;
+      const removeResponse = await fetch(removeUrl, {
         method: 'DELETE'
       });
       
-      if (removeResponse.ok) {
+      if (removeResponse.ok || removeResponse.status === 404) {
         logs.push(`[CLEANUP] ✅ Image removed successfully`);
         return { success: true, logs };
       } else {
-        logs.push(`[CLEANUP] ⚠️ Image may not exist or already removed`);
+        const error = await removeResponse.text();
+        logs.push(`[CLEANUP] ⚠️ Error removing image: ${error}`);
         return { success: true, logs }; // Not critical if image doesn't exist
       }
       
     } catch (error) {
-      logs.push(`[CLEANUP] ❌ Error: ${error.message}`);
+      logs.push(`[CLEANUP] ❌ Exception: ${error.message}`);
       return { success: false, logs };
     }
   }
 
+  private async testDockerConnection(): Promise<{ success: boolean; error?: string }> {
+    try {
+      const response = await fetch(`${this.dockerHost}/${this.apiVersion}/version`, {
+        method: 'GET'
+      });
+      
+      if (response.ok) {
+        const version = await response.json();
+        console.log(`[DOCKER] Connected to Docker API version: ${version.ApiVersion}`);
+        return { success: true };
+      } else {
+        return { success: false, error: `HTTP ${response.status}: ${response.statusText}` };
+      }
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
   private async createBuildContext(dockerfile: string, files: Record<string, string>): Promise<Uint8Array> {
-    // Create a simple tar-like structure for the build context
+    const tarBuilder = new TarBuilder();
     const encoder = new TextEncoder();
-    let tarData = new Uint8Array();
     
     // Add Dockerfile
-    const dockerfileData = encoder.encode(dockerfile);
-    tarData = this.appendToTar(tarData, 'Dockerfile', dockerfileData);
+    tarBuilder.addFile('Dockerfile', encoder.encode(dockerfile));
     
     // Add other files
     for (const [filename, content] of Object.entries(files)) {
-      const fileData = encoder.encode(content);
-      tarData = this.appendToTar(tarData, filename, fileData);
+      tarBuilder.addFile(filename, encoder.encode(content));
     }
     
-    return tarData;
-  }
-
-  private appendToTar(existing: Uint8Array, filename: string, data: Uint8Array): Uint8Array {
-    // Simple tar-like format (simplified for basic Docker build)
-    const header = new TextEncoder().encode(`${filename}\n`);
-    const combined = new Uint8Array(existing.length + header.length + data.length + 1);
-    combined.set(existing, 0);
-    combined.set(header, existing.length);
-    combined.set(data, existing.length + header.length);
-    combined[existing.length + header.length + data.length] = 0; // null terminator
-    return combined;
-  }
-
-  private async callDockerAPI(endpoint: string, options: {
-    method?: string;
-    headers?: Record<string, string>;
-    body?: Uint8Array | string;
-    params?: URLSearchParams;
-  } = {}): Promise<Response> {
-    const { method = 'GET', headers = {}, body, params } = options;
-    
-    // Convert Docker socket path to HTTP endpoint
-    let baseUrl = this.dockerHost;
-    if (baseUrl.startsWith('npipe://')) {
-      // For Windows named pipes, use HTTP over Unix socket equivalent
-      baseUrl = 'http://localhost:2375'; // Docker Desktop default
-    } else if (baseUrl.startsWith('unix://')) {
-      baseUrl = 'http://localhost:2375';
-    }
-    
-    const url = new URL(`${baseUrl}/v1.41${endpoint}`);
-    if (params) {
-      url.search = params.toString();
-    }
-    
-    return await fetch(url.toString(), {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        ...headers
-      },
-      body
-    });
+    return tarBuilder.build();
   }
 
   private async getRegistryAuth(): Promise<string> {
