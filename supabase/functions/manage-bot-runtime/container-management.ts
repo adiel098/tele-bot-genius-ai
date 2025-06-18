@@ -1,6 +1,5 @@
 
 import { BotLogger } from './logger.ts';
-import { removeTelegramWebhook } from './webhook-setup.ts';
 import { 
   storeContainerReference, 
   removeContainerReference, 
@@ -24,11 +23,6 @@ export async function stopDockerContainer(botId: string, token?: string): Promis
     }
     
     logs.push(BotLogger.log(botId, `Stopping local Docker container: ${containerId}`));
-    
-    // Clean up webhook first if token provided
-    if (token) {
-      await removeTelegramWebhook(botId, token, logs);
-    }
     
     // Call local server to stop the bot
     const stopResponse = await callLocalServer('/stop_bot', {

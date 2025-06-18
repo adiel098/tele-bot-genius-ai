@@ -1,4 +1,4 @@
-import { startTelegramBot, stopTelegramBot, getBotLogs } from './bot-executor.ts';
+
 import { 
   getBotData, 
   getBotFiles, 
@@ -8,7 +8,6 @@ import {
   updateExecutionStatus 
 } from './database-operations.ts';
 import { LoggingUtils } from './logging-utils.ts';
-import { ProcessManager } from './process-manager.ts';
 import { BotLogger } from './logger.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
 import { RealDockerManager } from './real-docker-manager.ts';
@@ -27,7 +26,7 @@ export async function startBotOperation(botId: string, userId: string): Promise<
     
     LoggingUtils.logOperation('START BOT REQUEST', botId, { 'User ID': userId });
     
-    // Get bot data
+    // Get bot data from database
     console.log(`[${new Date().toISOString()}] Step 1: Getting bot data from database...`);
     const bot = await getBotData(botId, userId);
     console.log(`[${new Date().toISOString()}] Bot found: ${bot.name}`);
@@ -35,50 +34,54 @@ export async function startBotOperation(botId: string, userId: string): Promise<
     console.log(`[${new Date().toISOString()}] Current bot status in DB: ${bot.status || 'undefined'}`);
     console.log(`[${new Date().toISOString()}] Current runtime_status in DB: ${bot.runtime_status || 'undefined'}`);
 
-    // Get latest files - the actual main.py code
-    console.log(`[${new Date().toISOString()}] Step 2: Getting bot's actual main.py file...`);
-    const mainCode = await getBotFiles(userId, botId);
-    console.log(`[${new Date().toISOString()}] Loaded bot's main.py code, length: ${mainCode.length} characters`);
-
-    console.log(`[${new Date().toISOString()}] Step 3: Creating Docker container with bot's code...`);
+    // Use Kubernetes deployment via bot lifecycle orchestrator
+    console.log(`[${new Date().toISOString()}] Step 2: Starting Kubernetes deployment...`);
     
-    // Start the bot using real Docker containers with the actual bot code
-    const result = await RealDockerManager.createContainer(botId, mainCode, bot.token);
+    const k8sResponse = await supabase.functions.invoke('bot-lifecycle-orchestrator', {
+      body: {
+        action: 'start-bot',
+        botId: botId,
+        userId: userId
+      }
+    });
     
-    console.log(`[${new Date().toISOString()}] Step 4: Docker container creation completed`);
-    console.log(`[${new Date().toISOString()}] Result success: ${result.success}`);
-    console.log(`[${new Date().toISOString()}] Result containerId: ${result.containerId || 'undefined'}`);
-    console.log(`[${new Date().toISOString()}] Result logs count: ${result.logs?.length || 0}`);
+    console.log(`[${new Date().toISOString()}] Step 3: Kubernetes deployment completed`);
+    console.log(`[${new Date().toISOString()}] Result success: ${k8sResponse.data?.success}`);
+    console.log(`[${new Date().toISOString()}] Result logs count: ${k8sResponse.data?.logs?.length || 0}`);
     
     const duration = Date.now() - startTime;
-    LoggingUtils.logCompletion('BOT START', duration, result.success);
+    LoggingUtils.logCompletion('BOT START', duration, k8sResponse.data?.success);
 
-    if (result.success) {
-      console.log(`[${new Date().toISOString()}] Step 5a: Bot started successfully, updating status to RUNNING...`);
-      console.log(`[${new Date().toISOString()}] Container ID to store: ${result.containerId}`);
+    if (k8sResponse.data?.success) {
+      console.log(`[${new Date().toISOString()}] Step 4a: Bot started successfully, updating status to RUNNING...`);
       
-      // Update bot status with container info - ONLY set to 'running' if actually started
-      await updateBotStatus(botId, 'running', result.logs || [], result.containerId);
+      // Update bot status with Kubernetes deployment info
+      await updateBotStatus(botId, 'running', k8sResponse.data.logs || [], k8sResponse.data.deploymentId);
       console.log(`[${new Date().toISOString()}] Database updated with RUNNING status`);
       
       // Create execution record
       console.log(`[${new Date().toISOString()}] Creating execution record...`);
-      await createBotExecution(botId, userId, 'running', result.logs || []);
+      await createBotExecution(botId, userId, 'running', k8sResponse.data.logs || []);
       console.log(`[${new Date().toISOString()}] Execution record created`);
       
-      console.log(`[${new Date().toISOString()}] Bot marked as RUNNING with container: ${result.containerId}`);
+      console.log(`[${new Date().toISOString()}] Bot marked as RUNNING with deployment: ${k8sResponse.data.deploymentId}`);
     } else {
-      console.log(`[${new Date().toISOString()}] Step 5b: Bot start FAILED, updating status to ERROR...`);
-      console.log(`[${new Date().toISOString()}] Error details: ${result.error || 'No error details'}`);
+      console.log(`[${new Date().toISOString()}] Step 4b: Bot start FAILED, updating status to ERROR...`);
+      console.log(`[${new Date().toISOString()}] Error details: ${k8sResponse.error?.message || 'No error details'}`);
       
       // If start failed, mark as error
-      await updateBotStatus(botId, 'error', result.logs || []);
+      await updateBotStatus(botId, 'error', k8sResponse.data?.logs || []);
       console.log(`[${new Date().toISOString()}] Database updated with ERROR status`);
       console.log(`[${new Date().toISOString()}] Bot marked as ERROR due to start failure`);
     }
 
     console.log(`[${new Date().toISOString()}] ========== START BOT OPERATION COMPLETE ==========`);
-    return result;
+    
+    return {
+      success: k8sResponse.data?.success || false,
+      logs: k8sResponse.data?.logs || [],
+      containerId: k8sResponse.data?.deploymentId
+    };
 
   } catch (error) {
     const duration = Date.now() - startTime;
@@ -103,13 +106,6 @@ export async function stopBotOperation(botId: string): Promise<{ success: boolea
   try {
     LoggingUtils.logOperation('STOP BOT REQUEST', botId);
     
-    // Get bot data to retrieve token for webhook cleanup
-    const { data: bot } = await supabase
-      .from('bots')
-      .select('token')
-      .eq('id', botId)
-      .single();
-    
     // Get running execution
     const execution = await getRunningExecution(botId);
     
@@ -117,25 +113,33 @@ export async function stopBotOperation(botId: string): Promise<{ success: boolea
       console.log(`[${new Date().toISOString()}] Found running execution: ${execution.id}`);
     }
 
-    console.log(`[${new Date().toISOString()}] Calling RealDockerManager.stopContainer...`);
+    console.log(`[${new Date().toISOString()}] Calling Kubernetes bot lifecycle orchestrator...`);
     
-    // Stop the bot with token for webhook cleanup
-    const result = await RealDockerManager.stopContainer(botId, bot?.token);
+    // Stop the bot via Kubernetes
+    const k8sResponse = await supabase.functions.invoke('bot-lifecycle-orchestrator', {
+      body: {
+        action: 'stop-bot',
+        botId: botId
+      }
+    });
     
     const duration = Date.now() - startTime;
-    LoggingUtils.logCompletion('BOT STOP', duration, result.success);
+    LoggingUtils.logCompletion('BOT STOP', duration, k8sResponse.data?.success);
 
-    // ALWAYS update to stopped after stop operation - clear container_id
-    await updateBotStatus(botId, 'stopped', result.logs || []);
+    // Update to stopped after stop operation
+    await updateBotStatus(botId, 'stopped', k8sResponse.data?.logs || []);
 
     // Update execution status if exists
     if (execution) {
-      await updateExecutionStatus(execution.id, 'stopped', result.logs || []);
+      await updateExecutionStatus(execution.id, 'stopped', k8sResponse.data?.logs || []);
     }
 
     console.log(`[${new Date().toISOString()}] Bot marked as STOPPED`);
     
-    return result;
+    return {
+      success: k8sResponse.data?.success || false,
+      logs: k8sResponse.data?.logs || []
+    };
 
   } catch (error) {
     const duration = Date.now() - startTime;
@@ -199,12 +203,17 @@ export async function streamLogsOperation(botId: string): Promise<{ success: boo
   console.log(`[${new Date().toISOString()}] Bot ID: ${botId}`);
   
   try {
-    // Get live logs from the real Docker container
-    const containerLogs = await RealDockerManager.getContainerLogs(botId);
+    // Get logs from Kubernetes deployment
+    const k8sResponse = await supabase.functions.invoke('kubernetes-deployment-manager', {
+      body: {
+        action: 'get-logs',
+        botId: botId
+      }
+    });
     
     const allLogs = [
-      BotLogger.logSection('LIVE DOCKER CONTAINER LOGS'),
-      ...containerLogs
+      BotLogger.logSection('LIVE KUBERNETES POD LOGS'),
+      ...(k8sResponse.data?.logs || [])
     ];
     
     // Update bot logs in database with fresh container logs
