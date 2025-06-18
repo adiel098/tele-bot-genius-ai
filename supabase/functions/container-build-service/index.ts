@@ -1,4 +1,3 @@
-
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
@@ -26,6 +25,8 @@ serve(async (req) => {
     console.log(`Container Build Service - Action: ${action}, Bot: ${botId}`);
     
     switch (action) {
+      case 'test':
+        return await testDockerConnection();
       case 'build':
         return await buildContainer(botId, userId);
       case 'push':
@@ -40,7 +41,8 @@ serve(async (req) => {
     console.error('Container Build Service Error:', error);
     return new Response(JSON.stringify({ 
       success: false, 
-      error: error.message 
+      error: error.message,
+      logs: [`[ERROR] Container Build Service failed: ${error.message}`]
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -48,20 +50,66 @@ serve(async (req) => {
   }
 });
 
+async function testDockerConnection() {
+  console.log(`Testing Docker connection...`);
+  
+  try {
+    const testResult = await dockerClient.testConnection();
+    
+    return new Response(JSON.stringify({
+      success: testResult.success,
+      logs: testResult.logs,
+      error: testResult.error
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+    
+  } catch (error) {
+    console.error('Docker connection test error:', error);
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message,
+      logs: [`[TEST ERROR] ${error.message}`]
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
 async function buildContainer(botId: string, userId: string) {
   console.log(`Building container for bot: ${botId}`);
   
+  const allLogs: string[] = [];
+  
   try {
-    // Download bot files from Supabase Storage
+    allLogs.push(`[SERVICE] ==================== CONTAINER BUILD SERVICE START ====================`);
+    allLogs.push(`[SERVICE] Bot ID: ${botId}`);
+    allLogs.push(`[SERVICE] User ID: ${userId}`);
+    allLogs.push(`[SERVICE] Docker Host: ${Deno.env.get('DOCKER_HOST')}`);
+    
+    // Phase 1: Download bot files from Supabase Storage
+    allLogs.push(`[SERVICE] Phase 1: Downloading bot files...`);
     const botFiles = await downloadBotFiles(userId, botId);
+    allLogs.push(`[SERVICE] ✅ Downloaded ${Object.keys(botFiles).length} files`);
     
-    // Generate optimized Dockerfile
+    for (const [filename, content] of Object.entries(botFiles)) {
+      allLogs.push(`[SERVICE] - ${filename}: ${content.length} bytes`);
+    }
+    
+    // Phase 2: Generate optimized Dockerfile
+    allLogs.push(`[SERVICE] Phase 2: Generating Dockerfile...`);
     const dockerfile = generateDockerfile(botFiles);
+    allLogs.push(`[SERVICE] ✅ Dockerfile generated: ${dockerfile.length} bytes`);
     
-    // Build Docker image using real Docker API
+    // Phase 3: Build Docker image
+    allLogs.push(`[SERVICE] Phase 3: Building Docker image...`);
     const buildResult = await dockerClient.buildImage(botId, dockerfile, botFiles);
+    allLogs.push(...buildResult.logs);
     
     if (buildResult.success) {
+      allLogs.push(`[SERVICE] ✅ Container build completed successfully`);
+      
       // Update bot record with image reference
       await supabase
         .from('bots')
@@ -73,22 +121,43 @@ async function buildContainer(botId: string, userId: string) {
           }
         })
         .eq('id', botId);
+      
+      allLogs.push(`[SERVICE] ✅ Bot record updated with image tag`);
+      allLogs.push(`[SERVICE] ==================== CONTAINER BUILD SERVICE SUCCESS ====================`);
+      
+      return new Response(JSON.stringify({
+        success: true,
+        imageTag: buildResult.imageTag,
+        logs: allLogs
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+      
+    } else {
+      allLogs.push(`[SERVICE] ❌ Container build failed`);
+      allLogs.push(`[SERVICE] ==================== CONTAINER BUILD SERVICE FAILED ====================`);
+      
+      return new Response(JSON.stringify({
+        success: false,
+        imageTag: '',
+        logs: allLogs,
+        error: 'Docker build failed - see logs for details'
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
-    
-    return new Response(JSON.stringify({
-      success: buildResult.success,
-      imageTag: buildResult.imageTag,
-      logs: buildResult.logs
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
     
   } catch (error) {
     console.error('Build container error:', error);
+    allLogs.push(`[SERVICE] ❌ Build exception: ${error.message}`);
+    allLogs.push(`[SERVICE] ❌ Stack: ${error.stack}`);
+    allLogs.push(`[SERVICE] ==================== CONTAINER BUILD SERVICE EXCEPTION ====================`);
+    
     return new Response(JSON.stringify({
       success: false,
       error: error.message,
-      logs: [`[BUILD ERROR] ${error.message}`]
+      logs: allLogs
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -175,7 +244,6 @@ async function downloadBotFiles(userId: string, botId: string) {
   if (reqFile && !reqError) {
     files['requirements.txt'] = await reqFile.text();
   } else {
-    // Default requirements if not found
     files['requirements.txt'] = 'python-telegram-bot>=20.0\npython-dotenv>=1.0.0\nrequests>=2.28.0';
   }
   
@@ -237,4 +305,3 @@ EXPOSE 8080
 # Run the bot
 CMD ["python", "main.py"]
 `;
-}

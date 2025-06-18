@@ -1,4 +1,3 @@
-
 import { TarBuilder } from './tar-builder.ts';
 
 export class DockerClient {
@@ -7,7 +6,39 @@ export class DockerClient {
   
   constructor() {
     this.dockerHost = Deno.env.get('DOCKER_HOST') || 'http://localhost:2375';
-    this.apiVersion = 'v1.41'; // Will be auto-detected
+    this.apiVersion = 'v1.41';
+  }
+
+  async testConnection(): Promise<{ success: boolean; logs: string[]; error?: string }> {
+    const logs: string[] = [];
+    
+    try {
+      logs.push(`[TEST] Testing Docker connection to: ${this.dockerHost}`);
+      
+      const response = await fetch(`${this.dockerHost}/${this.apiVersion}/version`, {
+        method: 'GET',
+        headers: {
+          'ngrok-skip-browser-warning': 'true'
+        }
+      });
+      
+      logs.push(`[TEST] Connection response status: ${response.status} ${response.statusText}`);
+      
+      if (response.ok) {
+        const version = await response.json();
+        logs.push(`[TEST] ✅ Docker API version: ${version.ApiVersion}`);
+        logs.push(`[TEST] ✅ Docker version: ${version.Version}`);
+        logs.push(`[TEST] ✅ Connection successful`);
+        return { success: true, logs };
+      } else {
+        const errorText = await response.text();
+        logs.push(`[TEST] ❌ Connection failed: ${errorText}`);
+        return { success: false, logs, error: `HTTP ${response.status}: ${errorText}` };
+      }
+    } catch (error) {
+      logs.push(`[TEST] ❌ Connection exception: ${error.message}`);
+      return { success: false, logs, error: error.message };
+    }
   }
 
   async buildImage(botId: string, dockerfile: string, files: Record<string, string>): Promise<{ success: boolean; imageTag: string; logs: string[] }> {
@@ -15,23 +46,35 @@ export class DockerClient {
     const imageTag = `ghcr.io/botfactory/telegram-bot:${botId}`;
     
     try {
-      logs.push(`[BUILD] Starting Docker build for bot ${botId}`);
+      logs.push(`[BUILD] ==================== DOCKER BUILD START ====================`);
+      logs.push(`[BUILD] Bot ID: ${botId}`);
       logs.push(`[BUILD] Image tag: ${imageTag}`);
       logs.push(`[BUILD] Docker host: ${this.dockerHost}`);
+      logs.push(`[BUILD] Files to include: ${Object.keys(files).join(', ')}`);
       
-      // Test Docker connection first
-      const connectionTest = await this.testDockerConnection();
+      // Phase 1: Test Docker connection
+      logs.push(`[BUILD] Phase 1: Testing Docker connection...`);
+      const connectionTest = await this.testConnection();
+      logs.push(...connectionTest.logs);
+      
       if (!connectionTest.success) {
-        logs.push(`[BUILD] ❌ Docker connection failed: ${connectionTest.error}`);
+        logs.push(`[BUILD] ❌ Build failed: Docker connection test failed`);
         return { success: false, imageTag: '', logs };
       }
-      logs.push(`[BUILD] ✅ Docker connection successful`);
       
-      // Create proper TAR build context
+      // Phase 2: Create build context
+      logs.push(`[BUILD] Phase 2: Creating TAR build context...`);
       const buildContext = await this.createBuildContext(dockerfile, files);
-      logs.push(`[BUILD] ✅ Build context created (${buildContext.length} bytes)`);
+      logs.push(`[BUILD] ✅ Build context created: ${buildContext.length} bytes`);
       
-      // Build image using Docker HTTP API
+      // Validate build context
+      if (buildContext.length === 0) {
+        logs.push(`[BUILD] ❌ Build context is empty`);
+        return { success: false, imageTag: '', logs };
+      }
+      
+      // Phase 3: Send build request
+      logs.push(`[BUILD] Phase 3: Sending Docker build request...`);
       const buildUrl = `${this.dockerHost}/${this.apiVersion}/build`;
       const params = new URLSearchParams({
         t: imageTag,
@@ -41,24 +84,36 @@ export class DockerClient {
         pull: 'true'
       });
       
-      logs.push(`[BUILD] Sending build request to: ${buildUrl}?${params.toString()}`);
+      const fullUrl = `${buildUrl}?${params.toString()}`;
+      logs.push(`[BUILD] Request URL: ${fullUrl}`);
+      logs.push(`[BUILD] Request headers: Content-Type=application/x-tar, Content-Length=${buildContext.length}`);
       
-      const buildResponse = await fetch(`${buildUrl}?${params.toString()}`, {
+      const buildResponse = await fetch(fullUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-tar',
-          'Content-Length': buildContext.length.toString()
+          'Content-Length': buildContext.length.toString(),
+          'ngrok-skip-browser-warning': 'true'
         },
         body: buildContext
       });
       
-      logs.push(`[BUILD] Build response status: ${buildResponse.status} ${buildResponse.statusText}`);
+      logs.push(`[BUILD] Response status: ${buildResponse.status} ${buildResponse.statusText}`);
+      logs.push(`[BUILD] Response headers: ${JSON.stringify(Object.fromEntries(buildResponse.headers.entries()))}`);
       
       if (buildResponse.ok) {
-        // Parse build output
+        logs.push(`[BUILD] Phase 4: Processing build output...`);
         const buildOutput = await buildResponse.text();
-        const buildLines = buildOutput.split('\n').filter(line => line.trim());
+        logs.push(`[BUILD] Raw output length: ${buildOutput.length} characters`);
         
+        if (buildOutput.trim() === '') {
+          logs.push(`[BUILD] ⚠️ Warning: Empty build output received`);
+        }
+        
+        const buildLines = buildOutput.split('\n').filter(line => line.trim());
+        logs.push(`[BUILD] Processing ${buildLines.length} output lines...`);
+        
+        let hasError = false;
         for (const line of buildLines) {
           if (line.trim()) {
             try {
@@ -66,27 +121,42 @@ export class DockerClient {
               if (parsed.stream) {
                 logs.push(`[BUILD] ${parsed.stream.trim()}`);
               } else if (parsed.error) {
-                logs.push(`[BUILD] ❌ ${parsed.error}`);
-                return { success: false, imageTag: '', logs };
+                logs.push(`[BUILD] ❌ Docker error: ${parsed.error}`);
+                hasError = true;
+              } else if (parsed.aux?.ID) {
+                logs.push(`[BUILD] ✅ Image ID: ${parsed.aux.ID}`);
+              } else {
+                logs.push(`[BUILD] Docker: ${JSON.stringify(parsed)}`);
               }
             } catch {
+              // Non-JSON line, log as-is
               logs.push(`[BUILD] ${line}`);
             }
           }
         }
         
+        if (hasError) {
+          logs.push(`[BUILD] ❌ Build failed with Docker errors`);
+          return { success: false, imageTag: '', logs };
+        }
+        
         logs.push(`[BUILD] ✅ Image built successfully: ${imageTag}`);
+        logs.push(`[BUILD] ==================== DOCKER BUILD SUCCESS ====================`);
         return { success: true, imageTag, logs };
+        
       } else {
+        logs.push(`[BUILD] Phase 4: Processing build error...`);
         const errorText = await buildResponse.text();
-        logs.push(`[BUILD] ❌ Build failed with status ${buildResponse.status}`);
-        logs.push(`[BUILD] ❌ Error: ${errorText}`);
+        logs.push(`[BUILD] ❌ Build failed with HTTP ${buildResponse.status}`);
+        logs.push(`[BUILD] ❌ Error response: ${errorText}`);
+        logs.push(`[BUILD] ==================== DOCKER BUILD FAILED ====================`);
         return { success: false, imageTag: '', logs };
       }
       
     } catch (error) {
-      logs.push(`[BUILD] ❌ Exception: ${error.message}`);
-      logs.push(`[BUILD] ❌ Stack: ${error.stack}`);
+      logs.push(`[BUILD] ❌ Build exception: ${error.message}`);
+      logs.push(`[BUILD] ❌ Stack trace: ${error.stack}`);
+      logs.push(`[BUILD] ==================== DOCKER BUILD EXCEPTION ====================`);
       return { success: false, imageTag: '', logs };
     }
   }
@@ -98,9 +168,10 @@ export class DockerClient {
       logs.push(`[PUSH] Pushing image: ${imageTag}`);
       
       const pushUrl = `${this.dockerHost}/${this.apiVersion}/images/${encodeURIComponent(imageTag)}/push`;
-      const headers: Record<string, string> = {};
+      const headers: Record<string, string> = {
+        'ngrok-skip-browser-warning': 'true'
+      };
       
-      // Add registry auth if available
       const registryAuth = await this.getRegistryAuth();
       if (registryAuth) {
         headers['X-Registry-Auth'] = registryAuth;
@@ -156,7 +227,10 @@ export class DockerClient {
       
       const removeUrl = `${this.dockerHost}/${this.apiVersion}/images/${encodeURIComponent(imageTag)}`;
       const removeResponse = await fetch(removeUrl, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: {
+          'ngrok-skip-browser-warning': 'true'
+        }
       });
       
       if (removeResponse.ok || removeResponse.status === 404) {
@@ -165,7 +239,7 @@ export class DockerClient {
       } else {
         const error = await removeResponse.text();
         logs.push(`[CLEANUP] ⚠️ Error removing image: ${error}`);
-        return { success: true, logs }; // Not critical if image doesn't exist
+        return { success: true, logs };
       }
       
     } catch (error) {
@@ -174,37 +248,26 @@ export class DockerClient {
     }
   }
 
-  private async testDockerConnection(): Promise<{ success: boolean; error?: string }> {
-    try {
-      const response = await fetch(`${this.dockerHost}/${this.apiVersion}/version`, {
-        method: 'GET'
-      });
-      
-      if (response.ok) {
-        const version = await response.json();
-        console.log(`[DOCKER] Connected to Docker API version: ${version.ApiVersion}`);
-        return { success: true };
-      } else {
-        return { success: false, error: `HTTP ${response.status}: ${response.statusText}` };
-      }
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  }
-
   private async createBuildContext(dockerfile: string, files: Record<string, string>): Promise<Uint8Array> {
     const tarBuilder = new TarBuilder();
     const encoder = new TextEncoder();
     
-    // Add Dockerfile
+    console.log(`[TAR] Creating build context with ${Object.keys(files).length + 1} files`);
+    
+    // Add Dockerfile first
+    console.log(`[TAR] Adding Dockerfile (${dockerfile.length} bytes)`);
     tarBuilder.addFile('Dockerfile', encoder.encode(dockerfile));
     
     // Add other files
     for (const [filename, content] of Object.entries(files)) {
+      console.log(`[TAR] Adding ${filename} (${content.length} bytes)`);
       tarBuilder.addFile(filename, encoder.encode(content));
     }
     
-    return tarBuilder.build();
+    const result = tarBuilder.build();
+    console.log(`[TAR] Build context created: ${result.length} bytes total`);
+    
+    return result;
   }
 
   private async getRegistryAuth(): Promise<string> {
