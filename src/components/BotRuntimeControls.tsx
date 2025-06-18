@@ -1,52 +1,48 @@
-
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { RotateCcw, Download, Activity } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
+import React, { useState } from "react";
+import { toast } from "@/components/ui/use-toast";
+import { supabase } from "@/lib/supabaseClient";
 
 interface BotRuntimeControlsProps {
-  botId: string;
-  userId: string;
-  runtimeStatus: string;
-  containerId?: string | null;
-  onStatusChange: (newStatus: string) => void;
+  bot: {
+    id: string;
+    user_id: string;
+    runtime_status: string;
+  };
+  onUpdate: () => void;
 }
 
-const BotRuntimeControls = ({ botId, userId, runtimeStatus, containerId, onStatusChange }: BotRuntimeControlsProps) => {
+export function BotRuntimeControls({ bot, onUpdate }: BotRuntimeControlsProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const { toast } = useToast();
 
-  const handleAction = async (action: string) => {
+  const startBot = async () => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('manage-bot-runtime', {
+      console.log(`Starting bot ${bot.id} via Modal`);
+      
+      const { data: result, error } = await supabase.functions.invoke('modal-bot-manager', {
         body: {
-          action,
-          botId,
-          userId
+          action: 'start-bot',
+          botId: bot.id,
+          userId: bot.user_id
         }
       });
 
       if (error) throw error;
 
-      if (data.success) {
-        const newStatus = action === 'restart' ? 'starting' : runtimeStatus;
-        onStatusChange(newStatus);
-        
-        const actionEmoji = action === 'restart' ? '🔄' : '📋';
+      if (result.success) {
         toast({
-          title: `${actionEmoji} ${action === 'restart' ? 'Bot restart initiated!' : 'Logs refreshed!'}`,
-          description: action === 'restart' ? 'Bot is restarting in Docker container' : 'Latest Docker container logs retrieved',
+          title: "✅ Bot Started",
+          description: "Your bot is now running via Modal and ready to receive messages!",
         });
+        onUpdate();
       } else {
-        throw new Error(data.error || 'Operation failed');
+        throw new Error(result.error || 'Failed to start bot');
       }
-    } catch (error) {
-      console.error(`Error ${action} bot:`, error);
+    } catch (error: any) {
+      console.error('Error starting bot:', error);
       toast({
         title: "Error",
-        description: `Failed to ${action} bot: ${error.message}`,
+        description: error.message || 'Failed to start bot',
         variant: "destructive",
       });
     } finally {
@@ -54,114 +50,144 @@ const BotRuntimeControls = ({ botId, userId, runtimeStatus, containerId, onStatu
     }
   };
 
-  const downloadFiles = async () => {
+  const stopBot = async () => {
+    setIsLoading(true);
     try {
-      const { data: files, error } = await supabase.storage
-        .from('bot-files')
-        .list(`${userId}/${botId}`);
+      console.log(`Stopping bot ${bot.id} via Modal`);
+      
+      const { data: result, error } = await supabase.functions.invoke('modal-bot-manager', {
+        body: {
+          action: 'stop-bot',
+          botId: bot.id,
+          userId: bot.user_id
+        }
+      });
 
       if (error) throw error;
 
-      for (const file of files || []) {
-        const { data: fileData, error: downloadError } = await supabase.storage
-          .from('bot-files')
-          .download(`${userId}/${botId}/${file.name}`);
-
-        if (downloadError) {
-          console.error(`Error downloading ${file.name}:`, downloadError);
-          continue;
-        }
-
-        const text = await fileData.text();
-        const blob = new Blob([text], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = file.name;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+      if (result.success) {
+        toast({
+          title: "🛑 Bot Stopped",
+          description: "Your bot has been stopped and is no longer processing messages.",
+        });
+        onUpdate();
+      } else {
+        throw new Error(result.error || 'Failed to stop bot');
       }
-
+    } catch (error: any) {
+      console.error('Error stopping bot:', error);
       toast({
-        title: "Files Downloaded! 📁",
-        description: "Bot source files have been downloaded",
-      });
-    } catch (error) {
-      console.error('Error downloading files:', error);
-      toast({
-        title: "Error",
-        description: "Failed to download files",
+        title: "Error", 
+        description: error.message || 'Failed to stop bot',
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "running": return "text-green-600";
-      case "starting": return "text-yellow-600";
-      case "stopped": return "text-gray-600";
-      case "error": return "text-red-600";
-      default: return "text-gray-600";
+  const restartBot = async () => {
+    setIsLoading(true);
+    try {
+      console.log(`Restarting bot ${bot.id} via Modal`);
+      
+      const { data: result, error } = await supabase.functions.invoke('modal-bot-manager', {
+        body: {
+          action: 'restart-bot',
+          botId: bot.id,
+          userId: bot.user_id
+        }
+      });
+
+      if (error) throw error;
+
+      if (result.success) {
+        toast({
+          title: "🔄 Bot Restarted",
+          description: "Your bot has been restarted with the latest code via Modal.",
+        });
+        onUpdate();
+      } else {
+        throw new Error(result.error || 'Failed to restart bot');
+      }
+    } catch (error: any) {
+      console.error('Error restarting bot:', error);
+      toast({
+        title: "Error",
+        description: error.message || 'Failed to restart bot', 
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "running": return "🟢";
-      case "starting": return "🟡";
-      case "stopped": return "⚫";
-      case "error": return "🔴";
-      default: return "⚪";
+  const fixBot = async () => {
+    setIsLoading(true);
+    try {
+      console.log(`Fixing bot ${bot.id} via Modal AI`);
+      
+      const { data: result, error } = await supabase.functions.invoke('modal-bot-manager', {
+        body: {
+          action: 'fix-bot',
+          botId: bot.id,
+          userId: bot.user_id
+        }
+      });
+
+      if (error) throw error;
+
+      if (result.success) {
+        toast({
+          title: "🛠️ Bot Fixed",
+          description: "AI has analyzed and fixed your bot's issues via Modal.",
+        });
+        onUpdate();
+      } else {
+        throw new Error(result.error || 'Failed to fix bot');
+      }
+    } catch (error: any) {
+      console.error('Error fixing bot:', error);
+      toast({
+        title: "Error",
+        description: error.message || 'Failed to fix bot',
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="flex items-center space-x-2">
-      <div className={`text-sm font-medium ${getStatusColor(runtimeStatus)} flex items-center`}>
-        <span className="mr-1">{getStatusIcon(runtimeStatus)}</span>
-        {runtimeStatus?.charAt(0).toUpperCase() + runtimeStatus?.slice(1) || 'Unknown'}
-        {containerId && (
-          <span className="ml-2 text-xs text-gray-500 font-mono">
-            🐳 {containerId.substring(0, 12)}
-          </span>
-        )}
-      </div>
-      
-      <Button 
-        onClick={() => handleAction('restart')} 
+    <div className="flex space-x-4">
+      <button
+        onClick={startBot}
+        disabled={isLoading || bot.runtime_status === "running"}
+        className="btn btn-primary"
+      >
+        Start
+      </button>
+      <button
+        onClick={stopBot}
+        disabled={isLoading || bot.runtime_status !== "running"}
+        className="btn btn-secondary"
+      >
+        Stop
+      </button>
+      <button
+        onClick={restartBot}
         disabled={isLoading}
-        variant="outline"
-        size="sm"
+        className="btn btn-warning"
       >
-        <RotateCcw className="h-4 w-4 mr-1" />
         Restart
-      </Button>
-      
-      <Button 
-        onClick={downloadFiles}
-        variant="outline"
-        size="sm"
+      </button>
+      <button
+        onClick={fixBot}
+        disabled={isLoading}
+        className="btn btn-accent"
       >
-        <Download className="h-4 w-4 mr-1" />
-        Download
-      </Button>
-
-      {runtimeStatus === 'running' && (
-        <Button 
-          onClick={() => handleAction('logs')}
-          variant="outline"
-          size="sm"
-          disabled={isLoading}
-        >
-          <Activity className="h-4 w-4 mr-1" />
-          Refresh Logs
-        </Button>
-      )}
+        Fix with AI
+      </button>
     </div>
   );
-};
-
-export default BotRuntimeControls;
+}
