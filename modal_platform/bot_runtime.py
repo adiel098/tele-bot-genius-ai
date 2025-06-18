@@ -6,25 +6,21 @@ import asyncio
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
-import requests
-from telegram import Bot, Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import openai
+import subprocess
+import tempfile
+import shutil
 
 # Configure Modal app
 app = modal.App("telegram-bot-platform")
 
-# Create Modal image with all required dependencies
+# Create Modal image with all required Python dependencies for Telegram bots
 image = (
     modal.Image.debian_slim()
     .pip_install([
         "python-telegram-bot>=20.0",
-        "openai>=1.0.0",
         "requests>=2.28.0",
-        "supabase>=1.0.0",
-        "fastapi>=0.100.0",
-        "uvicorn>=0.20.0",
-        "python-multipart>=0.0.6"
+        "python-dotenv>=1.0.0",
+        "aiohttp>=3.8.0"
     ])
     .env({"PYTHONUNBUFFERED": "1"})
 )
@@ -32,29 +28,24 @@ image = (
 # Persistent volume for bot files and data
 volume = modal.Volume.from_name("bot-files", create_if_missing=True)
 
-# Shared secrets
-secrets = [
-    modal.Secret.from_name("telegram-bot-secrets"),
-    modal.Secret.from_name("openai-secrets"),
-    modal.Secret.from_name("supabase-secrets")
-]
+# Shared secrets for Telegram tokens
+secrets = [modal.Secret.from_name("telegram-bot-secrets")]
 
 @app.function(
     image=image,
     secrets=secrets,
     volumes={"/data": volume},
-    timeout=3600,
-    min_containers=1,
+    timeout=300,
     memory=512
 )
-def create_and_deploy_bot(bot_id: str, user_id: str, bot_code: str, bot_token: str, bot_name: str) -> Dict[str, Any]:
+def store_and_run_bot(bot_id: str, user_id: str, bot_code: str, bot_token: str, bot_name: str) -> Dict[str, Any]:
     """
-    Create and deploy a Telegram bot directly in Modal - replaces entire Docker/K8s pipeline
+    Store bot code in Modal volume and start the bot
     """
     try:
-        print(f"[MODAL] Creating bot {bot_id} for user {user_id}")
+        print(f"[MODAL] Storing and running bot {bot_id} for user {user_id}")
         
-        # Store bot files in Modal volume
+        # Create bot directory in Modal volume
         bot_dir = f"/data/bots/{user_id}/{bot_id}"
         os.makedirs(bot_dir, exist_ok=True)
         
@@ -74,13 +65,14 @@ def create_and_deploy_bot(bot_id: str, user_id: str, bot_code: str, bot_token: s
         with open(f"{bot_dir}/metadata.json", "w") as f:
             json.dump(metadata, f)
         
-        # Create bot token file
+        # Create bot token environment file
         with open(f"{bot_dir}/.env", "w") as f:
             f.write(f"BOT_TOKEN={bot_token}\n")
         
+        # Commit changes to volume
         volume.commit()
         
-        print(f"[MODAL] Bot {bot_id} created successfully in Modal volume")
+        print(f"[MODAL] Bot {bot_id} files stored successfully")
         
         # Start the bot immediately
         start_result = start_telegram_bot.remote(bot_id, user_id)
@@ -91,20 +83,18 @@ def create_and_deploy_bot(bot_id: str, user_id: str, bot_code: str, bot_token: s
             "deployment_type": "modal",
             "status": "running" if start_result.get("success") else "created",
             "logs": [
-                f"[MODAL] Bot {bot_id} created successfully",
+                f"[MODAL] Bot {bot_id} stored successfully",
                 f"[MODAL] Files stored in Modal volume: {bot_dir}",
-                f"[MODAL] Bot deployment type: Modal Function",
-                f"[MODAL] Auto-scaling: Enabled",
-                f"[MODAL] Persistent storage: Modal Volume"
+                f"[MODAL] Bot deployment type: Modal Function"
             ]
         }
         
     except Exception as e:
-        print(f"[MODAL] Error creating bot {bot_id}: {str(e)}")
+        print(f"[MODAL] Error storing bot {bot_id}: {str(e)}")
         return {
             "success": False,
             "error": str(e),
-            "logs": [f"[MODAL ERROR] Failed to create bot: {str(e)}"]
+            "logs": [f"[MODAL ERROR] Failed to store bot: {str(e)}"]
         }
 
 @app.function(
@@ -112,12 +102,11 @@ def create_and_deploy_bot(bot_id: str, user_id: str, bot_code: str, bot_token: s
     secrets=secrets,
     volumes={"/data": volume},
     timeout=3600,
-    min_containers=1,
     memory=256
 )
 def start_telegram_bot(bot_id: str, user_id: str) -> Dict[str, Any]:
     """
-    Start a Telegram bot - replaces Docker container startup
+    Start a Telegram bot by executing the Python code
     """
     try:
         print(f"[MODAL] Starting bot {bot_id}")
@@ -133,39 +122,38 @@ def start_telegram_bot(bot_id: str, user_id: str) -> Dict[str, Any]:
             env_content = f.read()
             bot_token = env_content.split("=")[1].strip()
         
-        # Load and execute bot code
-        with open(f"{bot_dir}/main.py", "r") as f:
-            bot_code = f.read()
+        # Set environment variable for the bot
+        os.environ["BOT_TOKEN"] = bot_token
         
-        # Create execution environment
-        exec_globals = {
-            "__name__": "__main__",
-            "BOT_TOKEN": bot_token,
-            "BOT_ID": bot_id
-        }
-        
-        # Execute bot code in Modal function
-        exec(bot_code, exec_globals)
+        # Execute bot code in a subprocess
+        bot_process = subprocess.Popen(
+            ["python", f"{bot_dir}/main.py"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env=os.environ.copy()
+        )
         
         # Update metadata
         metadata["status"] = "running"
         metadata["started_at"] = datetime.now().isoformat()
+        metadata["process_id"] = bot_process.pid
         
         with open(f"{bot_dir}/metadata.json", "w") as f:
             json.dump(metadata, f)
         
         volume.commit()
         
-        print(f"[MODAL] Bot {bot_id} started successfully")
+        print(f"[MODAL] Bot {bot_id} started successfully with PID {bot_process.pid}")
         
         return {
             "success": True,
             "status": "running",
+            "process_id": bot_process.pid,
             "logs": [
                 f"[MODAL] Bot {bot_id} started successfully",
-                f"[MODAL] Runtime: Modal Function",
-                f"[MODAL] Memory: 256MB allocated",
-                f"[MODAL] Auto-scaling: Active"
+                f"[MODAL] Process ID: {bot_process.pid}",
+                f"[MODAL] Runtime: Modal Function Process"
             ]
         }
         
@@ -185,7 +173,7 @@ def start_telegram_bot(bot_id: str, user_id: str) -> Dict[str, Any]:
 )
 def stop_telegram_bot(bot_id: str, user_id: str) -> Dict[str, Any]:
     """
-    Stop a Telegram bot - replaces Docker container stop
+    Stop a Telegram bot process
     """
     try:
         print(f"[MODAL] Stopping bot {bot_id}")
@@ -195,6 +183,15 @@ def stop_telegram_bot(bot_id: str, user_id: str) -> Dict[str, Any]:
         # Load and update metadata
         with open(f"{bot_dir}/metadata.json", "r") as f:
             metadata = json.load(f)
+        
+        # Try to kill the process if it exists
+        process_id = metadata.get("process_id")
+        if process_id:
+            try:
+                os.kill(process_id, 9)  # SIGKILL
+                print(f"[MODAL] Killed process {process_id}")
+            except ProcessLookupError:
+                print(f"[MODAL] Process {process_id} was already terminated")
         
         metadata["status"] = "stopped"
         metadata["stopped_at"] = datetime.now().isoformat()
@@ -211,8 +208,7 @@ def stop_telegram_bot(bot_id: str, user_id: str) -> Dict[str, Any]:
             "status": "stopped",
             "logs": [
                 f"[MODAL] Bot {bot_id} stopped successfully",
-                f"[MODAL] Resources deallocated",
-                f"[MODAL] Function terminated"
+                f"[MODAL] Process terminated"
             ]
         }
         
@@ -231,7 +227,7 @@ def stop_telegram_bot(bot_id: str, user_id: str) -> Dict[str, Any]:
 )
 def get_bot_logs(bot_id: str, user_id: str) -> Dict[str, Any]:
     """
-    Get bot logs - replaces Docker log streaming
+    Get bot logs from the stored files
     """
     try:
         bot_dir = f"/data/bots/{user_id}/{bot_id}"
@@ -240,25 +236,28 @@ def get_bot_logs(bot_id: str, user_id: str) -> Dict[str, Any]:
         with open(f"{bot_dir}/metadata.json", "r") as f:
             metadata = json.load(f)
         
-        # Generate live logs
+        # Generate status logs
         current_time = datetime.now().isoformat()
         
         logs = [
             f"[{current_time}] MODAL BOT RUNTIME LOGS",
             f"[{current_time}] Bot ID: {bot_id}",
             f"[{current_time}] Status: {metadata.get('status', 'unknown')}",
-            f"[{current_time}] Runtime: Modal Function",
-            f"[{current_time}] Platform: Modal.com Serverless",
-            f"[{current_time}] Memory: Auto-allocated",
-            f"[{current_time}] Scaling: Automatic"
+            f"[{current_time}] Runtime: Modal Function"
         ]
         
         if metadata.get("status") == "running":
             logs.extend([
                 f"[{current_time}] Bot is actively processing messages",
-                f"[{current_time}] Webhook endpoint: Active",
-                f"[{current_time}] Function health: OK"
+                f"[{current_time}] Process ID: {metadata.get('process_id', 'unknown')}"
             ])
+        
+        # Try to read log file if it exists
+        log_file = f"{bot_dir}/bot.log"
+        if os.path.exists(log_file):
+            with open(log_file, "r") as f:
+                file_logs = f.read().strip().split('\n')
+                logs.extend(file_logs[-50:])  # Last 50 lines
         
         return {
             "success": True,
@@ -278,7 +277,7 @@ def get_bot_logs(bot_id: str, user_id: str) -> Dict[str, Any]:
 )
 def get_bot_status(bot_id: str, user_id: str) -> Dict[str, Any]:
     """
-    Get bot status - replaces Kubernetes status checks
+    Get bot status from metadata
     """
     try:
         bot_dir = f"/data/bots/{user_id}/{bot_id}"
@@ -293,7 +292,8 @@ def get_bot_status(bot_id: str, user_id: str) -> Dict[str, Any]:
             "runtime": "Modal Function",
             "created_at": metadata.get("created_at"),
             "started_at": metadata.get("started_at"),
-            "stopped_at": metadata.get("stopped_at")
+            "stopped_at": metadata.get("stopped_at"),
+            "process_id": metadata.get("process_id")
         }
         
     except Exception as e:
@@ -309,7 +309,7 @@ def get_bot_status(bot_id: str, user_id: str) -> Dict[str, Any]:
 )
 def get_bot_files(bot_id: str, user_id: str) -> Dict[str, Any]:
     """
-    Get bot files for modification
+    Get bot files for viewing or modification
     """
     try:
         bot_dir = f"/data/bots/{user_id}/{bot_id}"
@@ -330,29 +330,3 @@ def get_bot_files(bot_id: str, user_id: str) -> Dict[str, Any]:
             "error": str(e),
             "files": {}
         }
-
-# Web endpoint for webhook handling
-@app.function(
-    image=image,
-    secrets=secrets,
-    volumes={"/data": volume}
-)
-@modal.fastapi_endpoint(method="POST", label="telegram-webhook")
-def handle_telegram_webhook(request_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Handle Telegram webhooks - replaces webhook proxy
-    """
-    try:
-        bot_id = request_data.get("bot_id")
-        update_data = request_data.get("update")
-        
-        print(f"[MODAL] Webhook received for bot {bot_id}")
-        
-        # Process webhook in the appropriate bot context
-        # This would integrate with the running bot instance
-        
-        return {"success": True, "processed": True}
-        
-    except Exception as e:
-        print(f"[MODAL] Webhook error: {str(e)}")
-        return {"success": False, "error": str(e)}

@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/use-toast"
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from "@/contexts/AuthContext";
 
 export function CreateBot() {
   const [botName, setBotName] = useState('');
@@ -15,16 +16,22 @@ export function CreateBot() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!botName.trim() || !botToken.trim() || !botPrompt.trim()) return;
 
+    if (!user) {
+      setError('You must be logged in to create a bot');
+      return;
+    }
+
     setIsSubmitting(true);
     setError('');
 
     try {
-      console.log('Creating bot via Modal');
+      console.log('Creating bot with user ID:', user.id);
 
       // First create bot record in database
       const { data: botRecord, error: createError } = await supabase
@@ -33,6 +40,7 @@ export function CreateBot() {
           name: botName.trim(),
           token: botToken.trim(),
           status: 'creating',
+          user_id: user.id,
           conversation_history: [{
             role: 'user',
             content: botPrompt.trim(),
@@ -44,12 +52,12 @@ export function CreateBot() {
 
       if (createError) throw createError;
 
-      // Then call Modal to generate and deploy the bot
+      // Then call Modal to store and deploy the bot
       const { data: result, error } = await supabase.functions.invoke('modal-bot-manager', {
         body: {
           action: 'create-bot',
           botId: botRecord.id,
-          userId: botRecord.user_id,
+          userId: user.id,
           name: botName.trim(),
           token: botToken.trim(),
           prompt: botPrompt.trim()
@@ -83,6 +91,15 @@ export function CreateBot() {
       setIsSubmitting(false);
     }
   };
+
+  if (!user) {
+    return (
+      <div className="max-w-2xl mx-auto p-6">
+        <h1 className="text-3xl font-bold mb-6">Create Your Telegram Bot</h1>
+        <p className="text-red-500">You must be logged in to create a bot.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto p-6">

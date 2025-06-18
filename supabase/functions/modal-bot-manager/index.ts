@@ -11,13 +11,11 @@ const corsHeaders = {
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
+const openaiApiKey = Deno.env.get('OPENAI_API_KEY')!;
 
 // These will be the actual Modal function URLs after deployment
-// You'll need to update these with the real URLs from `modal deploy`
 const MODAL_FUNCTIONS = {
-  generate_code: 'https://haleviadiel--bot-code-generator-generate-telegram-bot-code.modal.run',
-  modify_code: 'https://haleviadiel--bot-code-generator-modify-bot-code.modal.run',
-  create_deploy: 'https://haleviadiel--telegram-bot-platform-create-and-deploy-bot.modal.run',
+  store_and_run: 'https://haleviadiel--telegram-bot-platform-store-and-run-bot.modal.run',
   start_bot: 'https://haleviadiel--telegram-bot-platform-start-telegram-bot.modal.run',
   stop_bot: 'https://haleviadiel--telegram-bot-platform-stop-telegram-bot.modal.run',
   get_logs: 'https://haleviadiel--telegram-bot-platform-get-bot-logs.modal.run',
@@ -85,8 +83,123 @@ serve(async (req) => {
   }
 });
 
+async function generateBotCodeWithOpenAI(prompt: string, token: string, conversationHistory: any[] = []) {
+  console.log('[MODAL-MANAGER] Generating bot code with OpenAI');
+  
+  const messages = [
+    {
+      role: "system",
+      content: `You are an expert Python developer specializing in Telegram bots using python-telegram-bot library v20+.
+
+Generate complete, production-ready Python code for Telegram bots based on user requirements.
+
+IMPORTANT REQUIREMENTS:
+1. Use python-telegram-bot v20+ syntax (Application, not Updater)
+2. Include proper error handling and logging
+3. Use async/await patterns correctly
+4. Make the bot token configurable via environment variable
+5. Add comprehensive comments explaining the code
+
+Generate a complete main.py file that can run independently.
+
+Example structure:
+\`\`\`python
+import logging
+import os
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import asyncio
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Bot token from environment
+BOT_TOKEN = os.getenv('BOT_TOKEN', '${token}')
+
+# Your bot handlers here...
+
+async def main():
+    application = Application.builder().token(BOT_TOKEN).build()
+    
+    # Add handlers
+    # ... your handlers here
+    
+    # Start the bot
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling()
+    
+    # Keep running
+    try:
+        await asyncio.Future()  # Run forever
+    except KeyboardInterrupt:
+        pass
+    finally:
+        await application.updater.stop()
+        await application.stop()
+        await application.shutdown()
+
+if __name__ == '__main__':
+    asyncio.run(main())
+\`\`\`
+
+Create a Telegram bot with the following requirements: ${prompt}`
+    }
+  ];
+
+  // Add conversation history if provided
+  if (conversationHistory && conversationHistory.length > 0) {
+    for (const msg of conversationHistory.slice(-5)) {
+      messages.push({
+        role: msg.role,
+        content: msg.content
+      });
+    }
+  }
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${openaiApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: messages,
+      temperature: 0.7,
+      max_tokens: 3000
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`OpenAI API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const assistantResponse = data.choices[0].message.content;
+
+  // Extract code from response
+  const codeStart = assistantResponse.indexOf('```python');
+  const codeEnd = assistantResponse.indexOf('```', codeStart + 9);
+  
+  let generatedCode = assistantResponse;
+  let explanation = "Generated Telegram bot code";
+  
+  if (codeStart !== -1 && codeEnd !== -1) {
+    generatedCode = assistantResponse.substring(codeStart + 9, codeEnd).trim();
+    explanation = assistantResponse.substring(0, codeStart).trim();
+  }
+
+  return {
+    success: true,
+    explanation,
+    code: generatedCode
+  };
+}
+
 async function createBot(botId: string, userId: string, name: string, prompt: string, token: string) {
-  console.log(`[MODAL-MANAGER] Creating bot via Modal`);
+  console.log(`[MODAL-MANAGER] Creating bot ${botId}`);
   
   // Get conversation history
   const { data: bot } = await supabase
@@ -97,31 +210,15 @@ async function createBot(botId: string, userId: string, name: string, prompt: st
 
   const conversationHistory = bot?.conversation_history || [];
 
-  // Step 1: Generate bot code using Modal
-  const codeResponse = await fetch(MODAL_FUNCTIONS.generate_code, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      prompt,
-      bot_token: token,
-      conversation_history: conversationHistory
-    })
-  });
+  // Step 1: Generate bot code using OpenAI (directly in this edge function)
+  const codeResult = await generateBotCodeWithOpenAI(prompt, token, conversationHistory);
 
-  if (!codeResponse.ok) {
-    throw new Error(`Modal code generation failed: ${codeResponse.status}`);
+  if (!codeResult.success) {
+    throw new Error('Failed to generate bot code');
   }
 
-  const botCodeResult = await codeResponse.json();
-
-  if (!botCodeResult.success) {
-    throw new Error(botCodeResult.error || 'Failed to generate bot code');
-  }
-
-  // Step 2: Create and deploy bot in Modal
-  const deployResponse = await fetch(MODAL_FUNCTIONS.create_deploy, {
+  // Step 2: Store and run bot in Modal
+  const storeResponse = await fetch(MODAL_FUNCTIONS.store_and_run, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -129,13 +226,13 @@ async function createBot(botId: string, userId: string, name: string, prompt: st
     body: JSON.stringify({
       bot_id: botId,
       user_id: userId,
-      bot_code: botCodeResult.code,
+      bot_code: codeResult.code,
       bot_token: token,
       bot_name: name || `Bot ${botId}`
     })
   });
 
-  const deployResult = await deployResponse.json();
+  const storeResult = await storeResponse.json();
 
   // Update conversation history
   const updatedHistory = [
@@ -147,7 +244,7 @@ async function createBot(botId: string, userId: string, name: string, prompt: st
     },
     {
       role: 'assistant',
-      content: `Bot created and deployed successfully! ${botCodeResult.explanation}`,
+      content: `Bot created and deployed successfully! ${codeResult.explanation}`,
       timestamp: new Date().toISOString()
     }
   ];
@@ -157,18 +254,17 @@ async function createBot(botId: string, userId: string, name: string, prompt: st
     .from('bots')
     .update({
       status: 'active',
-      runtime_status: deployResult.success ? 'running' : 'stopped',
+      runtime_status: storeResult.success ? 'running' : 'stopped',
       conversation_history: updatedHistory,
-      container_id: deployResult.bot_id,
-      runtime_logs: deployResult.logs?.join('\n') || '',
+      runtime_logs: storeResult.logs?.join('\n') || '',
       files_stored: true
     })
     .eq('id', botId);
 
   return {
-    botCode: botCodeResult,
-    deployment: deployResult,
-    message: 'Bot generated and deployed via Modal'
+    botCode: codeResult,
+    deployment: storeResult,
+    message: 'Bot generated with OpenAI and deployed via Modal'
   };
 }
 
@@ -199,26 +295,28 @@ async function modifyBot(botId: string, userId: string, modificationPrompt: stri
   const codeData = await codeResponse.json();
   const currentCode = codeData.files?.['main.py'] || '';
 
-  // Modify code via Modal
-  const modifyResponse = await fetch(MODAL_FUNCTIONS.modify_code, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      bot_id: botId,
-      user_id: userId,
-      modification_prompt: modificationPrompt,
-      current_code: currentCode,
-      conversation_history: bot.conversation_history || []
-    })
-  });
-
-  const modifyResult = await modifyResponse.json();
+  // Modify code using OpenAI
+  const modifyResult = await generateBotCodeWithOpenAI(
+    `Modify this existing bot code:\n\n${currentCode}\n\nModification request: ${modificationPrompt}`,
+    bot.token,
+    bot.conversation_history || []
+  );
 
   if (modifyResult.success) {
-    // Restart bot with new code
-    await restartBot(botId, userId);
+    // Store updated code and restart bot
+    await fetch(MODAL_FUNCTIONS.store_and_run, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        bot_id: botId,
+        user_id: userId,
+        bot_code: modifyResult.code,
+        bot_token: bot.token,
+        bot_name: bot.name
+      })
+    });
 
     // Update conversation history
     const updatedHistory = [
