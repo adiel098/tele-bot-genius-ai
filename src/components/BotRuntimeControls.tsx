@@ -1,6 +1,7 @@
+
 import React, { useState } from "react";
 import { toast } from "@/components/ui/use-toast";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase } from "@/integrations/supabase/client";
 
 interface BotRuntimeControlsProps {
   bot: {

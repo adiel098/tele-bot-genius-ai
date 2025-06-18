@@ -1,5 +1,6 @@
+
 import { useEffect, useState } from "react";
-import { useSupabaseClient } from "@supabase/auth-helpers-react";
+import { supabase } from "@/integrations/supabase/client";
 
 interface BotLogsProps {
   bot: {
@@ -12,7 +13,6 @@ interface BotLogsProps {
 
 export function BotLogs({ bot }: BotLogsProps) {
   const [logs, setLogs] = useState<string[]>([]);
-  const supabase = useSupabaseClient();
   const [isLoading, setIsLoading] = useState(false);
 
   const fetchLogs = async () => {
@@ -57,14 +57,7 @@ export function BotLogs({ bot }: BotLogsProps) {
     const intervalId = setInterval(fetchLogs, 15000); // Refresh every 15 seconds
 
     return () => clearInterval(intervalId); // Clean up interval on unmount
-  }, [bot.id, bot.user_id, supabase]);
-
-  // Auto-refresh logs every 15 seconds
-  useEffect(() => {
-    const intervalId = setInterval(fetchLogs, 15000);
-
-    return () => clearInterval(intervalId);
-  }, [bot.id, bot.user_id, supabase]);
+  }, [bot.id, bot.user_id]);
 
   return (
     <div className="space-y-4">

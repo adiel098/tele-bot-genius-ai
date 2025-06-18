@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Settings } from "lucide-react";
-import BotRuntimeControls from "@/components/BotRuntimeControls";
+import { BotRuntimeControls } from "@/components/BotRuntimeControls";
 
 interface Bot {
   id: string;
@@ -66,11 +66,12 @@ const WorkspaceHeader = ({ bot, userId, onStatusChange }: WorkspaceHeaderProps) 
             Settings
           </Button>
           <BotRuntimeControls
-            botId={bot.id}
-            userId={userId}
-            runtimeStatus={bot.runtime_status || 'stopped'}
-            containerId={bot.container_id}
-            onStatusChange={onStatusChange}
+            bot={{
+              id: bot.id,
+              user_id: userId,
+              runtime_status: bot.runtime_status || 'stopped'
+            }}
+            onUpdate={() => onStatusChange(bot.runtime_status)}
           />
         </div>
       </div>

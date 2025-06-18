@@ -1,12 +1,17 @@
+
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/use-toast"
-import { useUser, useSupabaseClient } from '@supabase/auth-helpers-react'
-import { useRouter } from 'next/navigation'
-import { Bot } from '@/integrations/supabase/types';
+import { supabase } from "@/integrations/supabase/client";
+
+interface Bot {
+  id: string;
+  user_id: string;
+  name: string;
+  runtime_status: string;
+}
 
 interface ModifyBotProps {
   bot: Bot;
@@ -17,9 +22,6 @@ export function ModifyBot({ bot, onUpdate }: ModifyBotProps) {
   const [modificationPrompt, setModificationPrompt] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const supabase = useSupabaseClient()
-  const user = useUser()
-  const navigate = useRouter()
 
   const handleModify = async (e: React.FormEvent) => {
     e.preventDefault();
