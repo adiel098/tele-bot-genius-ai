@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -116,14 +115,21 @@ const Index = () => {
       });
       setCreationStep(2);
 
-      // Simulate environment preparation
+      // Simulate enhanced deployment preparation
       await new Promise(resolve => setTimeout(resolve, 2000));
       setCreationStep(3);
+      
       const result = await response.json();
+      
       if (result.success) {
+        const deploymentType = result.deployment?.type || 'kubernetes';
+        const deploymentMessage = deploymentType === 'kubernetes' 
+          ? "Your bot is running on Kubernetes with auto-scaling! 🚀"
+          : "Your bot is active and ready to use! 🎉";
+          
         toast({
-          title: "Bot created successfully! 🎉",
-          description: "Your bot is active and ready to use"
+          title: deploymentMessage,
+          description: `Deployment: ${deploymentType}, Infrastructure: Container-based`
         });
         navigate(`/workspace/${data.id}`);
       } else {
@@ -153,18 +159,18 @@ const Index = () => {
               Creating your bot
             </h2>
             <p className="text-base text-gray-600 max-w-lg mx-auto">
-              Our AI is generating your bot code, setting up the environment, and preparing everything for deployment.
+              Our AI is generating your bot code, building a Docker container, and deploying to Kubernetes cluster for scalable operation.
             </p>
           </div>
 
           {/* Progress Component */}
           <BotCreationProgress currentStep={creationStep} />
 
-          {/* Fun fact while waiting */}
+          {/* Enhanced info while waiting */}
           <div className="mt-8 p-4 bg-white/50 backdrop-blur-sm rounded-xl border border-blue-100">
-            <h3 className="text-base font-semibold text-gray-800 mb-1">💡 Did you know?</h3>
+            <h3 className="text-base font-semibold text-gray-800 mb-1">🚀 Infrastructure Features</h3>
             <p className="text-sm text-gray-600">
-              Your bot is built with advanced technologies including Python, Telegram Bot API, and Docker for secure deployment
+              Your bot will run in an isolated Docker container on our Kubernetes cluster with auto-scaling, health monitoring, and cost optimization
             </p>
           </div>
         </div>
@@ -214,7 +220,9 @@ const Index = () => {
               with AI Magic
             </span>
           </h1>
-          
+          <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
+            Create powerful Telegram bots in minutes with AI-generated code. Deploy to Kubernetes clusters with auto-scaling and monitoring.
+          </p>
         </div>
 
         {/* Bot Creation Form */}
@@ -227,7 +235,9 @@ const Index = () => {
                   Telegram Bot Token
                 </label>
                 <Input id="token" placeholder="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz" value={token} onChange={e => setToken(e.target.value)} className="font-mono text-sm" />
-                
+                <p className="text-xs text-gray-500">
+                  Get your token from @BotFather on Telegram
+                </p>
               </div>
 
               {/* Prompt Input */}
@@ -236,35 +246,52 @@ const Index = () => {
                   How can TeleBot AI help you today?
                 </label>
                 <Textarea id="prompt" placeholder="I want to create a customer support bot that can answer frequently asked questions, collect customer information, and create support tickets. Include welcome messages and handoff to human agents when needed..." value={prompt} onChange={e => setPrompt(e.target.value)} rows={6} className="resize-none" />
-                
+                <p className="text-xs text-gray-500">
+                  Describe your bot's functionality in detail for best results
+                </p>
               </div>
 
               {/* Create Button */}
               <Button onClick={handleCreateBot} className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white py-3 text-lg" size="lg">
-                Create Your First Bot
+                Create Your Bot with Kubernetes
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </div>
           </div>
 
-          {/* Quick Options */}
+          {/* Infrastructure Info */}
           <div className="mt-8 text-center">
-            
-            
+            <div className="inline-flex items-center space-x-6 text-sm text-gray-600 bg-white/50 backdrop-blur-sm rounded-lg px-6 py-3 border border-gray-200">
+              <div className="flex items-center space-x-2">
+                <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                <span>Docker Containers</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                <span>Kubernetes</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
+                <span>Auto-scaling</span>
+              </div>
+            </div>
           </div>
 
           {/* Example Options */}
           <div className="mt-12">
             <p className="text-center text-gray-600 mb-6">Popular bot templates:</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <Button variant="outline" className="h-auto p-4 text-left flex-col items-start space-y-2" onClick={() => handleTemplateClick('support')}>
                 <span className="font-medium">Customer Support Bot</span>
+                <span className="text-xs text-gray-500">FAQ handling & ticket creation</span>
               </Button>
               <Button variant="outline" className="h-auto p-4 text-left flex-col items-start space-y-2" onClick={() => handleTemplateClick('ecommerce')}>
                 <span className="font-medium">E-commerce Bot</span>
+                <span className="text-xs text-gray-500">Product browsing & order management</span>
               </Button>
               <Button variant="outline" className="h-auto p-4 text-left flex-col items-start space-y-2" onClick={() => handleTemplateClick('news')}>
                 <span className="font-medium">News & Updates Bot</span>
+                <span className="text-xs text-gray-500">Content delivery & subscriptions</span>
               </Button>
             </div>
           </div>
