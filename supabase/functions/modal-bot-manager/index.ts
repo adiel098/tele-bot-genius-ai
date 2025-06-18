@@ -12,8 +12,18 @@ const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-const MODAL_API_URL = 'https://api.modal.com/v1';
-const MODAL_TOKEN = Deno.env.get('MODAL_TOKEN')!;
+// These will be the actual Modal function URLs after deployment
+// You'll need to update these with the real URLs from `modal deploy`
+const MODAL_FUNCTIONS = {
+  generate_code: 'https://haleviadiel--bot-code-generator-generate-telegram-bot-code.modal.run',
+  modify_code: 'https://haleviadiel--bot-code-generator-modify-bot-code.modal.run',
+  create_deploy: 'https://haleviadiel--telegram-bot-platform-create-and-deploy-bot.modal.run',
+  start_bot: 'https://haleviadiel--telegram-bot-platform-start-telegram-bot.modal.run',
+  stop_bot: 'https://haleviadiel--telegram-bot-platform-stop-telegram-bot.modal.run',
+  get_logs: 'https://haleviadiel--telegram-bot-platform-get-bot-logs.modal.run',
+  get_status: 'https://haleviadiel--telegram-bot-platform-get-bot-status.modal.run',
+  get_files: 'https://haleviadiel--telegram-bot-platform-get-bot-files.modal.run'
+};
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -21,15 +31,15 @@ serve(async (req) => {
   }
 
   try {
-    const { action, botId, userId, prompt, token, modificationPrompt } = await req.json();
+    const { action, botId, userId, prompt, token, name, modificationPrompt } = await req.json();
 
     console.log(`[MODAL-MANAGER] Action: ${action}, Bot: ${botId}`);
 
     let result;
 
     switch (action) {
-      case 'generate-bot':
-        result = await generateBot(botId, userId, prompt, token);
+      case 'create-bot':
+        result = await createBot(botId, userId, name, prompt, token);
         break;
       case 'modify-bot':
         result = await modifyBot(botId, userId, modificationPrompt);
@@ -58,7 +68,7 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({
       success: true,
-      result
+      ...result
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -75,8 +85,8 @@ serve(async (req) => {
   }
 });
 
-async function generateBot(botId: string, userId: string, prompt: string, token: string) {
-  console.log(`[MODAL-MANAGER] Generating bot via Modal`);
+async function createBot(botId: string, userId: string, name: string, prompt: string, token: string) {
+  console.log(`[MODAL-MANAGER] Creating bot via Modal`);
   
   // Get conversation history
   const { data: bot } = await supabase
@@ -87,11 +97,10 @@ async function generateBot(botId: string, userId: string, prompt: string, token:
 
   const conversationHistory = bot?.conversation_history || [];
 
-  // Call Modal bot generator
-  const response = await fetch(`${MODAL_API_URL}/generate-telegram-bot-code`, {
+  // Step 1: Generate bot code using Modal
+  const codeResponse = await fetch(MODAL_FUNCTIONS.generate_code, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${MODAL_TOKEN}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -101,29 +110,28 @@ async function generateBot(botId: string, userId: string, prompt: string, token:
     })
   });
 
-  if (!response.ok) {
-    throw new Error(`Modal API error: ${response.status}`);
+  if (!codeResponse.ok) {
+    throw new Error(`Modal code generation failed: ${codeResponse.status}`);
   }
 
-  const botCode = await response.json();
+  const botCodeResult = await codeResponse.json();
 
-  if (!botCode.success) {
-    throw new Error(botCode.error || 'Failed to generate bot code');
+  if (!botCodeResult.success) {
+    throw new Error(botCodeResult.error || 'Failed to generate bot code');
   }
 
-  // Create and deploy bot
-  const deployResponse = await fetch(`${MODAL_API_URL}/create-and-deploy-bot`, {
+  // Step 2: Create and deploy bot in Modal
+  const deployResponse = await fetch(MODAL_FUNCTIONS.create_deploy, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${MODAL_TOKEN}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
       bot_id: botId,
       user_id: userId,
-      bot_code: botCode.code,
+      bot_code: botCodeResult.code,
       bot_token: token,
-      bot_name: `Bot ${botId}`
+      bot_name: name || `Bot ${botId}`
     })
   });
 
@@ -139,7 +147,7 @@ async function generateBot(botId: string, userId: string, prompt: string, token:
     },
     {
       role: 'assistant',
-      content: `Bot created and deployed successfully! ${botCode.explanation}`,
+      content: `Bot created and deployed successfully! ${botCodeResult.explanation}`,
       timestamp: new Date().toISOString()
     }
   ];
@@ -152,12 +160,13 @@ async function generateBot(botId: string, userId: string, prompt: string, token:
       runtime_status: deployResult.success ? 'running' : 'stopped',
       conversation_history: updatedHistory,
       container_id: deployResult.bot_id,
-      runtime_logs: deployResult.logs?.join('\n') || ''
+      runtime_logs: deployResult.logs?.join('\n') || '',
+      files_stored: true
     })
     .eq('id', botId);
 
   return {
-    botCode,
+    botCode: botCodeResult,
     deployment: deployResult,
     message: 'Bot generated and deployed via Modal'
   };
@@ -176,10 +185,9 @@ async function modifyBot(botId: string, userId: string, modificationPrompt: stri
   }
 
   // Get current code from Modal
-  const codeResponse = await fetch(`${MODAL_API_URL}/get-bot-files`, {
+  const codeResponse = await fetch(MODAL_FUNCTIONS.get_files, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${MODAL_TOKEN}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -192,10 +200,9 @@ async function modifyBot(botId: string, userId: string, modificationPrompt: stri
   const currentCode = codeData.files?.['main.py'] || '';
 
   // Modify code via Modal
-  const modifyResponse = await fetch(`${MODAL_API_URL}/modify-bot-code`, {
+  const modifyResponse = await fetch(MODAL_FUNCTIONS.modify_code, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${MODAL_TOKEN}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -240,10 +247,9 @@ async function modifyBot(botId: string, userId: string, modificationPrompt: stri
 }
 
 async function startBot(botId: string, userId: string) {
-  const response = await fetch(`${MODAL_API_URL}/start-telegram-bot`, {
+  const response = await fetch(MODAL_FUNCTIONS.start_bot, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${MODAL_TOKEN}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -266,10 +272,9 @@ async function startBot(botId: string, userId: string) {
 }
 
 async function stopBot(botId: string, userId: string) {
-  const response = await fetch(`${MODAL_API_URL}/stop-telegram-bot`, {
+  const response = await fetch(MODAL_FUNCTIONS.stop_bot, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${MODAL_TOKEN}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -298,10 +303,9 @@ async function restartBot(botId: string, userId: string) {
 }
 
 async function getBotLogs(botId: string, userId: string) {
-  const response = await fetch(`${MODAL_API_URL}/get-bot-logs`, {
+  const response = await fetch(MODAL_FUNCTIONS.get_logs, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${MODAL_TOKEN}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -314,10 +318,9 @@ async function getBotLogs(botId: string, userId: string) {
 }
 
 async function getBotStatus(botId: string, userId: string) {
-  const response = await fetch(`${MODAL_API_URL}/get-bot-status`, {
+  const response = await fetch(MODAL_FUNCTIONS.get_status, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${MODAL_TOKEN}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -335,10 +338,9 @@ async function fixBot(botId: string, userId: string) {
   const errorLogs = logs.logs?.join('\n') || '';
 
   // Get current code
-  const codeResponse = await fetch(`${MODAL_API_URL}/get-bot-files`, {
+  const codeResponse = await fetch(MODAL_FUNCTIONS.get_files, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${MODAL_TOKEN}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({

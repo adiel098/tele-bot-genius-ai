@@ -44,7 +44,7 @@ secrets = [
     secrets=secrets,
     volumes={"/data": volume},
     timeout=3600,
-    keep_warm=1,
+    min_containers=1,
     memory=512
 )
 def create_and_deploy_bot(bot_id: str, user_id: str, bot_code: str, bot_token: str, bot_name: str) -> Dict[str, Any]:
@@ -112,7 +112,7 @@ def create_and_deploy_bot(bot_id: str, user_id: str, bot_code: str, bot_token: s
     secrets=secrets,
     volumes={"/data": volume},
     timeout=3600,
-    keep_warm=1,
+    min_containers=1,
     memory=256
 )
 def start_telegram_bot(bot_id: str, user_id: str) -> Dict[str, Any]:
@@ -302,13 +302,42 @@ def get_bot_status(bot_id: str, user_id: str) -> Dict[str, Any]:
             "error": str(e)
         }
 
+@app.function(
+    image=image,
+    secrets=secrets,
+    volumes={"/data": volume}
+)
+def get_bot_files(bot_id: str, user_id: str) -> Dict[str, Any]:
+    """
+    Get bot files for modification
+    """
+    try:
+        bot_dir = f"/data/bots/{user_id}/{bot_id}"
+        
+        files = {}
+        if os.path.exists(f"{bot_dir}/main.py"):
+            with open(f"{bot_dir}/main.py", "r") as f:
+                files["main.py"] = f.read()
+        
+        return {
+            "success": True,
+            "files": files
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "files": {}
+        }
+
 # Web endpoint for webhook handling
 @app.function(
     image=image,
     secrets=secrets,
     volumes={"/data": volume}
 )
-@modal.web_endpoint(method="POST", label="telegram-webhook")
+@modal.fastapi_endpoint(method="POST", label="telegram-webhook")
 def handle_telegram_webhook(request_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Handle Telegram webhooks - replaces webhook proxy

@@ -1,6 +1,7 @@
 
 import modal
 import openai
+import os
 import json
 from typing import Dict, Any, List
 from datetime import datetime
@@ -145,7 +146,7 @@ Respond with:
         
         # Generate bot code
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o-mini",
             messages=messages,
             temperature=0.7,
             max_tokens=3000
@@ -260,7 +261,7 @@ Please provide the complete modified code."""
             })
         
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o-mini",
             messages=messages,
             temperature=0.7,
             max_tokens=3000

@@ -25,10 +25,31 @@ export function CreateBot() {
 
     try {
       console.log('Creating bot via Modal');
-      
+
+      // First create bot record in database
+      const { data: botRecord, error: createError } = await supabase
+        .from('bots')
+        .insert({
+          name: botName.trim(),
+          token: botToken.trim(),
+          status: 'creating',
+          conversation_history: [{
+            role: 'user',
+            content: botPrompt.trim(),
+            timestamp: new Date().toISOString()
+          }]
+        })
+        .select()
+        .single();
+
+      if (createError) throw createError;
+
+      // Then call Modal to generate and deploy the bot
       const { data: result, error } = await supabase.functions.invoke('modal-bot-manager', {
         body: {
           action: 'create-bot',
+          botId: botRecord.id,
+          userId: botRecord.user_id,
           name: botName.trim(),
           token: botToken.trim(),
           prompt: botPrompt.trim()
