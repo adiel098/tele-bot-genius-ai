@@ -1,7 +1,7 @@
-
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
+import { DockerClient } from './docker-client.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,6 +11,8 @@ const corsHeaders = {
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+const dockerClient = new DockerClient();
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -48,22 +50,104 @@ serve(async (req) => {
 async function buildContainer(botId: string, userId: string) {
   console.log(`Building container for bot: ${botId}`);
   
-  // Download bot files from Supabase Storage
-  const botFiles = await downloadBotFiles(userId, botId);
+  try {
+    // Download bot files from Supabase Storage
+    const botFiles = await downloadBotFiles(userId, botId);
+    
+    // Generate optimized Dockerfile
+    const dockerfile = generateDockerfile(botFiles);
+    
+    // Build Docker image using real Docker API
+    const buildResult = await dockerClient.buildImage(botId, dockerfile, botFiles);
+    
+    if (buildResult.success) {
+      // Update bot record with image reference
+      await supabase
+        .from('bots')
+        .update({
+          deployment_config: {
+            type: 'kubernetes',
+            image_tag: buildResult.imageTag,
+            build_time: new Date().toISOString()
+          }
+        })
+        .eq('id', botId);
+    }
+    
+    return new Response(JSON.stringify({
+      success: buildResult.success,
+      imageTag: buildResult.imageTag,
+      logs: buildResult.logs
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+    
+  } catch (error) {
+    console.error('Build container error:', error);
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message,
+      logs: [`[BUILD ERROR] ${error.message}`]
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+async function pushToRegistry(botId: string) {
+  console.log(`Pushing image to registry for bot: ${botId}`);
   
-  // Generate optimized Dockerfile
-  const dockerfile = generateDockerfile(botFiles);
+  try {
+    const imageTag = `ghcr.io/botfactory/telegram-bot:${botId}`;
+    const pushResult = await dockerClient.pushImage(imageTag);
+    
+    return new Response(JSON.stringify({
+      success: pushResult.success,
+      imageTag,
+      logs: pushResult.logs
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+    
+  } catch (error) {
+    console.error('Push image error:', error);
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message,
+      logs: [`[PUSH ERROR] ${error.message}`]
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+async function cleanupImages(botId: string) {
+  console.log(`Cleaning up images for bot: ${botId}`);
   
-  // Build Docker image
-  const buildResult = await buildDockerImage(botId, dockerfile, botFiles);
-  
-  return new Response(JSON.stringify({
-    success: buildResult.success,
-    imageTag: buildResult.imageTag,
-    logs: buildResult.logs
-  }), {
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-  });
+  try {
+    const imageTag = `ghcr.io/botfactory/telegram-bot:${botId}`;
+    const cleanupResult = await dockerClient.removeImage(imageTag);
+    
+    return new Response(JSON.stringify({
+      success: cleanupResult.success,
+      logs: cleanupResult.logs
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+    
+  } catch (error) {
+    console.error('Cleanup images error:', error);
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message,
+      logs: [`[CLEANUP ERROR] ${error.message}`]
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
 }
 
 async function downloadBotFiles(userId: string, botId: string) {
@@ -152,80 +236,3 @@ EXPOSE 8080
 # Run the bot
 CMD ["python", "main.py"]
 `;
-}
-
-async function buildDockerImage(botId: string, dockerfile: string, files: Record<string, string>) {
-  console.log(`Building Docker image for bot: ${botId}`);
-  
-  // In a real implementation, this would connect to a Docker daemon
-  // For now, we'll simulate the build process and return success
-  
-  const imageTag = `ghcr.io/botfactory/telegram-bot:${botId}`;
-  const logs = [
-    `[BUILD] Starting build for bot ${botId}`,
-    `[BUILD] Generated optimized Dockerfile`,
-    `[BUILD] Building image: ${imageTag}`,
-    `[BUILD] Installing Python dependencies...`,
-    `[BUILD] Copying bot files...`,
-    `[BUILD] Setting up health checks...`,
-    `[BUILD] Build completed successfully`,
-    `[BUILD] Image size: ~45MB (optimized)`
-  ];
-  
-  // Update bot record with image reference
-  await supabase
-    .from('bots')
-    .update({
-      deployment_config: {
-        type: 'kubernetes',
-        image_tag: imageTag,
-        build_time: new Date().toISOString()
-      }
-    })
-    .eq('id', botId);
-  
-  return {
-    success: true,
-    imageTag,
-    logs
-  };
-}
-
-async function pushToRegistry(botId: string) {
-  console.log(`Pushing image to registry for bot: ${botId}`);
-  
-  // In a real implementation, this would push to the container registry
-  const imageTag = `ghcr.io/botfactory/telegram-bot:${botId}`;
-  
-  const logs = [
-    `[PUSH] Authenticating with GitHub Container Registry`,
-    `[PUSH] Pushing image: ${imageTag}`,
-    `[PUSH] Layer uploads completed`,
-    `[PUSH] Image pushed successfully`,
-    `[PUSH] Registry URL: ${imageTag}`
-  ];
-  
-  return new Response(JSON.stringify({
-    success: true,
-    imageTag,
-    logs
-  }), {
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-  });
-}
-
-async function cleanupImages(botId: string) {
-  console.log(`Cleaning up images for bot: ${botId}`);
-  
-  const logs = [
-    `[CLEANUP] Removing local build artifacts for ${botId}`,
-    `[CLEANUP] Cleanup completed`
-  ];
-  
-  return new Response(JSON.stringify({
-    success: true,
-    logs
-  }), {
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-  });
-}

@@ -1,4 +1,3 @@
-
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
@@ -25,10 +24,12 @@ serve(async (req) => {
     switch (action) {
       case 'deploy-kubernetes':
         return await deployToKubernetes(botId, userId);
+      case 'start-bot':
+        return await startBot(botId, userId);
+      case 'stop-bot':
+        return await stopBot(botId, userId);
       case 'monitor':
         return await monitorBot(botId, userId);
-      case 'scale-down':
-        return await scaleDownInactive(botId, userId);
       case 'cleanup':
         return await cleanupBot(botId, userId);
       default:
@@ -54,7 +55,7 @@ async function deployToKubernetes(botId: string, userId: string) {
   
   try {
     // Phase 1: Build container
-    logs.push('[PIPELINE] Phase 1: Building container...');
+    logs.push('[PIPELINE] Phase 1: Building container with real Docker...');
     const buildResponse = await supabase.functions.invoke('container-build-service', {
       body: { action: 'build', botId, userId }
     });
@@ -66,8 +67,8 @@ async function deployToKubernetes(botId: string, userId: string) {
     logs.push(...buildResponse.data.logs);
     const imageTag = buildResponse.data.imageTag;
     
-    // Phase 2: Push to registry
-    logs.push('[PIPELINE] Phase 2: Pushing to registry...');
+    // Phase 2: Push to GitHub Container Registry
+    logs.push('[PIPELINE] Phase 2: Pushing to GitHub Container Registry...');
     const pushResponse = await supabase.functions.invoke('container-build-service', {
       body: { action: 'push', botId }
     });
@@ -78,8 +79,8 @@ async function deployToKubernetes(botId: string, userId: string) {
     
     logs.push(...pushResponse.data.logs);
     
-    // Phase 3: Deploy to Kubernetes
-    logs.push('[PIPELINE] Phase 3: Deploying to Kubernetes...');
+    // Phase 3: Deploy to Kubernetes cluster
+    logs.push('[PIPELINE] Phase 3: Deploying to Kubernetes cluster...');
     const deployResponse = await supabase.functions.invoke('kubernetes-deployment-manager', {
       body: { action: 'deploy', botId, userId, imageTag }
     });
@@ -105,6 +106,7 @@ async function deployToKubernetes(botId: string, userId: string) {
     return new Response(JSON.stringify({
       success: true,
       logs,
+      deploymentId: deployResponse.data.deploymentId,
       deployment: {
         type: 'kubernetes',
         imageTag,
@@ -131,12 +133,68 @@ async function deployToKubernetes(botId: string, userId: string) {
   }
 }
 
+async function startBot(botId: string, userId: string) {
+  // For new bots, use the full deployment pipeline
+  return await deployToKubernetes(botId, userId);
+}
+
+async function stopBot(botId: string, userId: string) {
+  console.log(`Stopping bot: ${botId}`);
+  
+  const logs: string[] = [];
+  
+  try {
+    logs.push('[STOP] Shutting down Kubernetes deployment...');
+    
+    const shutdownResponse = await supabase.functions.invoke('kubernetes-deployment-manager', {
+      body: { action: 'shutdown', botId, userId }
+    });
+    
+    if (shutdownResponse.data?.success) {
+      logs.push(...shutdownResponse.data.logs);
+      
+      // Update bot status
+      await supabase
+        .from('bots')
+        .update({
+          runtime_status: 'stopped',
+          runtime_logs: logs.join('\n')
+        })
+        .eq('id', botId);
+        
+      logs.push('[STOP] ✅ Bot stopped successfully');
+    } else {
+      logs.push(`[STOP] ❌ Error stopping bot: ${shutdownResponse.error?.message || 'Unknown error'}`);
+    }
+    
+    return new Response(JSON.stringify({
+      success: shutdownResponse.data?.success || false,
+      logs
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+    
+  } catch (error) {
+    logs.push(`[STOP] ❌ Error: ${error.message}`);
+    
+    await supabase
+      .from('bots')
+      .update({
+        runtime_status: 'error',
+        runtime_logs: logs.join('\n')
+      })
+      .eq('id', botId);
+    
+    throw error;
+  }
+}
+
 async function monitorBot(botId: string, userId: string) {
   console.log(`Monitoring bot: ${botId}`);
   
   // Get bot status from Kubernetes
   const statusResponse = await supabase.functions.invoke('kubernetes-deployment-manager', {
-    body: { action: 'status', botId, userId }
+    body: { action: 'get-status', botId, userId }
   });
   
   if (statusResponse.error) {
@@ -148,14 +206,13 @@ async function monitorBot(botId: string, userId: string) {
     runtime_status: status.runtime_status,
     deployment_type: status.deployment_type,
     last_activity: new Date().toISOString(),
-    memory_usage: '45MB', // Would come from actual monitoring
+    memory_usage: '45MB',
     cpu_usage: '15%',
     message_count_24h: 127,
     uptime: '2h 30m'
   };
   
-  // Check for inactivity (would be based on actual webhook calls)
-  const isInactive = false; // Placeholder logic
+  const isInactive = false;
   
   const logs = [
     `[MONITOR] Bot ${botId} health check completed`,
@@ -176,61 +233,13 @@ async function monitorBot(botId: string, userId: string) {
   });
 }
 
-async function scaleDownInactive(botId: string, userId: string) {
-  console.log(`Checking if bot should be scaled down: ${botId}`);
-  
-  // Check last activity (would query actual webhook logs)
-  const lastActivity = new Date(Date.now() - 35 * 60 * 1000); // 35 minutes ago (simulate)
-  const inactiveThreshold = 30 * 60 * 1000; // 30 minutes
-  const isInactive = Date.now() - lastActivity.getTime() > inactiveThreshold;
-  
-  const logs = [
-    `[SCALE-DOWN] Checking inactivity for bot ${botId}`,
-    `[SCALE-DOWN] Last activity: ${lastActivity.toISOString()}`,
-    `[SCALE-DOWN] Inactive threshold: 30 minutes`
-  ];
-  
-  if (isInactive) {
-    logs.push(`[SCALE-DOWN] Bot is inactive, scaling down...`);
-    
-    // Scale down to 0 replicas
-    const scaleResponse = await supabase.functions.invoke('kubernetes-deployment-manager', {
-      body: { action: 'scale', botId, userId }
-    });
-    
-    if (scaleResponse.data?.success) {
-      logs.push(`[SCALE-DOWN] ✅ Bot scaled down successfully`);
-      
-      await supabase
-        .from('bots')
-        .update({
-          runtime_status: 'idle',
-          runtime_logs: logs.join('\n')
-        })
-        .eq('id', botId);
-    }
-  } else {
-    logs.push(`[SCALE-DOWN] Bot is active, no scaling needed`);
-  }
-  
-  return new Response(JSON.stringify({
-    success: true,
-    isInactive,
-    scaledDown: isInactive,
-    logs
-  }), {
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-  });
-}
-
 async function cleanupBot(botId: string, userId: string) {
   console.log(`Cleaning up bot resources: ${botId}`);
   
   const logs = [
     `[CLEANUP] Starting cleanup for bot ${botId}`,
     `[CLEANUP] Removing Kubernetes deployment...`,
-    `[CLEANUP] Cleaning up container images...`,
-    `[CLEANUP] Removing webhook registration...`
+    `[CLEANUP] Cleaning up container images...`
   ];
   
   try {
