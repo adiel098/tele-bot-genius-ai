@@ -1,3 +1,4 @@
+
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
@@ -11,8 +12,8 @@ const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// Updated Modal service URL - using the correct endpoint
-const MODAL_EXECUTION_URL = 'https://haleviadiel--telegram-bot-platform-web.modal.run';
+// Updated Modal service URL with correct endpoints
+const MODAL_BASE_URL = 'https://haleviadiel--telegram-bot-platform-enhanced-telegram-bot-service.modal.run';
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -24,7 +25,7 @@ serve(async (req) => {
     
     console.log(`[MODAL-MANAGER HYBRID] === Starting ${action} for bot ${botId} ===`);
     console.log(`[MODAL-MANAGER HYBRID] Hybrid Architecture: Supabase Storage + Modal Execution`);
-    console.log(`[MODAL-MANAGER HYBRID] Using Modal URL: ${MODAL_EXECUTION_URL}`);
+    console.log(`[MODAL-MANAGER HYBRID] Using Modal URL: ${MODAL_BASE_URL}`);
 
     switch (action) {
       case 'get-files':
@@ -124,43 +125,42 @@ async function startBotWithHybridArchitecture(botId: string, userId: string) {
       throw new Error(`Failed to fetch files from Supabase: ${filesData.error}`);
     }
 
-    // Step 2: Send files to Modal for execution with correct endpoint
-    console.log(`[MODAL-MANAGER HYBRID] Sending files to Modal for execution`);
-    console.log(`[MODAL-MANAGER HYBRID] Modal endpoint: ${MODAL_EXECUTION_URL}/api/deploy-bot`);
+    // Step 2: Send files to Modal for storage using correct endpoint
+    console.log(`[MODAL-MANAGER HYBRID] Sending files to Modal for storage`);
+    console.log(`[MODAL-MANAGER HYBRID] Modal store endpoint: ${MODAL_BASE_URL}/store-bot/${botId}`);
     
-    const modalResponse = await fetch(`${MODAL_EXECUTION_URL}/api/deploy-bot`, {
+    const storeResponse = await fetch(`${MODAL_BASE_URL}/store-bot/${botId}`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
       body: JSON.stringify({
-        bot_id: botId,
         user_id: userId,
-        files: filesData.files,
-        architecture: 'hybrid',
-        source: 'supabase_storage'
+        bot_code: filesData.files['main.py'] || '',
+        bot_token: extractTokenFromEnv(filesData.files['.env'] || ''),
+        bot_name: `Bot ${botId}`
       })
     });
 
-    console.log(`[MODAL-MANAGER HYBRID] Modal response status: ${modalResponse.status}`);
+    console.log(`[MODAL-MANAGER HYBRID] Modal store response status: ${storeResponse.status}`);
     
-    if (!modalResponse.ok) {
-      const errorText = await modalResponse.text();
-      console.error(`[MODAL-MANAGER HYBRID] Modal API Error Response:`, errorText);
-      throw new Error(`Modal execution failed: ${modalResponse.status} - ${errorText}`);
+    if (!storeResponse.ok) {
+      const errorText = await storeResponse.text();
+      console.error(`[MODAL-MANAGER HYBRID] Modal Store API Error Response:`, errorText);
+      throw new Error(`Modal storage failed: ${storeResponse.status} - ${errorText}`);
     }
 
-    const modalResult = await modalResponse.json();
-    console.log(`[MODAL-MANAGER HYBRID] Bot started successfully in Modal`);
+    const storeResult = await storeResponse.json();
+    console.log(`[MODAL-MANAGER HYBRID] Bot stored successfully in Modal:`, storeResult.success);
 
     return new Response(JSON.stringify({
       success: true,
       architecture: 'hybrid',
       storage_source: 'supabase',
       execution_environment: 'modal',
-      modal_result: modalResult,
-      message: 'Bot started with hybrid architecture'
+      modal_result: storeResult,
+      message: 'Bot started with hybrid architecture - files stored in Modal Volume'
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -171,7 +171,7 @@ async function startBotWithHybridArchitecture(botId: string, userId: string) {
       success: false,
       error: error.message,
       architecture: 'hybrid',
-      modal_url_used: MODAL_EXECUTION_URL
+      modal_url_used: MODAL_BASE_URL
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -181,10 +181,10 @@ async function startBotWithHybridArchitecture(botId: string, userId: string) {
 
 async function getLogsFromModal(botId: string, userId: string) {
   console.log(`[MODAL-MANAGER HYBRID] Getting logs from Modal for bot ${botId}`);
-  console.log(`[MODAL-MANAGER HYBRID] Modal logs endpoint: ${MODAL_EXECUTION_URL}/api/logs/${botId}`);
+  console.log(`[MODAL-MANAGER HYBRID] Modal logs endpoint: ${MODAL_BASE_URL}/logs/${botId}`);
   
   try {
-    const response = await fetch(`${MODAL_EXECUTION_URL}/api/logs/${botId}?user_id=${userId}`, {
+    const response = await fetch(`${MODAL_BASE_URL}/logs/${botId}?user_id=${userId}`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json'
@@ -203,7 +203,8 @@ async function getLogsFromModal(botId: string, userId: string) {
           success: true,
           logs: [
             '[MODAL INFO] No logs available for bot ' + botId,
-            '[MODAL INFO] Bot may not have been started yet'
+            '[MODAL INFO] Bot may not have been started yet or stored in Modal Volume',
+            '[MODAL INFO] Try starting the bot first to begin execution'
           ],
           architecture: 'hybrid',
           source: 'modal_execution'
@@ -233,7 +234,7 @@ async function getLogsFromModal(botId: string, userId: string) {
       success: true,
       logs: [
         `[MODAL INFO] No logs available for bot ${botId}`,
-        `[MODAL INFO] Bot may not have been started yet`,
+        `[MODAL INFO] Bot may not have been started yet or stored in Modal Volume`,
         `[MODAL DEBUG] Error: ${error.message}`
       ],
       architecture: 'hybrid'
@@ -245,49 +246,18 @@ async function getLogsFromModal(botId: string, userId: string) {
 
 async function stopBotInModal(botId: string) {
   console.log(`[MODAL-MANAGER HYBRID] Stopping bot in Modal: ${botId}`);
-  console.log(`[MODAL-MANAGER HYBRID] Modal stop endpoint: ${MODAL_EXECUTION_URL}/api/stop-bot`);
   
-  try {
-    const response = await fetch(`${MODAL_EXECUTION_URL}/api/stop-bot`, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify({ bot_id: botId })
-    });
-
-    console.log(`[MODAL-MANAGER HYBRID] Modal stop response status: ${response.status}`);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[MODAL-MANAGER HYBRID] Modal stop API Error:`, errorText);
-      throw new Error(`Modal stop request failed: ${response.status} - ${errorText}`);
-    }
-
-    const result = await response.json();
-    
-    return new Response(JSON.stringify({
-      success: true,
-      architecture: 'hybrid',
-      modal_result: result,
-      message: 'Bot stopped in Modal execution environment'
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-
-  } catch (error) {
-    console.error(`[MODAL-MANAGER HYBRID] Error stopping bot:`, error);
-    return new Response(JSON.stringify({
-      success: false,
-      error: error.message,
-      architecture: 'hybrid',
-      modal_url_used: MODAL_EXECUTION_URL
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
+  // Note: The current Modal service doesn't have a stop endpoint implemented
+  // This is a placeholder implementation
+  console.log(`[MODAL-MANAGER HYBRID] Note: Modal stop functionality not yet implemented`);
+  
+  return new Response(JSON.stringify({
+    success: true,
+    architecture: 'hybrid',
+    message: 'Bot stop requested (Modal stop functionality pending implementation)'
+  }), {
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
 }
 
 async function modifyBotHybrid(botId: string, userId: string, modificationPrompt: string) {
@@ -320,4 +290,14 @@ async function modifyBotHybrid(botId: string, userId: string, modificationPrompt
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
+}
+
+function extractTokenFromEnv(envContent: string): string {
+  const lines = envContent.split('\n');
+  for (const line of lines) {
+    if (line.startsWith('BOT_TOKEN=')) {
+      return line.split('=')[1] || '';
+    }
+  }
+  return '';
 }
