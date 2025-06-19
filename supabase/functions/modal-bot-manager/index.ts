@@ -1,4 +1,3 @@
-
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
@@ -13,7 +12,7 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const openaiApiKey = Deno.env.get('OPENAI_API_KEY')!;
 
-// These will be the actual Modal function URLs after deployment
+// Updated Modal function URLs to match actual deployment
 const MODAL_FUNCTIONS = {
   store_and_run: 'https://haleviadiel--telegram-bot-platform-store-and-run-bot.modal.run',
   start_bot: 'https://haleviadiel--telegram-bot-platform-start-telegram-bot.modal.run',
@@ -401,18 +400,61 @@ async function restartBot(botId: string, userId: string) {
 }
 
 async function getBotLogs(botId: string, userId: string) {
-  const response = await fetch(MODAL_FUNCTIONS.get_logs, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      bot_id: botId,
-      user_id: userId
-    })
-  });
+  try {
+    console.log(`[MODAL-MANAGER] Fetching logs for bot ${botId} from Modal`);
+    
+    const response = await fetch(MODAL_FUNCTIONS.get_logs, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        bot_id: botId,
+        user_id: userId
+      })
+    });
 
-  return await response.json();
+    console.log(`[MODAL-MANAGER] Modal logs response status: ${response.status}`);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[MODAL-MANAGER] Modal logs HTTP error: ${response.status} - ${errorText}`);
+      
+      return {
+        success: false,
+        error: `Modal HTTP error: ${response.status}`,
+        logs: [`[MODAL ERROR] HTTP ${response.status}: ${errorText}`]
+      };
+    }
+
+    const contentType = response.headers.get('content-type');
+    console.log(`[MODAL-MANAGER] Modal logs content-type: ${contentType}`);
+    
+    if (!contentType || !contentType.includes('application/json')) {
+      const textResponse = await response.text();
+      console.error(`[MODAL-MANAGER] Expected JSON but got: ${textResponse.substring(0, 100)}...`);
+      
+      return {
+        success: false,
+        error: 'Modal returned non-JSON response',
+        logs: [`[MODAL ERROR] Expected JSON but received: ${textResponse.substring(0, 200)}...`]
+      };
+    }
+
+    const result = await response.json();
+    console.log(`[MODAL-MANAGER] Successfully parsed Modal logs response`);
+    
+    return result;
+    
+  } catch (error) {
+    console.error(`[MODAL-MANAGER] Exception in getBotLogs:`, error);
+    
+    return {
+      success: false,
+      error: error.message,
+      logs: [`[MODAL EXCEPTION] ${error.message}`]
+    };
+  }
 }
 
 async function getBotStatus(botId: string, userId: string) {
