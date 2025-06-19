@@ -947,9 +947,33 @@ def telegram_bot_service():
 
     @web_app.post("/store-bot/{bot_id}")
     async def optimized_store_bot_endpoint(bot_id: str, request: Request):
-        """Optimized store bot endpoint using Modal function patterns"""
+        """Optimized store bot endpoint using Modal function patterns with robust JSON handling"""
         try:
-            body = await request.json()
+            # Get raw body first
+            raw_body = await request.body()
+            print(f"[MODAL OPTIMIZED API] Raw body received: {raw_body[:200]}...")
+            
+            # Try to parse JSON with better error handling
+            try:
+                if request.headers.get("content-type") == "application/json":
+                    body = await request.json()
+                else:
+                    # Try to parse raw body as JSON
+                    body_str = raw_body.decode('utf-8')
+                    print(f"[MODAL OPTIMIZED API] Body string: {body_str[:200]}...")
+                    body = json.loads(body_str)
+            except json.JSONDecodeError as e:
+                print(f"[MODAL OPTIMIZED API] JSON parse error: {str(e)}")
+                print(f"[MODAL OPTIMIZED API] Raw body: {raw_body}")
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Invalid JSON: {str(e)}. Received: {raw_body[:100]}"
+                )
+            except Exception as e:
+                print(f"[MODAL OPTIMIZED API] Request parsing error: {str(e)}")
+                raise HTTPException(status_code=400, detail=f"Request parsing error: {str(e)}")
+            
+            print(f"[MODAL OPTIMIZED API] Parsed body: {body}")
             
             user_id = body.get("user_id")
             bot_code = body.get("bot_code")
@@ -957,9 +981,18 @@ def telegram_bot_service():
             bot_name = body.get("bot_name", f"Bot {bot_id}")
             
             if not all([user_id, bot_code, bot_token]):
-                raise HTTPException(status_code=400, detail="Missing required fields")
+                missing_fields = []
+                if not user_id: missing_fields.append("user_id")
+                if not bot_code: missing_fields.append("bot_code")
+                if not bot_token: missing_fields.append("bot_token")
+                
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Missing required fields: {', '.join(missing_fields)}"
+                )
             
             print(f"[MODAL OPTIMIZED API] Storing bot {bot_id} with optimized patterns")
+            print(f"[MODAL OPTIMIZED API] Code length: {len(bot_code)} characters")
             
             # Call optimized Modal function
             result = optimized_store_bot_files.remote(bot_id, user_id, bot_code, bot_token, bot_name)
@@ -968,8 +1001,13 @@ def telegram_bot_service():
             
             return result
             
+        except HTTPException:
+            # Re-raise HTTP exceptions as-is
+            raise
         except Exception as e:
-            print(f"[MODAL OPTIMIZED API] Error in store endpoint: {str(e)}")
+            print(f"[MODAL OPTIMIZED API] Unexpected error in store endpoint: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return {
                 "success": False,
                 "error": str(e),
@@ -1165,10 +1203,19 @@ def telegram_bot_service():
                 "Batch operation support",
                 "Comprehensive health checks",
                 "Enhanced error handling",
-                "Volume busy error prevention"
+                "Volume busy error prevention",
+                "Robust JSON parsing"
             ],
             "loaded_bots": list(bot_instances.keys()),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "endpoints": [
+                "POST /store-bot/{bot_id} - Store bot with enhanced JSON handling",
+                "GET /files/{bot_id} - Get bot files",
+                "GET /logs/{bot_id} - Get bot logs",
+                "GET /health-check/{bot_id} - Health check",
+                "POST /test-volume - Test volume storage",
+                "GET /list-test-files - List test files"
+            ]
         }
 
     return web_app
