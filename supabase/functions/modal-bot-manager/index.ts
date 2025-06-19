@@ -1,4 +1,3 @@
-
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
@@ -12,8 +11,8 @@ const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// Modal service URL - now only for execution
-const MODAL_EXECUTION_URL = 'https://haleviadiel--telegram-bot-platform-telegram-bot-service.modal.run';
+// Updated Modal service URL - using the correct endpoint
+const MODAL_EXECUTION_URL = 'https://haleviadiel--telegram-bot-platform-web.modal.run';
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -25,6 +24,7 @@ serve(async (req) => {
     
     console.log(`[MODAL-MANAGER HYBRID] === Starting ${action} for bot ${botId} ===`);
     console.log(`[MODAL-MANAGER HYBRID] Hybrid Architecture: Supabase Storage + Modal Execution`);
+    console.log(`[MODAL-MANAGER HYBRID] Using Modal URL: ${MODAL_EXECUTION_URL}`);
 
     switch (action) {
       case 'get-files':
@@ -124,11 +124,16 @@ async function startBotWithHybridArchitecture(botId: string, userId: string) {
       throw new Error(`Failed to fetch files from Supabase: ${filesData.error}`);
     }
 
-    // Step 2: Send files to Modal for execution
+    // Step 2: Send files to Modal for execution with correct endpoint
     console.log(`[MODAL-MANAGER HYBRID] Sending files to Modal for execution`);
-    const modalResponse = await fetch(`${MODAL_EXECUTION_URL}/deploy-and-run/${botId}`, {
+    console.log(`[MODAL-MANAGER HYBRID] Modal endpoint: ${MODAL_EXECUTION_URL}/api/deploy-bot`);
+    
+    const modalResponse = await fetch(`${MODAL_EXECUTION_URL}/api/deploy-bot`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
       body: JSON.stringify({
         bot_id: botId,
         user_id: userId,
@@ -138,8 +143,11 @@ async function startBotWithHybridArchitecture(botId: string, userId: string) {
       })
     });
 
+    console.log(`[MODAL-MANAGER HYBRID] Modal response status: ${modalResponse.status}`);
+    
     if (!modalResponse.ok) {
       const errorText = await modalResponse.text();
+      console.error(`[MODAL-MANAGER HYBRID] Modal API Error Response:`, errorText);
       throw new Error(`Modal execution failed: ${modalResponse.status} - ${errorText}`);
     }
 
@@ -162,7 +170,8 @@ async function startBotWithHybridArchitecture(botId: string, userId: string) {
     return new Response(JSON.stringify({
       success: false,
       error: error.message,
-      architecture: 'hybrid'
+      architecture: 'hybrid',
+      modal_url_used: MODAL_EXECUTION_URL
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -172,21 +181,45 @@ async function startBotWithHybridArchitecture(botId: string, userId: string) {
 
 async function getLogsFromModal(botId: string, userId: string) {
   console.log(`[MODAL-MANAGER HYBRID] Getting logs from Modal for bot ${botId}`);
+  console.log(`[MODAL-MANAGER HYBRID] Modal logs endpoint: ${MODAL_EXECUTION_URL}/api/logs/${botId}`);
   
   try {
-    const response = await fetch(`${MODAL_EXECUTION_URL}/logs/${botId}?user_id=${userId}`, {
-      method: 'GET'
+    const response = await fetch(`${MODAL_EXECUTION_URL}/api/logs/${botId}?user_id=${userId}`, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json'
+      }
     });
 
+    console.log(`[MODAL-MANAGER HYBRID] Modal logs response status: ${response.status}`);
+
     if (!response.ok) {
-      throw new Error(`Modal logs request failed: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`[MODAL-MANAGER HYBRID] Modal logs API Error:`, errorText);
+      
+      // Return empty logs instead of error for 404 (bot not started)
+      if (response.status === 404) {
+        return new Response(JSON.stringify({
+          success: true,
+          logs: [
+            '[MODAL INFO] No logs available for bot ' + botId,
+            '[MODAL INFO] Bot may not have been started yet'
+          ],
+          architecture: 'hybrid',
+          source: 'modal_execution'
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      throw new Error(`Modal logs request failed: ${response.status} - ${errorText}`);
     }
 
     const logsData = await response.json();
     
     return new Response(JSON.stringify({
       success: true,
-      logs: logsData.logs || [],
+      logs: logsData.logs || ['[MODAL INFO] No logs available'],
       architecture: 'hybrid',
       source: 'modal_execution',
       message: 'Logs retrieved from Modal execution environment'
@@ -197,8 +230,12 @@ async function getLogsFromModal(botId: string, userId: string) {
   } catch (error) {
     console.error(`[MODAL-MANAGER HYBRID] Error fetching logs:`, error);
     return new Response(JSON.stringify({
-      success: false,
-      logs: [`[HYBRID ERROR] Failed to fetch logs: ${error.message}`],
+      success: true,
+      logs: [
+        `[MODAL INFO] No logs available for bot ${botId}`,
+        `[MODAL INFO] Bot may not have been started yet`,
+        `[MODAL DEBUG] Error: ${error.message}`
+      ],
       architecture: 'hybrid'
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -208,14 +245,24 @@ async function getLogsFromModal(botId: string, userId: string) {
 
 async function stopBotInModal(botId: string) {
   console.log(`[MODAL-MANAGER HYBRID] Stopping bot in Modal: ${botId}`);
+  console.log(`[MODAL-MANAGER HYBRID] Modal stop endpoint: ${MODAL_EXECUTION_URL}/api/stop-bot`);
   
   try {
-    const response = await fetch(`${MODAL_EXECUTION_URL}/stop/${botId}`, {
-      method: 'POST'
+    const response = await fetch(`${MODAL_EXECUTION_URL}/api/stop-bot`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({ bot_id: botId })
     });
 
+    console.log(`[MODAL-MANAGER HYBRID] Modal stop response status: ${response.status}`);
+
     if (!response.ok) {
-      throw new Error(`Modal stop request failed: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`[MODAL-MANAGER HYBRID] Modal stop API Error:`, errorText);
+      throw new Error(`Modal stop request failed: ${response.status} - ${errorText}`);
     }
 
     const result = await response.json();
@@ -234,7 +281,8 @@ async function stopBotInModal(botId: string) {
     return new Response(JSON.stringify({
       success: false,
       error: error.message,
-      architecture: 'hybrid'
+      architecture: 'hybrid',
+      modal_url_used: MODAL_EXECUTION_URL
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
