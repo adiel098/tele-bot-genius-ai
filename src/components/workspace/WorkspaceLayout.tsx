@@ -50,6 +50,7 @@ const WorkspaceLayout = ({
   const [logsHasErrors, setLogsHasErrors] = useState(false);
   const [logsErrorContent, setLogsErrorContent] = useState("");
   const [activeTab, setActiveTab] = useState("files");
+  const [currentFiles, setCurrentFiles] = useState(latestFiles);
 
   const handleLogsUpdate = useCallback((logs: string, hasErrorsDetected: boolean) => {
     setLogsErrorContent(logs);
@@ -65,11 +66,17 @@ const WorkspaceLayout = ({
     await onFixByAI(errorLogs);
   }, [onFixByAI]);
 
+  const handleFilesUpdate = useCallback((files: Record<string, string>) => {
+    setCurrentFiles(files);
+  }, []);
+
   // Combine errors from props and logs
   const combinedHasErrors = hasErrors || logsHasErrors;
   const combinedErrorLogs = errorLogs || logsErrorContent;
 
-  const filesCount = Object.keys(latestFiles).length;
+  // Use currentFiles if available, otherwise fall back to latestFiles
+  const displayFiles = Object.keys(currentFiles).length > 0 ? currentFiles : latestFiles;
+  const filesCount = Object.keys(displayFiles).length;
 
   return (
     <div className="flex h-[calc(100vh-73px)]">
@@ -119,7 +126,12 @@ const WorkspaceLayout = ({
           </TabsList>
           
           <TabsContent value="files" className="flex-1 p-4">
-            <FilesPanel files={latestFiles} onFileSelect={onFileSelect} />
+            <FilesPanel 
+              files={displayFiles} 
+              onFileSelect={onFileSelect}
+              botId={botId}
+              onFilesUpdate={handleFilesUpdate}
+            />
           </TabsContent>
           
           <TabsContent value="logs" className="flex-1 p-4">

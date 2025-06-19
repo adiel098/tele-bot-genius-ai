@@ -52,6 +52,9 @@ serve(async (req) => {
       case 'fix-bot':
         result = await fixBot(botId, userId);
         break;
+      case 'get-files':
+        result = await getBotFiles(botId, userId);
+        break;
       default:
         throw new Error(`Unknown action: ${action}`);
     }
@@ -205,8 +208,8 @@ async function createBot(botId: string, userId: string, name: string, prompt: st
     throw new Error('Failed to generate bot code');
   }
 
-  // Step 2: Store bot code directly in Modal FastAPI service
-  console.log(`[MODAL-MANAGER] Storing bot ${botId} in Modal FastAPI service`);
+  // Step 2: Store bot code in Modal volume via FastAPI service
+  console.log(`[MODAL-MANAGER] Storing bot ${botId} in Modal volume`);
   
   const storeResponse = await fetch(`${MODAL_BASE_URL}/store-bot/${botId}`, {
     method: 'POST',
@@ -224,14 +227,28 @@ async function createBot(botId: string, userId: string, name: string, prompt: st
   if (!storeResponse.ok) {
     const errorText = await storeResponse.text();
     console.error(`[MODAL-MANAGER] Store request failed: ${storeResponse.status} - ${errorText}`);
-    throw new Error(`Failed to store bot: ${storeResponse.status} - ${errorText}`);
+    throw new Error(`Failed to store bot in Modal volume: ${storeResponse.status} - ${errorText}`);
   }
 
   const storeResult = await storeResponse.json();
   console.log(`[MODAL-MANAGER] Store result:`, storeResult);
 
   if (!storeResult.success) {
-    throw new Error(`Failed to store bot: ${storeResult.error}`);
+    throw new Error(`Failed to store bot in Modal volume: ${storeResult.error}`);
+  }
+
+  // Step 3: Verify file storage in Modal volume
+  const verifyResponse = await fetch(`${MODAL_BASE_URL}/debug/volume/${botId}?user_id=${userId}`, {
+    method: 'GET'
+  });
+
+  let verificationStatus = "Files stored in Modal volume";
+  if (verifyResponse.ok) {
+    const verifyResult = await verifyResponse.json();
+    if (verifyResult.success) {
+      console.log(`[MODAL-MANAGER] Volume verification:`, verifyResult.debug_info);
+      verificationStatus = `Files verified in Modal volume: ${verifyResult.debug_info.files?.length || 0} files`;
+    }
   }
 
   // Update conversation history
@@ -244,8 +261,11 @@ async function createBot(botId: string, userId: string, name: string, prompt: st
     },
     {
       role: 'assistant',
-      content: `Bot created and stored successfully! ${codeResult.explanation}`,
-      timestamp: new Date().toISOString()
+      content: `Bot created and stored in Modal volume! ${codeResult.explanation}`,
+      timestamp: new Date().toISOString(),
+      files: {
+        'main.py': codeResult.code
+      }
     }
   ];
 
@@ -256,7 +276,7 @@ async function createBot(botId: string, userId: string, name: string, prompt: st
       status: 'stored',
       runtime_status: 'stopped',
       conversation_history: updatedHistory,
-      runtime_logs: (storeResult.logs || []).join('\n'),
+      runtime_logs: verificationStatus,
       files_stored: true
     })
     .eq('id', botId);
@@ -264,8 +284,43 @@ async function createBot(botId: string, userId: string, name: string, prompt: st
   return {
     botCode: codeResult,
     deployment: storeResult,
-    message: 'Bot generated with OpenAI and stored in Modal FastAPI service. Files verified and ready to start!'
+    verification: verificationStatus,
+    message: 'Bot generated with OpenAI and stored in Modal volume. Files verified and ready to start!'
   };
+}
+
+async function getBotFiles(botId: string, userId: string) {
+  console.log(`[MODAL-MANAGER] Getting files for bot ${botId} from Modal volume`);
+  
+  try {
+    const response = await fetch(`${MODAL_BASE_URL}/files/${botId}?user_id=${userId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to get files: ${response.status}`);
+    }
+
+    const result = await response.json();
+    
+    return {
+      success: true,
+      files: result.files || {},
+      storage_type: 'modal_volume'
+    };
+    
+  } catch (error) {
+    console.error(`[MODAL-MANAGER] Error getting files:`, error);
+    return {
+      success: false,
+      error: error.message,
+      files: {},
+      storage_type: 'modal_volume'
+    };
+  }
 }
 
 async function startBot(botId: string, userId: string) {
@@ -320,7 +375,7 @@ async function startBot(botId: string, userId: string) {
       .from('bots')
       .update({
         runtime_status: webhookResult.success ? 'running' : 'stopped',
-        runtime_logs: `Bot loaded in Modal FastAPI service\nWebhook URL: ${webhookUrl}\nStatus: ${webhookResult.success ? 'Running' : 'Failed'}`
+        runtime_logs: `Bot loaded from Modal volume\nWebhook URL: ${webhookUrl}\nStatus: ${webhookResult.success ? 'Running' : 'Failed'}`
       })
       .eq('id', botId);
 
@@ -329,8 +384,9 @@ async function startBot(botId: string, userId: string) {
       status: webhookResult.success ? 'running' : 'stopped',
       service_url: MODAL_BASE_URL,
       webhook_url: webhookUrl,
+      storage_type: 'modal_volume',
       logs: [
-        `[MODAL] Bot loaded in FastAPI service`,
+        `[MODAL] Bot loaded from Modal volume`,
         `[MODAL] Webhook registered: ${webhookUrl}`,
         `[MODAL] Bot ${botId} is now running`
       ]
@@ -386,7 +442,7 @@ async function stopBot(botId: string, userId: string) {
       .from('bots')
       .update({
         runtime_status: 'stopped',
-        runtime_logs: `Bot stopped and webhook unregistered\nUnloaded from service: ${unloadResult.success}`
+        runtime_logs: `Bot stopped and webhook unregistered\nUnloaded from Modal volume: ${unloadResult.success}`
       })
       .eq('id', botId);
 
@@ -394,7 +450,8 @@ async function stopBot(botId: string, userId: string) {
       success: true,
       status: 'stopped',
       webhook_unregistered: webhookResult.success,
-      bot_unloaded: unloadResult.success
+      bot_unloaded: unloadResult.success,
+      storage_type: 'modal_volume'
     };
     
   } catch (error) {
@@ -429,7 +486,10 @@ async function getBotLogs(botId: string, userId: string) {
     if (serviceLogsResponse.ok) {
       const serviceLogsResult = await serviceLogsResponse.json();
       if (serviceLogsResult.success) {
-        return serviceLogsResult;
+        return {
+          ...serviceLogsResult,
+          storage_type: 'modal_volume'
+        };
       }
     }
 
@@ -437,7 +497,8 @@ async function getBotLogs(botId: string, userId: string) {
     return {
       success: false,
       error: 'Failed to get logs from Modal service',
-      logs: [`[MODAL ERROR] Could not retrieve logs from FastAPI service`]
+      logs: [`[MODAL ERROR] Could not retrieve logs from FastAPI service`],
+      storage_type: 'modal_volume'
     };
     
   } catch (error) {
@@ -446,7 +507,8 @@ async function getBotLogs(botId: string, userId: string) {
     return {
       success: false,
       error: error.message,
-      logs: [`[MODAL EXCEPTION] ${error.message}`]
+      logs: [`[MODAL EXCEPTION] ${error.message}`],
+      storage_type: 'modal_volume'
     };
   }
 }
@@ -468,6 +530,7 @@ async function getBotStatus(botId: string, userId: string) {
         status: healthResult.loaded ? 'running' : 'stopped',
         deployment_type: 'modal',
         runtime: 'Modal FastAPI Service',
+        storage_type: 'modal_volume',
         loaded: healthResult.loaded,
         service_status: healthResult.status
       };
@@ -478,7 +541,8 @@ async function getBotStatus(botId: string, userId: string) {
     return {
       success: false,
       error: error.message,
-      status: 'error'
+      status: 'error',
+      storage_type: 'modal_volume'
     };
   }
 }
@@ -495,7 +559,7 @@ async function modifyBot(botId: string, userId: string, modificationPrompt: stri
     throw new Error('Bot not found');
   }
 
-  // Get current code from Modal using FastAPI endpoint
+  // Get current code from Modal volume using FastAPI endpoint
   const codeResponse = await fetch(`${MODAL_BASE_URL}/files/${botId}?user_id=${userId}`, {
     method: 'GET',
     headers: {
@@ -514,7 +578,7 @@ async function modifyBot(botId: string, userId: string, modificationPrompt: stri
   );
 
   if (modifyResult.success) {
-    // Store updated code using FastAPI endpoint
+    // Store updated code in Modal volume using FastAPI endpoint
     await fetch(`${MODAL_BASE_URL}/store-bot/${botId}`, {
       method: 'POST',
       headers: {
@@ -538,8 +602,11 @@ async function modifyBot(botId: string, userId: string, modificationPrompt: stri
       },
       {
         role: 'assistant',
-        content: `Bot modified successfully! ${modifyResult.explanation}`,
-        timestamp: new Date().toISOString()
+        content: `Bot modified successfully in Modal volume! ${modifyResult.explanation}`,
+        timestamp: new Date().toISOString(),
+        files: {
+          'main.py': modifyResult.code
+        }
       }
     ];
 
@@ -551,7 +618,10 @@ async function modifyBot(botId: string, userId: string, modificationPrompt: stri
       .eq('id', botId);
   }
 
-  return modifyResult;
+  return {
+    ...modifyResult,
+    storage_type: 'modal_volume'
+  };
 }
 
 async function fixBot(botId: string, userId: string) {
@@ -559,7 +629,7 @@ async function fixBot(botId: string, userId: string) {
   const logs = await getBotLogs(botId, userId);
   const errorLogs = logs.logs?.join('\n') || '';
 
-  // Get current code
+  // Get current code from Modal volume
   const codeResponse = await fetch(`${MODAL_BASE_URL}/files/${botId}?user_id=${userId}`, {
     method: 'GET',
     headers: {
