@@ -14,15 +14,15 @@ import uuid
 import random
 import string
 
-# Configure Modal stub with correct syntax
-stub = modal.Stub("telegram-bot-platform")
+# Create Modal app with correct modern syntax
+app = modal.App("telegram-bot-platform")
 
 # Create Modal image with all required Python dependencies for Telegram bots
 image = (
     modal.Image.debian_slim()
     .pip_install([
         "python-telegram-bot>=20.0",
-        "requests>=2.28.0",
+        "requests>=2.28.0", 
         "python-dotenv>=1.0.0",
         "aiohttp>=3.8.0",
         "fastapi[standard]>=0.115.0",
@@ -56,23 +56,22 @@ def add_bot_log(bot_id: str, message: str, level: str = "INFO"):
     
     print(f"[BOT LOG {bot_id}] {log_entry}")
 
-@stub.function(
+@app.function(
     image=image,
     volumes={"/data": volume},
-    min_containers=1,
     timeout=3600
 )
 @modal.web_endpoint(method="POST", path="/api/deploy-bot")
-def deploy_bot_endpoint(payload: dict):
+def deploy_bot_endpoint(request_data: dict):
     """Deploy bot endpoint matching Supabase expectations"""
     try:
         print(f"[MODAL DEPLOY] === Deploying bot ===")
         
-        bot_id = payload.get("bot_id")
-        user_id = payload.get("user_id")
-        bot_code = payload.get("bot_code", "")
-        bot_token = payload.get("bot_token", "")
-        bot_name = payload.get("bot_name", f"Bot {bot_id}")
+        bot_id = request_data.get("bot_id")
+        user_id = request_data.get("user_id") 
+        bot_code = request_data.get("bot_code", "")
+        bot_token = request_data.get("bot_token", "")
+        bot_name = request_data.get("bot_name", f"Bot {bot_id}")
         
         if not bot_id or not user_id:
             return {
@@ -110,10 +109,9 @@ def deploy_bot_endpoint(payload: dict):
             "error": error_message
         }
 
-@stub.function(
+@app.function(
     image=image,
     volumes={"/data": volume},
-    min_containers=1,
     timeout=3600
 )
 @modal.web_endpoint(method="GET", path="/api/logs/{bot_id}")
@@ -147,10 +145,9 @@ def get_logs_endpoint(bot_id: str):
             "logs": []
         }
 
-@stub.function(
+@app.function(
     image=image,
     volumes={"/data": volume},
-    min_containers=1,
     timeout=3600
 )
 @modal.web_endpoint(method="POST", path="/api/stop-bot/{bot_id}")
@@ -178,10 +175,9 @@ def stop_bot_endpoint(bot_id: str):
             "error": error_message
         }
 
-@stub.function(
+@app.function(
     image=image,
     volumes={"/data": volume},
-    min_containers=1,
     timeout=3600
 )
 @modal.web_endpoint(method="GET", path="/health")
@@ -202,10 +198,9 @@ def health_check():
             "error": str(e)
         }
 
-@stub.function(
+@app.function(
     image=image,
     volumes={"/data": volume},
-    min_containers=1,
     timeout=3600
 )
 def store_and_deploy_bot(bot_id: str, user_id: str, bot_code: str, bot_token: str, bot_name: str):
@@ -270,10 +265,9 @@ def store_and_deploy_bot(bot_id: str, user_id: str, bot_code: str, bot_token: st
             "error": error_message
         }
 
-@stub.function(
+@app.function(
     image=image,
     volumes={"/data": volume},
-    min_containers=1,
     timeout=3600
 )
 def get_bot_files(bot_id: str, user_id: str):

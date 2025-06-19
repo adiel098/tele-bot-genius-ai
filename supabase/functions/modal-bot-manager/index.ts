@@ -11,8 +11,8 @@ const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// Updated Modal service URL to match the web endpoints
-const MODAL_BASE_URL = 'https://haleviadiel--telegram-bot-platform-web.modal.run';
+// Updated Modal service URL - this should match your deployed Modal app
+const MODAL_BASE_URL = 'https://haleviadiel--telegram-bot-platform.modal.run';
 const REQUEST_TIMEOUT = 30000; // 30 seconds
 
 serve(async (req) => {
@@ -106,6 +106,13 @@ async function startBotInModal(botId: string, userId: string, prompt?: string, t
       bot_name: name || `Bot ${botId}`,
       files: filesData.files
     };
+
+    console.log(`[MODAL-MANAGER] Sending payload to Modal:`, {
+      bot_id: deployPayload.bot_id,
+      user_id: deployPayload.user_id,
+      code_length: deployPayload.bot_code.length,
+      has_token: !!deployPayload.bot_token
+    });
 
     const deployResponse = await makeModalRequestWithTimeout(deployEndpoint, {
       method: 'POST',
