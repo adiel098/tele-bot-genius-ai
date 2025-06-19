@@ -12,8 +12,8 @@ const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// Updated Modal service URL with correct endpoints
-const MODAL_BASE_URL = 'https://haleviadiel--telegram-bot-platform-enhanced-telegram-bot-service.modal.run';
+// Fixed Modal service URL - using the correct Modal app URL format
+const MODAL_BASE_URL = 'https://haleviadiel--telegram-bot-platform-web.modal.run';
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -25,7 +25,7 @@ serve(async (req) => {
     
     console.log(`[MODAL-MANAGER HYBRID] === Starting ${action} for bot ${botId} ===`);
     console.log(`[MODAL-MANAGER HYBRID] Hybrid Architecture: Supabase Storage + Modal Execution`);
-    console.log(`[MODAL-MANAGER HYBRID] Using Modal URL: ${MODAL_BASE_URL}`);
+    console.log(`[MODAL-MANAGER HYBRID] Using corrected Modal URL: ${MODAL_BASE_URL}`);
 
     switch (action) {
       case 'get-files':
@@ -125,34 +125,69 @@ async function startBotWithHybridArchitecture(botId: string, userId: string) {
       throw new Error(`Failed to fetch files from Supabase: ${filesData.error}`);
     }
 
-    // Step 2: Send files to Modal for storage using correct endpoint
-    console.log(`[MODAL-MANAGER HYBRID] Sending files to Modal for storage`);
-    console.log(`[MODAL-MANAGER HYBRID] Modal store endpoint: ${MODAL_BASE_URL}/store-bot/${botId}`);
+    // Step 2: Send files to Modal for deployment with improved error handling
+    console.log(`[MODAL-MANAGER HYBRID] Sending files to Modal for deployment`);
+    console.log(`[MODAL-MANAGER HYBRID] Modal deploy endpoint: ${MODAL_BASE_URL}/api/deploy-bot`);
     
-    const storeResponse = await fetch(`${MODAL_BASE_URL}/store-bot/${botId}`, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify({
-        user_id: userId,
-        bot_code: filesData.files['main.py'] || '',
-        bot_token: extractTokenFromEnv(filesData.files['.env'] || ''),
-        bot_name: `Bot ${botId}`
-      })
-    });
+    let storeResponse;
+    try {
+      storeResponse = await fetch(`${MODAL_BASE_URL}/api/deploy-bot`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          bot_id: botId,
+          user_id: userId,
+          bot_code: filesData.files['main.py'] || '',
+          bot_token: extractTokenFromEnv(filesData.files['.env'] || ''),
+          bot_name: `Bot ${botId}`,
+          files: filesData.files
+        })
+      });
+    } catch (networkError) {
+      console.error(`[MODAL-MANAGER HYBRID] Network error connecting to Modal:`, networkError);
+      
+      // Return a user-friendly error for network issues
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'Unable to connect to Modal execution service. The service may be temporarily unavailable.',
+        errorType: 'network_error',
+        architecture: 'hybrid',
+        modal_url_attempted: MODAL_BASE_URL,
+        troubleshooting: 'Modal service might be down or URL incorrect'
+      }), {
+        status: 503, // Service Unavailable
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
-    console.log(`[MODAL-MANAGER HYBRID] Modal store response status: ${storeResponse.status}`);
+    console.log(`[MODAL-MANAGER HYBRID] Modal deploy response status: ${storeResponse.status}`);
     
     if (!storeResponse.ok) {
       const errorText = await storeResponse.text();
-      console.error(`[MODAL-MANAGER HYBRID] Modal Store API Error Response:`, errorText);
-      throw new Error(`Modal storage failed: ${storeResponse.status} - ${errorText}`);
+      console.error(`[MODAL-MANAGER HYBRID] Modal Deploy API Error Response:`, errorText);
+      
+      // Handle 404 specifically (service endpoint not found)
+      if (storeResponse.status === 404) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Modal deployment endpoint not found. The service may not be properly configured.',
+          errorType: 'service_not_found',
+          architecture: 'hybrid',
+          modal_url_used: MODAL_BASE_URL
+        }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      throw new Error(`Modal deployment failed: ${storeResponse.status} - ${errorText}`);
     }
 
     const storeResult = await storeResponse.json();
-    console.log(`[MODAL-MANAGER HYBRID] Bot stored successfully in Modal:`, storeResult.success);
+    console.log(`[MODAL-MANAGER HYBRID] Bot deployed successfully in Modal:`, storeResult.success);
 
     return new Response(JSON.stringify({
       success: true,
@@ -160,7 +195,7 @@ async function startBotWithHybridArchitecture(botId: string, userId: string) {
       storage_source: 'supabase',
       execution_environment: 'modal',
       modal_result: storeResult,
-      message: 'Bot started with hybrid architecture - files stored in Modal Volume'
+      message: 'Bot started with hybrid architecture - deployed to Modal execution environment'
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -181,10 +216,10 @@ async function startBotWithHybridArchitecture(botId: string, userId: string) {
 
 async function getLogsFromModal(botId: string, userId: string) {
   console.log(`[MODAL-MANAGER HYBRID] Getting logs from Modal for bot ${botId}`);
-  console.log(`[MODAL-MANAGER HYBRID] Modal logs endpoint: ${MODAL_BASE_URL}/logs/${botId}`);
+  console.log(`[MODAL-MANAGER HYBRID] Modal logs endpoint: ${MODAL_BASE_URL}/api/logs/${botId}`);
   
   try {
-    const response = await fetch(`${MODAL_BASE_URL}/logs/${botId}?user_id=${userId}`, {
+    const response = await fetch(`${MODAL_BASE_URL}/api/logs/${botId}?user_id=${userId}`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json'
@@ -203,7 +238,7 @@ async function getLogsFromModal(botId: string, userId: string) {
           success: true,
           logs: [
             '[MODAL INFO] No logs available for bot ' + botId,
-            '[MODAL INFO] Bot may not have been started yet or stored in Modal Volume',
+            '[MODAL INFO] Bot may not have been started yet or deployed to Modal',
             '[MODAL INFO] Try starting the bot first to begin execution'
           ],
           architecture: 'hybrid',
@@ -234,7 +269,7 @@ async function getLogsFromModal(botId: string, userId: string) {
       success: true,
       logs: [
         `[MODAL INFO] No logs available for bot ${botId}`,
-        `[MODAL INFO] Bot may not have been started yet or stored in Modal Volume`,
+        `[MODAL INFO] Bot may not have been started yet or deployed to Modal`,
         `[MODAL DEBUG] Error: ${error.message}`
       ],
       architecture: 'hybrid'
