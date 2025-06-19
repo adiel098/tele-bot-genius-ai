@@ -13,8 +13,8 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const openaiApiKey = Deno.env.get('OPENAI_API_KEY')!;
 
-// Modal service URL for Enhanced Modal Volume
-const MODAL_BASE_URL = 'https://haleviadiel--telegram-bot-platform-enhanced-telegram-bot-service.modal.run';
+// Modal service URL
+const MODAL_BASE_URL = 'https://haleviadiel--telegram-bot-platform-telegram-bot-service.modal.run';
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -25,7 +25,7 @@ serve(async (req) => {
     const { botId, userId, name, token, prompt } = await req.json();
     
     console.log(`[GENERATE-BOT-CODE] === Starting bot generation for ${botId} ===`);
-    console.log(`[GENERATE-BOT-CODE] Using Modal + Supabase Storage fallback strategy`);
+    console.log(`[GENERATE-BOT-CODE] Using Modal with proper file structure`);
 
     // Step 1: Generate bot code with OpenAI
     console.log(`[GENERATE-BOT-CODE] Step 1: Generating code with OpenAI`);
@@ -38,8 +38,8 @@ serve(async (req) => {
 
     console.log(`[GENERATE-BOT-CODE] Code generated successfully: ${codeResult.code.length} characters`);
 
-    // Step 2: Try Modal first, fallback to Supabase Storage
-    console.log(`[GENERATE-BOT-CODE] Step 2: Attempting storage with Modal + fallback`);
+    // Step 2: Store in Modal with proper file structure
+    console.log(`[GENERATE-BOT-CODE] Step 2: Storing with Modal using proper file structure`);
     let storeResult;
     
     try {
@@ -49,7 +49,7 @@ serve(async (req) => {
         storeResult = await storeInSupabaseStorage(botId, userId, codeResult.code, token, name);
       }
     } catch (modalError) {
-      console.log(`[GENERATE-BOT-CODE] Modal service unavailable, using Supabase Storage fallback`);
+      console.log(`[GENERATE-BOT-CODE] Modal service error: ${modalError.message}, using Supabase Storage fallback`);
       storeResult = await storeInSupabaseStorage(botId, userId, codeResult.code, token, name);
     }
 
@@ -81,7 +81,7 @@ serve(async (req) => {
         content: `Bot created successfully! ${codeResult.explanation}
 
 **Storage Method:** ${storeResult.method}
-${storeResult.method === 'supabase_storage' ? '✅ Files stored in Supabase Storage (Modal fallback)' : '✅ Files stored in Enhanced Modal Volume'}
+${storeResult.method === 'supabase_storage' ? '✅ Files stored in Supabase Storage (Modal fallback)' : '✅ Files stored in Modal with proper file structure'}
 
 Your bot code has been successfully generated and stored.`,
         timestamp: new Date().toISOString(),
@@ -241,29 +241,44 @@ Create a Telegram bot with the following requirements: ${prompt}`
 }
 
 async function storeInEnhancedModal(botId: string, userId: string, botCode: string, token: string, botName: string) {
-  console.log(`[GENERATE-BOT-CODE] === Attempting Modal storage for bot ${botId} ===`);
+  console.log(`[GENERATE-BOT-CODE MODAL] === Storing bot ${botId} in Modal with proper file structure ===`);
   
   try {
-    console.log(`[GENERATE-BOT-CODE] Calling Modal API: ${MODAL_BASE_URL}/store-bot/${botId}`);
+    // Create the complete file structure that Modal expects
+    const fileStructure = {
+      user_id: userId,
+      bot_name: botName || `Bot ${botId}`,
+      files: {
+        'main.py': botCode,
+        'requirements.txt': 'python-telegram-bot>=20.0\nrequests>=2.28.0\npython-dotenv>=1.0.0',
+        '.env': `BOT_TOKEN=${token}\nBOT_NAME=${botName || `Bot ${botId}`}`,
+        'metadata.json': JSON.stringify({
+          bot_id: botId,
+          user_id: userId,
+          bot_name: botName,
+          created_at: new Date().toISOString(),
+          status: 'stored',
+          storage_method: 'modal_volume'
+        }, null, 2)
+      }
+    };
+
+    console.log(`[GENERATE-BOT-CODE MODAL] Calling Modal API: ${MODAL_BASE_URL}/store-bot/${botId}`);
+    console.log(`[GENERATE-BOT-CODE MODAL] Sending file structure with ${Object.keys(fileStructure.files).length} files`);
     
     const storeResponse = await fetch(`${MODAL_BASE_URL}/store-bot/${botId}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        user_id: userId,
-        bot_code: botCode,
-        bot_token: token,
-        bot_name: botName || `Bot ${botId}`
-      })
+      body: JSON.stringify(fileStructure)
     });
 
-    console.log(`[GENERATE-BOT-CODE] Modal API response status: ${storeResponse.status}`);
+    console.log(`[GENERATE-BOT-CODE MODAL] Modal API response status: ${storeResponse.status}`);
 
     if (!storeResponse.ok) {
       const errorText = await storeResponse.text();
-      console.error(`[GENERATE-BOT-CODE] Modal API error: ${storeResponse.status} - ${errorText}`);
+      console.error(`[GENERATE-BOT-CODE MODAL] Modal API error: ${storeResponse.status} - ${errorText}`);
       return {
         success: false,
         error: `Modal API error: ${storeResponse.status} - ${errorText}`,
@@ -272,17 +287,17 @@ async function storeInEnhancedModal(botId: string, userId: string, botCode: stri
     }
 
     const storeResult = await storeResponse.json();
-    console.log(`[GENERATE-BOT-CODE] Modal API success`);
+    console.log(`[GENERATE-BOT-CODE MODAL] Modal API success:`, storeResult);
 
     return {
       success: true,
-      method: 'enhanced_modal_volume',
-      details: 'Successfully stored in Enhanced Modal Volume',
+      method: 'modal_volume',
+      details: 'Successfully stored in Modal with proper file structure',
       response: storeResult
     };
 
   } catch (error) {
-    console.error(`[GENERATE-BOT-CODE] Modal service unavailable:`, error.message);
+    console.error(`[GENERATE-BOT-CODE MODAL] Modal service error:`, error.message);
     return {
       success: false,
       error: error.message,
