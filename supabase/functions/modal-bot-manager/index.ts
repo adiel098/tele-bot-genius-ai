@@ -1,3 +1,4 @@
+
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
@@ -726,16 +727,21 @@ async function optimizedGetBotStatus(botId: string, userId: string) {
 }
 
 async function optimizedModifyBot(botId: string, userId: string, modificationPrompt: string) {
+  console.log(`[MODAL-MANAGER OPTIM] Starting bot modification for ${botId} with enhanced error handling`);
+  
   // Get current bot data
-  const { data: bot } = await supabase
+  const { data: bot, error: botError } = await supabase
     .from('bots')
     .select('*')
     .eq('id', botId)
     .single();
 
-  if (!bot) {
+  if (botError || !bot) {
+    console.error(`[MODAL-MANAGER OPTIM] Bot not found:`, botError);
     throw new Error('Bot not found');
   }
+
+  console.log(`[MODAL-MANAGER OPTIM] Bot found: ${bot.name}, getting current code`);
 
   // Get current code from optimized Modal volume
   const codeResponse = await fetch(`${MODAL_BASE_URL}/files/${botId}?user_id=${userId}`, {
@@ -745,65 +751,145 @@ async function optimizedModifyBot(botId: string, userId: string, modificationPro
     }
   });
 
+  if (!codeResponse.ok) {
+    const errorText = await codeResponse.text();
+    console.error(`[MODAL-MANAGER OPTIM] Failed to get current code: ${codeResponse.status} - ${errorText}`);
+    throw new Error(`Failed to get current bot code: ${codeResponse.status} - ${errorText}`);
+  }
+
   const codeData = await codeResponse.json();
   const currentCode = codeData.files?.['main.py'] || '';
 
+  if (!currentCode) {
+    console.error(`[MODAL-MANAGER OPTIM] No current code found for bot ${botId}`);
+    throw new Error('No current bot code found for modification');
+  }
+
+  console.log(`[MODAL-MANAGER OPTIM] Current code retrieved: ${currentCode.length} characters`);
+
   // Modify code using OpenAI
+  console.log(`[MODAL-MANAGER OPTIM] Generating modified code with OpenAI`);
   const modifyResult = await generateBotCodeWithOpenAI(
     `Modify this existing bot code:\n\n${currentCode}\n\nModification request: ${modificationPrompt}`,
     bot.token,
     bot.conversation_history || []
   );
 
-  if (modifyResult.success) {
-    // Store updated code using optimized Modal patterns
-    await fetch(`${MODAL_BASE_URL}/store-bot/${botId}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        user_id: userId,
-        bot_code: modifyResult.code,
-        bot_token: bot.token,
-        bot_name: bot.name
-      })
-    });
-
-    // Update conversation history
-    const updatedHistory = [
-      ...(bot.conversation_history || []),
-      {
-        role: 'user',
-        content: modificationPrompt,
-        timestamp: new Date().toISOString()
-      },
-      {
-        role: 'assistant',
-        content: `Bot modified successfully with optimized Modal Volume patterns! ${modifyResult.explanation}`,
-        timestamp: new Date().toISOString(),
-        files: {
-          'main.py': modifyResult.code
-        }
-      }
-    ];
-
-    await supabase
-      .from('bots')
-      .update({
-        conversation_history: updatedHistory
-      })
-      .eq('id', botId);
+  if (!modifyResult.success) {
+    console.error(`[MODAL-MANAGER OPTIM] Code generation failed:`, modifyResult);
+    throw new Error('Failed to generate modified bot code');
   }
+
+  console.log(`[MODAL-MANAGER OPTIM] Modified code generated: ${modifyResult.code.length} characters`);
+
+  // Store updated code using optimized Modal patterns with comprehensive error handling
+  console.log(`[MODAL-MANAGER OPTIM] Storing modified code to Modal volume`);
+  
+  const storeResponse = await fetch(`${MODAL_BASE_URL}/store-bot/${botId}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      user_id: userId,
+      bot_code: modifyResult.code,
+      bot_token: bot.token,
+      bot_name: bot.name
+    })
+  });
+
+  if (!storeResponse.ok) {
+    const errorText = await storeResponse.text();
+    console.error(`[MODAL-MANAGER OPTIM] Store request failed: ${storeResponse.status} - ${errorText}`);
+    throw new Error(`Failed to store modified code: ${storeResponse.status} - ${errorText}`);
+  }
+
+  const storeResult = await storeResponse.json();
+  console.log(`[MODAL-MANAGER OPTIM] Store result:`, storeResult);
+
+  if (!storeResult.success) {
+    console.error(`[MODAL-MANAGER OPTIM] Store operation failed:`, storeResult.error);
+    throw new Error(`Failed to store modified code: ${storeResult.error}`);
+  }
+
+  console.log(`[MODAL-MANAGER OPTIM] Code stored successfully, verifying storage`);
+
+  // Verify file storage by attempting to retrieve the updated code
+  const verifyResponse = await fetch(`${MODAL_BASE_URL}/files/${botId}?user_id=${userId}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    }
+  });
+
+  let verificationStatus = "Storage verification failed";
+  if (verifyResponse.ok) {
+    const verifyResult = await verifyResponse.json();
+    if (verifyResult.success && verifyResult.files?.['main.py']) {
+      const storedCodeLength = verifyResult.files['main.py'].length;
+      verificationStatus = `✓ Storage verified: main.py (${storedCodeLength} chars)`;
+      console.log(`[MODAL-MANAGER OPTIM] Storage verification successful: ${storedCodeLength} characters`);
+    } else {
+      verificationStatus = `✗ Storage verification failed: ${verifyResult.error || 'No main.py found'}`;
+      console.error(`[MODAL-MANAGER OPTIM] Storage verification failed:`, verifyResult);
+    }
+  } else {
+    console.error(`[MODAL-MANAGER OPTIM] Storage verification request failed: ${verifyResponse.status}`);
+    verificationStatus = `✗ Storage verification request failed: ${verifyResponse.status}`;
+  }
+
+  // Update conversation history only after successful storage
+  const updatedHistory = [
+    ...(bot.conversation_history || []),
+    {
+      role: 'user',
+      content: modificationPrompt,
+      timestamp: new Date().toISOString()
+    },
+    {
+      role: 'assistant',
+      content: `Bot modified successfully with optimized Modal Volume patterns! ${modifyResult.explanation}
+
+**Storage Verification:**
+${verificationStatus}
+
+**Optimization Features:**
+- ✅ Enhanced error handling and validation
+- ✅ Comprehensive storage verification
+- ✅ Robust Modal volume operations
+- ✅ Detailed logging for troubleshooting
+
+Your bot code has been successfully updated and stored in Modal.`,
+      timestamp: new Date().toISOString(),
+      files: {
+        'main.py': modifyResult.code
+      }
+    }
+  ];
+
+  // Update bot in database with enhanced status tracking
+  await supabase
+    .from('bots')
+    .update({
+      conversation_history: updatedHistory,
+      runtime_logs: `Modified bot code stored successfully\n${verificationStatus}`,
+      files_stored: true
+    })
+    .eq('id', botId);
+
+  console.log(`[MODAL-MANAGER OPTIM] Bot ${botId} modification completed successfully`);
 
   return {
     ...modifyResult,
+    storage_verification: verificationStatus,
     storage_type: 'optimized_modal_volume',
     optimization_features: [
-      "Enhanced code modification",
-      "Improved error handling",
-      "Better validation"
-    ]
+      "Enhanced error handling and validation",
+      "Comprehensive storage verification", 
+      "Robust Modal volume operations",
+      "Detailed logging for troubleshooting"
+    ],
+    message: 'Bot modified and stored with optimized Modal Volume patterns!'
   };
 }
 
