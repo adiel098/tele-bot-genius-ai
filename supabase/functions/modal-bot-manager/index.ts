@@ -1,4 +1,3 @@
-
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
@@ -24,16 +23,17 @@ serve(async (req) => {
   try {
     const { action, botId, userId, prompt, token, name, modificationPrompt } = await req.json();
 
-    console.log(`[MODAL-MANAGER OPTIMIZED] Action: ${action}, Bot: ${botId}`);
+    console.log(`[MODAL-MANAGER ENHANCED] === Starting ${action} for bot ${botId} ===`);
+    console.log(`[MODAL-MANAGER ENHANCED] Request payload:`, { action, botId, userId, hasPrompt: !!prompt, hasToken: !!token, hasName: !!name, hasModificationPrompt: !!modificationPrompt });
 
     let result;
 
     switch (action) {
       case 'create-bot':
-        result = await optimizedCreateBot(botId, userId, name, prompt, token);
+        result = await enhancedCreateBot(botId, userId, name, prompt, token);
         break;
       case 'modify-bot':
-        result = await optimizedModifyBot(botId, userId, modificationPrompt);
+        result = await enhancedModifyBot(botId, userId, modificationPrompt);
         break;
       case 'start-bot':
         result = await optimizedStartBot(botId, userId);
@@ -54,7 +54,7 @@ serve(async (req) => {
         result = await optimizedFixBot(botId, userId);
         break;
       case 'get-files':
-        result = await optimizedGetBotFiles(botId, userId);
+        result = await enhancedGetBotFiles(botId, userId);
         break;
       case 'health-check':
         result = await comprehensiveHealthCheck(botId, userId);
@@ -62,6 +62,9 @@ serve(async (req) => {
       default:
         throw new Error(`Unknown action: ${action}`);
     }
+
+    console.log(`[MODAL-MANAGER ENHANCED] === Completed ${action} for bot ${botId} ===`);
+    console.log(`[MODAL-MANAGER ENHANCED] Final result:`, { success: result.success, hasError: !!result.error });
 
     return new Response(JSON.stringify({
       success: true,
@@ -71,10 +74,12 @@ serve(async (req) => {
     });
 
   } catch (error) {
-    console.error('[MODAL-MANAGER OPTIMIZED] Error:', error);
+    console.error('[MODAL-MANAGER ENHANCED] Critical Error:', error);
+    console.error('[MODAL-MANAGER ENHANCED] Error stack:', error.stack);
     return new Response(JSON.stringify({
       success: false,
-      error: error.message
+      error: error.message,
+      errorType: 'critical_error'
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -83,7 +88,10 @@ serve(async (req) => {
 });
 
 async function generateBotCodeWithOpenAI(prompt: string, token: string, conversationHistory: any[] = []) {
-  console.log('[MODAL-MANAGER OPTIM] Generating bot code with OpenAI');
+  console.log('[MODAL-MANAGER ENHANCED] === OpenAI Code Generation Started ===');
+  console.log('[MODAL-MANAGER ENHANCED] Prompt length:', prompt.length);
+  console.log('[MODAL-MANAGER ENHANCED] Token provided:', token ? 'Yes' : 'No');
+  console.log('[MODAL-MANAGER ENHANCED] Conversation history length:', conversationHistory.length);
   
   const messages = [
     {
@@ -145,6 +153,7 @@ Create a Telegram bot with the following requirements: ${prompt}`
 
   // Add conversation history if provided
   if (conversationHistory && conversationHistory.length > 0) {
+    console.log('[MODAL-MANAGER ENHANCED] Adding conversation history to OpenAI request');
     for (const msg of conversationHistory.slice(-5)) {
       messages.push({
         role: msg.role,
@@ -152,6 +161,9 @@ Create a Telegram bot with the following requirements: ${prompt}`
       });
     }
   }
+
+  console.log('[MODAL-MANAGER ENHANCED] Sending request to OpenAI API...');
+  const startTime = Date.now();
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -167,29 +179,482 @@ Create a Telegram bot with the following requirements: ${prompt}`
     })
   });
 
+  const apiTime = Date.now() - startTime;
+  console.log('[MODAL-MANAGER ENHANCED] OpenAI API response time:', `${apiTime}ms`);
+
   if (!response.ok) {
+    console.error('[MODAL-MANAGER ENHANCED] OpenAI API error:', response.status, response.statusText);
     throw new Error(`OpenAI API error: ${response.status}`);
   }
 
   const data = await response.json();
+  console.log('[MODAL-MANAGER ENHANCED] OpenAI response received, tokens used:', data.usage);
+  
   const assistantResponse = data.choices[0].message.content;
+  console.log('[MODAL-MANAGER ENHANCED] Generated response length:', assistantResponse.length);
 
   // Extract code from response
   const codeStart = assistantResponse.indexOf('```python');
   const codeEnd = assistantResponse.indexOf('```', codeStart + 9);
   
   let generatedCode = assistantResponse;
-  let explanation = "Generated Telegram bot code with optimized patterns";
+  let explanation = "Generated Telegram bot code with enhanced patterns";
   
   if (codeStart !== -1 && codeEnd !== -1) {
     generatedCode = assistantResponse.substring(codeStart + 9, codeEnd).trim();
     explanation = assistantResponse.substring(0, codeStart).trim();
+    console.log('[MODAL-MANAGER ENHANCED] Code extracted from markdown, length:', generatedCode.length);
+  } else {
+    console.log('[MODAL-MANAGER ENHANCED] No markdown code block found, using full response');
   }
+
+  console.log('[MODAL-MANAGER ENHANCED] === OpenAI Code Generation Completed ===');
 
   return {
     success: true,
     explanation,
     code: generatedCode
+  };
+}
+
+async function enhancedCreateBot(botId: string, userId: string, name: string, prompt: string, token: string) {
+  console.log(`[MODAL-MANAGER ENHANCED] === Enhanced Bot Creation Process for ${botId} ===`);
+  console.log(`[MODAL-MANAGER ENHANCED] Bot details:`, { botId, userId, name, tokenLength: token.length });
+  
+  // Get conversation history
+  console.log(`[MODAL-MANAGER ENHANCED] Fetching conversation history for bot ${botId}`);
+  const { data: bot } = await supabase
+    .from('bots')
+    .select('conversation_history')
+    .eq('id', botId)
+    .single();
+
+  const conversationHistory = bot?.conversation_history || [];
+  console.log(`[MODAL-MANAGER ENHANCED] Conversation history items:`, conversationHistory.length);
+
+  // Step 1: Generate bot code using OpenAI
+  console.log(`[MODAL-MANAGER ENHANCED] Step 1: Generating code with OpenAI`);
+  const codeResult = await generateBotCodeWithOpenAI(prompt, token, conversationHistory);
+
+  if (!codeResult.success) {
+    console.error(`[MODAL-MANAGER ENHANCED] Code generation failed for bot ${botId}`);
+    throw new Error('Failed to generate bot code');
+  }
+
+  console.log(`[MODAL-MANAGER ENHANCED] Code generated successfully: ${codeResult.code.length} characters`);
+
+  // Step 2: Create individual files from the generated code
+  console.log(`[MODAL-MANAGER ENHANCED] Step 2: Creating individual files for storage`);
+  const botFiles = await createBotFiles(codeResult.code, token, name);
+  console.log(`[MODAL-MANAGER ENHANCED] Created ${Object.keys(botFiles).length} files:`, Object.keys(botFiles));
+
+  // Step 3: Store each file individually in Modal volume
+  console.log(`[MODAL-MANAGER ENHANCED] Step 3: Storing files in Modal volume`);
+  const storageResult = await storeFilesInModal(botId, userId, botFiles);
+
+  if (!storageResult.success) {
+    console.error(`[MODAL-MANAGER ENHANCED] File storage failed:`, storageResult.error);
+    throw new Error(`Failed to store bot files: ${storageResult.error}`);
+  }
+
+  console.log(`[MODAL-MANAGER ENHANCED] Files stored successfully:`, storageResult.storedFiles);
+
+  // Step 4: Verify file storage
+  console.log(`[MODAL-MANAGER ENHANCED] Step 4: Verifying file storage`);
+  const verificationResult = await verifyBotFiles(botId, userId);
+  
+  // Step 5: Update conversation history
+  console.log(`[MODAL-MANAGER ENHANCED] Step 5: Updating conversation history`);
+  const updatedHistory = [
+    ...conversationHistory,
+    {
+      role: 'user',
+      content: prompt,
+      timestamp: new Date().toISOString()
+    },
+    {
+      role: 'assistant',
+      content: `Bot created with enhanced file storage! ${codeResult.explanation}
+
+**File Storage Details:**
+${storageResult.details}
+
+**Verification Results:**
+${verificationResult.summary}
+
+**Created Files:**
+${Object.keys(botFiles).map(name => `- ${name} (${botFiles[name].length} chars)`).join('\n')}
+
+Your bot code has been successfully generated and stored in Modal with comprehensive verification.`,
+      timestamp: new Date().toISOString(),
+      files: botFiles
+    }
+  ];
+
+  // Update bot in database
+  await supabase
+    .from('bots')
+    .update({
+      status: 'stored',
+      runtime_status: 'stopped',
+      conversation_history: updatedHistory,
+      runtime_logs: `Files stored: ${Object.keys(botFiles).join(', ')}\n${verificationResult.summary}`,
+      files_stored: true
+    })
+    .eq('id', botId);
+
+  console.log(`[MODAL-MANAGER ENHANCED] Bot ${botId} creation completed successfully`);
+
+  return {
+    botCode: codeResult,
+    storage: storageResult,
+    verification: verificationResult,
+    files: botFiles,
+    message: 'Bot generated and stored with enhanced file management!'
+  };
+}
+
+async function createBotFiles(mainCode: string, token: string, botName: string): Promise<Record<string, string>> {
+  console.log('[MODAL-MANAGER ENHANCED] Creating individual bot files');
+  
+  const files: Record<string, string> = {};
+  
+  // Main Python file
+  files['main.py'] = mainCode;
+  console.log('[MODAL-MANAGER ENHANCED] Created main.py:', mainCode.length, 'characters');
+  
+  // Requirements file
+  files['requirements.txt'] = `python-telegram-bot==20.7
+aiohttp==3.9.1
+python-dotenv==1.0.0`;
+  console.log('[MODAL-MANAGER ENHANCED] Created requirements.txt');
+  
+  // Environment file
+  files['.env'] = `BOT_TOKEN=${token}
+BOT_NAME=${botName}`;
+  console.log('[MODAL-MANAGER ENHANCED] Created .env file');
+  
+  // Dockerfile
+  files['Dockerfile'] = `FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+CMD ["python", "main.py"]`;
+  console.log('[MODAL-MANAGER ENHANCED] Created Dockerfile');
+  
+  console.log('[MODAL-MANAGER ENHANCED] All bot files created successfully');
+  return files;
+}
+
+async function storeFilesInModal(botId: string, userId: string, files: Record<string, string>) {
+  console.log(`[MODAL-MANAGER ENHANCED] === Starting Modal File Storage for bot ${botId} ===`);
+  console.log(`[MODAL-MANAGER ENHANCED] Files to store:`, Object.keys(files));
+  
+  const storedFiles: string[] = [];
+  const failedFiles: string[] = [];
+  const storageDetails: string[] = [];
+  
+  try {
+    // Store each file individually
+    for (const [filename, content] of Object.entries(files)) {
+      console.log(`[MODAL-MANAGER ENHANCED] Storing file: ${filename} (${content.length} chars)`);
+      
+      try {
+        const storeResponse = await fetch(`${MODAL_BASE_URL}/store-file/${botId}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            user_id: userId,
+            filename: filename,
+            content: content,
+            bot_name: `Bot ${botId}`
+          })
+        });
+
+        console.log(`[MODAL-MANAGER ENHANCED] Store response for ${filename}:`, storeResponse.status);
+
+        if (!storeResponse.ok) {
+          const errorText = await storeResponse.text();
+          console.error(`[MODAL-MANAGER ENHANCED] Failed to store ${filename}:`, storeResponse.status, errorText);
+          failedFiles.push(filename);
+          storageDetails.push(`❌ ${filename}: ${storeResponse.status} - ${errorText}`);
+          continue;
+        }
+
+        const storeResult = await storeResponse.json();
+        console.log(`[MODAL-MANAGER ENHANCED] Store result for ${filename}:`, storeResult);
+
+        if (storeResult.success) {
+          storedFiles.push(filename);
+          storageDetails.push(`✅ ${filename}: Stored successfully`);
+          console.log(`[MODAL-MANAGER ENHANCED] Successfully stored ${filename}`);
+        } else {
+          failedFiles.push(filename);
+          storageDetails.push(`❌ ${filename}: ${storeResult.error || 'Unknown error'}`);
+          console.error(`[MODAL-MANAGER ENHANCED] Storage failed for ${filename}:`, storeResult.error);
+        }
+      } catch (fileError) {
+        console.error(`[MODAL-MANAGER ENHANCED] Exception storing ${filename}:`, fileError);
+        failedFiles.push(filename);
+        storageDetails.push(`❌ ${filename}: Exception - ${fileError.message}`);
+      }
+    }
+
+    const success = storedFiles.length > 0;
+    console.log(`[MODAL-MANAGER ENHANCED] Storage summary: ${storedFiles.length} stored, ${failedFiles.length} failed`);
+
+    return {
+      success,
+      storedFiles,
+      failedFiles,
+      details: storageDetails.join('\n'),
+      error: failedFiles.length > 0 ? `Failed to store: ${failedFiles.join(', ')}` : null
+    };
+
+  } catch (error) {
+    console.error(`[MODAL-MANAGER ENHANCED] Critical storage error:`, error);
+    return {
+      success: false,
+      storedFiles: [],
+      failedFiles: Object.keys(files),
+      details: `Critical error: ${error.message}`,
+      error: error.message
+    };
+  }
+}
+
+async function verifyBotFiles(botId: string, userId: string) {
+  console.log(`[MODAL-MANAGER ENHANCED] === Verifying stored files for bot ${botId} ===`);
+  
+  try {
+    const verifyResponse = await fetch(`${MODAL_BASE_URL}/files/${botId}?user_id=${userId}&verify=true`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+
+    console.log(`[MODAL-MANAGER ENHANCED] Verification response:`, verifyResponse.status);
+
+    if (!verifyResponse.ok) {
+      const errorText = await verifyResponse.text();
+      console.error(`[MODAL-MANAGER ENHANCED] Verification request failed:`, verifyResponse.status, errorText);
+      return {
+        success: false,
+        summary: `Verification failed: ${verifyResponse.status} - ${errorText}`,
+        files: {}
+      };
+    }
+
+    const verifyResult = await verifyResponse.json();
+    console.log(`[MODAL-MANAGER ENHANCED] Verification result:`, {
+      success: verifyResult.success,
+      fileCount: Object.keys(verifyResult.files || {}).length
+    });
+
+    if (verifyResult.success && verifyResult.files) {
+      const filesSummary = Object.entries(verifyResult.files).map(([name, content]) => 
+        `✅ ${name}: ${typeof content === 'string' ? content.length : 0} chars`
+      ).join('\n');
+      
+      return {
+        success: true,
+        summary: `Files verified successfully:\n${filesSummary}`,
+        files: verifyResult.files
+      };
+    } else {
+      return {
+        success: false,
+        summary: `Verification failed: ${verifyResult.error || 'Unknown error'}`,
+        files: {}
+      };
+    }
+
+  } catch (error) {
+    console.error(`[MODAL-MANAGER ENHANCED] Verification exception:`, error);
+    return {
+      success: false,
+      summary: `Verification exception: ${error.message}`,
+      files: {}
+    };
+  }
+}
+
+async function enhancedGetBotFiles(botId: string, userId: string) {
+  console.log(`[MODAL-MANAGER ENHANCED] === Getting files for bot ${botId} ===`);
+  
+  try {
+    const startTime = Date.now();
+    const response = await fetch(`${MODAL_BASE_URL}/files/${botId}?user_id=${userId}&enhanced=true`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+
+    const requestTime = Date.now() - startTime;
+    console.log(`[MODAL-MANAGER ENHANCED] Files request completed in ${requestTime}ms, status:`, response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[MODAL-MANAGER ENHANCED] Files request failed:`, response.status, errorText);
+      throw new Error(`Failed to get files: ${response.status} - ${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log(`[MODAL-MANAGER ENHANCED] Files result:`, {
+      success: result.success,
+      fileCount: Object.keys(result.files || {}).length,
+      storageMethod: result.storage_method
+    });
+    
+    if (result.success && result.files) {
+      Object.keys(result.files).forEach(filename => {
+        const content = result.files[filename];
+        console.log(`[MODAL-MANAGER ENHANCED] File ${filename}: ${content?.length || 0} characters`);
+      });
+    }
+    
+    return {
+      success: true,
+      files: result.files || {},
+      storage_type: 'enhanced_modal_volume',
+      storage_method: result.storage_method || 'enhanced_modal_patterns',
+      file_count: Object.keys(result.files || {}).length,
+      request_time: `${requestTime}ms`,
+      logs: result.logs || []
+    };
+    
+  } catch (error) {
+    console.error(`[MODAL-MANAGER ENHANCED] Error getting files:`, error);
+    return {
+      success: false,
+      error: error.message,
+      files: {},
+      storage_type: 'enhanced_modal_volume'
+    };
+  }
+}
+
+async function enhancedModifyBot(botId: string, userId: string, modificationPrompt: string) {
+  console.log(`[MODAL-MANAGER ENHANCED] === Starting enhanced bot modification for ${botId} ===`);
+  console.log(`[MODAL-MANAGER ENHANCED] Modification prompt length:`, modificationPrompt.length);
+  
+  // Get current bot data
+  const { data: bot, error: botError } = await supabase
+    .from('bots')
+    .select('*')
+    .eq('id', botId)
+    .single();
+
+  if (botError || !bot) {
+    console.error(`[MODAL-MANAGER ENHANCED] Bot not found:`, botError);
+    throw new Error('Bot not found');
+  }
+
+  console.log(`[MODAL-MANAGER ENHANCED] Bot found: ${bot.name}`);
+
+  // Get current code from Modal volume
+  console.log(`[MODAL-MANAGER ENHANCED] Getting current code from Modal`);
+  const filesResult = await enhancedGetBotFiles(botId, userId);
+  
+  if (!filesResult.success) {
+    console.error(`[MODAL-MANAGER ENHANCED] Failed to get current files:`, filesResult.error);
+    throw new Error(`Failed to get current bot files: ${filesResult.error}`);
+  }
+
+  const currentCode = filesResult.files['main.py'] || '';
+  if (!currentCode) {
+    console.error(`[MODAL-MANAGER ENHANCED] No current code found for bot ${botId}`);
+    throw new Error('No current bot code found for modification');
+  }
+
+  console.log(`[MODAL-MANAGER ENHANCED] Current code retrieved: ${currentCode.length} characters`);
+
+  // Modify code using OpenAI
+  console.log(`[MODAL-MANAGER ENHANCED] Generating modified code with OpenAI`);
+  const modifyResult = await generateBotCodeWithOpenAI(
+    `Modify this existing bot code:\n\n${currentCode}\n\nModification request: ${modificationPrompt}`,
+    bot.token,
+    bot.conversation_history || []
+  );
+
+  if (!modifyResult.success) {
+    console.error(`[MODAL-MANAGER ENHANCED] Code generation failed:`, modifyResult);
+    throw new Error('Failed to generate modified bot code');
+  }
+
+  console.log(`[MODAL-MANAGER ENHANCED] Modified code generated: ${modifyResult.code.length} characters`);
+
+  // Create updated files
+  console.log(`[MODAL-MANAGER ENHANCED] Creating updated files`);
+  const updatedFiles = await createBotFiles(modifyResult.code, bot.token, bot.name);
+  
+  // Store updated files
+  console.log(`[MODAL-MANAGER ENHANCED] Storing updated files in Modal`);
+  const storageResult = await storeFilesInModal(botId, userId, updatedFiles);
+
+  if (!storageResult.success) {
+    console.error(`[MODAL-MANAGER ENHANCED] Storage failed:`, storageResult.error);
+    throw new Error(`Failed to store modified files: ${storageResult.error}`);
+  }
+
+  console.log(`[MODAL-MANAGER ENHANCED] Files stored successfully`);
+
+  // Verify storage
+  console.log(`[MODAL-MANAGER ENHANCED] Verifying storage`);
+  const verificationResult = await verifyBotFiles(botId, userId);
+
+  // Update conversation history
+  const updatedHistory = [
+    ...(bot.conversation_history || []),
+    {
+      role: 'user',
+      content: modificationPrompt,
+      timestamp: new Date().toISOString()
+    },
+    {
+      role: 'assistant',
+      content: `Bot modified with enhanced file management! ${modifyResult.explanation}
+
+**Storage Results:**
+${storageResult.details}
+
+**Verification:**
+${verificationResult.summary}
+
+Your bot code has been successfully updated and stored in Modal with comprehensive verification.`,
+      timestamp: new Date().toISOString(),
+      files: updatedFiles
+    }
+  ];
+
+  // Update bot in database
+  await supabase
+    .from('bots')
+    .update({
+      conversation_history: updatedHistory,
+      runtime_logs: `Modified and stored: ${Object.keys(updatedFiles).join(', ')}\n${verificationResult.summary}`,
+      files_stored: true
+    })
+    .eq('id', botId);
+
+  console.log(`[MODAL-MANAGER ENHANCED] Bot ${botId} modification completed successfully`);
+
+  return {
+    ...modifyResult,
+    storage: storageResult,
+    verification: verificationResult,
+    files: updatedFiles,
+    storage_type: 'enhanced_modal_volume',
+    message: 'Bot modified and stored with enhanced file management!'
   };
 }
 
@@ -293,7 +758,7 @@ async function optimizedCreateBot(botId: string, userId: string, name: string, p
     retrievalStatus = `✗ Optimized retrieval request failed: ${retrievalResponse.status}`;
   }
 
-  // Update conversation history with optimization details
+  // Update conversation history
   const updatedHistory = [
     ...conversationHistory,
     {

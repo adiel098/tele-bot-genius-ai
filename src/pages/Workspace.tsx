@@ -133,6 +133,9 @@ const Workspace = () => {
   const sendMessage = async (content: string) => {
     if (!content || !bot || isGenerating || !session) return;
 
+    console.log(`[WORKSPACE ENHANCED] === Starting message send for bot ${bot.id} ===`);
+    console.log(`[WORKSPACE ENHANCED] Message content:`, { contentLength: content.length, botId: bot.id, userId: user.id });
+
     const userMessage: Message = {
       role: 'user',
       content,
@@ -141,10 +144,19 @@ const Workspace = () => {
 
     setMessages(prev => [...prev, userMessage]);
     setIsGenerating(true);
-    setBotError(null); // Clear previous errors
+    setBotError(null);
+
+    const startTime = Date.now();
 
     try {
-      // Use modal-bot-manager with modify-bot action for proper file storage
+      console.log(`[WORKSPACE ENHANCED] Invoking modal-bot-manager with modify-bot action`);
+      console.log(`[WORKSPACE ENHANCED] Request payload:`, {
+        action: 'modify-bot',
+        botId: bot.id,
+        userId: user.id,
+        modificationPromptLength: content.length
+      });
+
       const { data, error } = await supabase.functions.invoke('modal-bot-manager', {
         body: {
           action: 'modify-bot',
@@ -154,35 +166,86 @@ const Workspace = () => {
         }
       });
 
+      const requestTime = Date.now() - startTime;
+      console.log(`[WORKSPACE ENHANCED] Edge function response received in ${requestTime}ms`);
+      console.log(`[WORKSPACE ENHANCED] Response data:`, {
+        success: data?.success,
+        hasError: !!error,
+        errorMessage: error?.message,
+        hasFiles: !!data?.files,
+        storageType: data?.storage_type
+      });
+
       if (error) {
-        console.error('Modal bot manager error:', error);
-        throw new Error(`Failed to modify bot: ${error.message}`);
+        console.error('[WORKSPACE ENHANCED] Edge function error:', error);
+        throw new Error(`Edge function error: ${error.message}`);
       }
 
       if (data.success) {
+        console.log(`[WORKSPACE ENHANCED] Bot modification successful!`);
+        console.log(`[WORKSPACE ENHANCED] Storage details:`, {
+          storageType: data.storage_type,
+          hasVerification: !!data.verification,
+          hasStorage: !!data.storage,
+          filesCount: data.files ? Object.keys(data.files).length : 0
+        });
+
         toast({
           title: "Bot Updated! 🎉",
-          description: "Your bot code has been generated and stored in Modal successfully",
+          description: data.message || "Your bot code has been generated and stored successfully",
         });
-        setBotError(null); // Clear errors on success
+        setBotError(null);
         
-        // The conversation history is automatically updated by the modal-bot-manager function
-        // No need to manually add AI message here as it's handled by the real-time subscription
+        // Log file storage results
+        if (data.files) {
+          console.log(`[WORKSPACE ENHANCED] Files received from modification:`, Object.keys(data.files));
+          Object.entries(data.files).forEach(([filename, content]) => {
+            console.log(`[WORKSPACE ENHANCED] File ${filename}: ${typeof content === 'string' ? content.length : 0} characters`);
+          });
+        }
+
+        if (data.storage) {
+          console.log(`[WORKSPACE ENHANCED] Storage operation results:`, {
+            storedFiles: data.storage.storedFiles,
+            failedFiles: data.storage.failedFiles,
+            details: data.storage.details
+          });
+        }
+
+        if (data.verification) {
+          console.log(`[WORKSPACE ENHANCED] Verification results:`, {
+            success: data.verification.success,
+            summary: data.verification.summary
+          });
+        }
+        
       } else {
-        // Check if it's a bot conflict error
+        console.error('[WORKSPACE ENHANCED] Bot modification failed:', data);
+        
         if (data.errorType) {
+          console.log(`[WORKSPACE ENHANCED] Setting bot error:`, { type: data.errorType, message: data.error });
           setBotError({ type: data.errorType, message: data.error || 'Unknown error' });
         }
         throw new Error(data.error || 'Failed to generate bot code');
       }
     } catch (error) {
-      console.error('Error:', error);
+      const totalTime = Date.now() - startTime;
+      console.error(`[WORKSPACE ENHANCED] Error after ${totalTime}ms:`, error);
+      console.error(`[WORKSPACE ENHANCED] Error details:`, {
+        message: error.message,
+        stack: error.stack,
+        botId: bot.id,
+        userId: user.id
+      });
+
       toast({
         title: "Error",
         description: `Failed to generate bot code: ${error.message}`,
         variant: "destructive",
       });
     } finally {
+      const totalTime = Date.now() - startTime;
+      console.log(`[WORKSPACE ENHANCED] === Message send completed in ${totalTime}ms ===`);
       setIsGenerating(false);
     }
   };
@@ -190,10 +253,14 @@ const Workspace = () => {
   const handleFixByAI = async (errorLogs: string) => {
     if (!bot || !session) return;
 
+    console.log(`[WORKSPACE ENHANCED] === Starting AI fix for bot ${bot.id} ===`);
+    console.log(`[WORKSPACE ENHANCED] Error logs length:`, errorLogs.length);
+
     setIsGenerating(true);
+    const startTime = Date.now();
     
     try {
-      console.log('Sending fix request to Modal AI with error logs:', errorLogs);
+      console.log('[WORKSPACE ENHANCED] Invoking modal-bot-manager with fix-bot action');
       
       const { data, error } = await supabase.functions.invoke('modal-bot-manager', {
         body: {
@@ -203,56 +270,79 @@ const Workspace = () => {
         }
       });
 
-      if (error) throw error;
+      const requestTime = Date.now() - startTime;
+      console.log(`[WORKSPACE ENHANCED] Fix request completed in ${requestTime}ms`);
+      console.log(`[WORKSPACE ENHANCED] Fix response:`, {
+        success: data?.success,
+        hasError: !!error,
+        hasFixedCode: !!data?.fixedCode
+      });
+
+      if (error) {
+        console.error('[WORKSPACE ENHANCED] Fix request error:', error);
+        throw error;
+      }
 
       if (data.success) {
+        console.log(`[WORKSPACE ENHANCED] AI fix successful!`);
+        
         toast({
           title: "🛠️ Bot Fixed by AI!",
-          description: "Your bot has been automatically fixed and restarted via Modal",
+          description: data.message || "Your bot has been automatically fixed and restarted",
         });
         setBotError(null);
         
         // Add an AI message to the conversation
         const aiMessage: Message = {
           role: 'assistant',
-          content: `🛠️ **Bot Fixed Automatically via Modal!**
+          content: `🛠️ **Bot Fixed Automatically!**
 
-I analyzed the error logs and found the following issues:
+I analyzed the error logs and applied fixes to resolve the issues:
 \`\`\`
 ${errorLogs}
 \`\`\`
 
-I've automatically corrected the code and restarted your bot in the Modal runtime. The bot should now be working properly!
+**Fix Results:**
+${data.storage_verification || 'Code has been corrected and stored'}
 
-**Changes made:**
+**Changes Applied:**
 - Fixed import statements for python-telegram-bot v20+
-- Corrected any syntax errors
+- Corrected any syntax errors  
 - Updated deprecated method calls
 - Ensured proper async/await usage
 
-Your bot is now running with the corrected code in Modal.`,
+Your bot is now running with the corrected code.`,
           timestamp: new Date().toISOString(),
-          files: data.fixedCode ? { 'main.py': data.fixedCode } : undefined
+          files: data.files || (data.fixedCode ? { 'main.py': data.fixedCode } : undefined)
         };
 
         setMessages(prev => [...prev, aiMessage]);
+        
+        console.log(`[WORKSPACE ENHANCED] AI fix message added to conversation`);
       } else {
+        console.error('[WORKSPACE ENHANCED] AI fix failed:', data);
         throw new Error(data.error || 'Failed to fix bot');
       }
     } catch (error) {
-      console.error('Error fixing bot:', error);
+      const totalTime = Date.now() - startTime;
+      console.error(`[WORKSPACE ENHANCED] Fix error after ${totalTime}ms:`, error);
+      
       toast({
         title: "Fix Failed",
         description: `Could not automatically fix the bot: ${error.message}`,
         variant: "destructive",
       });
     } finally {
+      const totalTime = Date.now() - startTime;
+      console.log(`[WORKSPACE ENHANCED] === AI fix completed in ${totalTime}ms ===`);
       setIsGenerating(false);
     }
   };
 
   const handleRetryBot = async () => {
     if (!bot || !user) return;
+    
+    console.log(`[WORKSPACE ENHANCED] === Starting bot retry for ${bot.id} ===`);
     
     try {
       const { data, error } = await supabase.functions.invoke('modal-bot-manager', {
@@ -263,14 +353,23 @@ Your bot is now running with the corrected code in Modal.`,
         }
       });
 
-      if (error) throw error;
+      console.log(`[WORKSPACE ENHANCED] Retry response:`, {
+        success: data?.success,
+        hasError: !!error
+      });
+
+      if (error) {
+        console.error('[WORKSPACE ENHANCED] Retry error:', error);
+        throw error;
+      }
 
       if (data.success) {
         setBotError(null);
         toast({
           title: "Bot Restart Initiated! 🔄",
-          description: "Your bot is being restarted in Modal...",
+          description: "Your bot is being restarted...",
         });
+        console.log(`[WORKSPACE ENHANCED] Bot restart successful`);
       } else {
         if (data.errorType) {
           setBotError({ type: data.errorType, message: data.error || 'Unknown error' });
@@ -278,7 +377,7 @@ Your bot is now running with the corrected code in Modal.`,
         throw new Error(data.error || 'Failed to restart bot');
       }
     } catch (error) {
-      console.error('Error restarting bot:', error);
+      console.error('[WORKSPACE ENHANCED] Retry error:', error);
       toast({
         title: "Error",
         description: `Failed to restart bot: ${error.message}`,
