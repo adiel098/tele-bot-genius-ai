@@ -13,7 +13,7 @@ serve(async (req) => {
   }
 
   try {
-    console.log('Storage setup - now using Modal volume exclusively...');
+    console.log('Storage setup - Modal volume only configuration...');
     
     // Check Modal volume connectivity
     try {
@@ -27,10 +27,11 @@ serve(async (req) => {
         
         return new Response(JSON.stringify({
           success: true,
-          message: 'Storage setup completed - using Modal volume',
-          storage_type: 'modal_volume',
+          message: 'Storage setup completed - Modal volume only',
+          storage_type: 'modal_volume_only',
           modal_status: 'connected',
-          volume_info: data
+          volume_info: data,
+          supabase_storage: 'disabled'
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
@@ -43,9 +44,10 @@ serve(async (req) => {
       return new Response(JSON.stringify({
         success: false,
         message: 'Modal volume not accessible',
-        storage_type: 'modal_volume',
+        storage_type: 'modal_volume_only',
         modal_status: 'error',
-        error: modalError.message
+        error: modalError.message,
+        supabase_storage: 'disabled'
       }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -56,7 +58,9 @@ serve(async (req) => {
     console.error('Storage setup error:', error);
     return new Response(JSON.stringify({ 
       success: false, 
-      error: error.message 
+      error: error.message,
+      storage_type: 'modal_volume_only',
+      supabase_storage: 'disabled'
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }

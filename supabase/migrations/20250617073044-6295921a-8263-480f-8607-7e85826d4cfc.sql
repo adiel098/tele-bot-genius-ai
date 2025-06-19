@@ -1,38 +1,6 @@
 
--- Drop existing policies if they exist and recreate them
-DROP POLICY IF EXISTS "Users can upload their own bot files" ON storage.objects;
-DROP POLICY IF EXISTS "Users can view their own bot files" ON storage.objects;
-DROP POLICY IF EXISTS "Users can update their own bot files" ON storage.objects;
-DROP POLICY IF EXISTS "Users can delete their own bot files" ON storage.objects;
-
--- Create storage policies for bot files bucket
-CREATE POLICY "Users can upload their own bot files"
-ON storage.objects FOR INSERT
-WITH CHECK (
-  bucket_id = 'bot-files' AND
-  auth.uid()::text = (storage.foldername(name))[1]
-);
-
-CREATE POLICY "Users can view their own bot files"
-ON storage.objects FOR SELECT
-USING (
-  bucket_id = 'bot-files' AND
-  auth.uid()::text = (storage.foldername(name))[1]
-);
-
-CREATE POLICY "Users can update their own bot files"
-ON storage.objects FOR UPDATE
-USING (
-  bucket_id = 'bot-files' AND
-  auth.uid()::text = (storage.foldername(name))[1]
-);
-
-CREATE POLICY "Users can delete their own bot files"
-ON storage.objects FOR DELETE
-USING (
-  bucket_id = 'bot-files' AND
-  auth.uid()::text = (storage.foldername(name))[1]
-);
+-- This migration has been updated to remove storage policies that are no longer needed
+-- All bot file storage is now handled exclusively by Modal volume
 
 -- Enable RLS on bots table (ignore if already enabled)
 ALTER TABLE public.bots ENABLE ROW LEVEL SECURITY;

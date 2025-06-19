@@ -48,7 +48,7 @@ const FilesPanel = ({ files, onFileSelect, botId, onFilesUpdate }: FilesPanelPro
     <Card className="h-full">
       <CardHeader>
         <CardTitle className="text-sm flex items-center justify-between">
-          <span>Generated Files (Modal Volume)</span>
+          <span>Bot Files (Modal Volume)</span>
           <Button
             variant="ghost"
             size="sm"
@@ -80,12 +80,12 @@ const FilesPanel = ({ files, onFileSelect, botId, onFilesUpdate }: FilesPanelPro
                         {typeof content === 'string' ? content.length : 0} chars
                       </Badge>
                       <Badge variant="secondary" className="text-xs">
-                        Modal
+                        Modal Only
                       </Badge>
                     </div>
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
-                    Stored in Modal volume • Click to view
+                    Exclusively stored in Modal volume • Click to view
                   </p>
                 </div>
               ))}
@@ -95,7 +95,7 @@ const FilesPanel = ({ files, onFileSelect, botId, onFilesUpdate }: FilesPanelPro
               <FileText className="h-8 w-8 mx-auto mb-2 text-gray-400" />
               <p>No files generated yet</p>
               <p className="text-sm">Chat with the AI to generate bot code</p>
-              <p className="text-xs mt-2 text-blue-600">Files will be stored in Modal volume</p>
+              <p className="text-xs mt-2 text-blue-600">Files stored exclusively in Modal volume</p>
             </div>
           )}
         </ScrollArea>

@@ -1,4 +1,3 @@
-
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -21,13 +20,13 @@ export async function getBotData(botId: string, userId: string) {
 }
 
 export async function getBotFiles(userId: string, botId: string): Promise<string> {
-  // Get files from Modal volume instead of Supabase storage
+  // Get files exclusively from Modal volume - no Supabase storage
   try {
     const modalUrl = 'https://efhwjkhqbbucvedgznba--telegram-bot-service.modal.run';
     const response = await fetch(`${modalUrl}/files/${botId}?user_id=${userId}`);
     
     if (!response.ok) {
-      throw new Error('Failed to fetch files from Modal');
+      throw new Error('Failed to fetch files from Modal volume');
     }
     
     const data = await response.json();
@@ -38,7 +37,7 @@ export async function getBotFiles(userId: string, botId: string): Promise<string
 
     return data.files['main.py'];
   } catch (error) {
-    throw new Error('Failed to load bot code from Modal: ' + error.message);
+    throw new Error('Failed to load bot code exclusively from Modal volume: ' + error.message);
   }
 }
 
