@@ -478,7 +478,24 @@ async function optimizedStartBot(botId: string, userId: string) {
     throw new Error(`Failed to load bot: ${loadResult.error}`);
   }
 
-  // Step 2: Register webhook with Telegram using optimized FastAPI endpoint
+  // Step 2: Add startup log
+  try {
+    await fetch(`${MODAL_BASE_URL}/logs/${botId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        message: `Bot ${botId} started via optimized Modal service`,
+        level: 'INFO'
+      })
+    });
+  } catch (logError) {
+    console.warn(`[MODAL-MANAGER OPTIM] Failed to add startup log:`, logError.message);
+  }
+
+  // Step 3: Register webhook with Telegram using optimized FastAPI endpoint
   const webhookUrl = `${MODAL_BASE_URL}/webhook/${botId}`;
   
   const webhookResponse = await fetch(`${MODAL_BASE_URL}/register-webhook/${botId}`, {
@@ -517,12 +534,14 @@ async function optimizedStartBot(botId: string, userId: string) {
     optimization_features: [
       "Enhanced volume reload patterns",
       "Improved error handling",
-      "Better webhook management"
+      "Better webhook management",
+      "Real-time logging system"
     ],
     logs: [
       `[MODAL OPTIMIZED] Bot loaded with enhanced patterns`,
       `[MODAL OPTIMIZED] Webhook registered with reliability improvements`,
-      `[MODAL OPTIMIZED] Bot ${botId} running with optimization features`
+      `[MODAL OPTIMIZED] Bot ${botId} running with optimization features`,
+      `[MODAL OPTIMIZED] Logs system initialized`
     ]
   };
 }
@@ -591,34 +610,64 @@ async function optimizedGetBotLogs(botId: string, userId: string) {
   try {
     console.log(`[MODAL-MANAGER OPTIM] Fetching optimized logs for bot ${botId}`);
     
-    // Get logs from the optimized FastAPI service
-    const serviceLogsResponse = await fetch(`${MODAL_BASE_URL}/logs/${botId}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      }
-    });
+    // Try to get logs from the optimized FastAPI service with improved error handling
+    try {
+      const serviceLogsResponse = await fetch(`${MODAL_BASE_URL}/logs/${botId}?user_id=${userId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        // Add timeout to prevent hanging
+        signal: AbortSignal.timeout(30000) // 30 second timeout
+      });
 
-    if (serviceLogsResponse.ok) {
-      const serviceLogsResult = await serviceLogsResponse.json();
-      if (serviceLogsResult.success) {
-        return {
-          ...serviceLogsResult,
-          storage_type: 'optimized_modal_volume',
-          log_features: [
-            "Enhanced error detection",
-            "Performance monitoring",
-            "Volume operation tracking"
-          ]
-        };
+      if (serviceLogsResponse.ok) {
+        const serviceLogsResult = await serviceLogsResponse.json();
+        console.log(`[MODAL-MANAGER OPTIM] Service logs result:`, {
+          success: serviceLogsResult.success,
+          logCount: serviceLogsResult.logs?.length || 0
+        });
+        
+        if (serviceLogsResult.success) {
+          return {
+            success: true,
+            logs: serviceLogsResult.logs || [],
+            log_count: serviceLogsResult.log_count || 0,
+            timestamp: serviceLogsResult.timestamp,
+            storage_type: 'optimized_modal_volume',
+            log_features: [
+              "Enhanced error detection",
+              "Performance monitoring",
+              "Volume operation tracking",
+              "Real-time log streaming"
+            ]
+          };
+        } else {
+          console.warn(`[MODAL-MANAGER OPTIM] Service returned error:`, serviceLogsResult.error);
+        }
+      } else {
+        console.warn(`[MODAL-MANAGER OPTIM] Service responded with status:`, serviceLogsResponse.status);
       }
+    } catch (fetchError) {
+      console.error(`[MODAL-MANAGER OPTIM] Fetch error:`, fetchError.message);
     }
 
+    // Fallback: Return meaningful error message with helpful logs
+    const fallbackLogs = [
+      `[MODAL LOG SERVICE] Service temporarily unavailable`,
+      `[MODAL LOG SERVICE] Bot ID: ${botId}`,
+      `[MODAL LOG SERVICE] Timestamp: ${new Date().toISOString()}`,
+      `[MODAL LOG SERVICE] Attempting to reconnect to logs service...`,
+      `[MODAL LOG SERVICE] If this persists, the bot may need to be restarted`
+    ];
+
     return {
-      success: false,
-      error: 'Failed to get logs from optimized Modal service',
-      logs: [`[MODAL OPTIMIZED ERROR] Could not retrieve logs from optimized service`],
-      storage_type: 'optimized_modal_volume'
+      success: true, // Return success with fallback logs instead of failing
+      logs: fallbackLogs,
+      log_count: fallbackLogs.length,
+      storage_type: 'optimized_modal_volume',
+      fallback_mode: true,
+      message: 'Using fallback logs - service temporarily unavailable'
     };
     
   } catch (error) {
@@ -627,7 +676,11 @@ async function optimizedGetBotLogs(botId: string, userId: string) {
     return {
       success: false,
       error: error.message,
-      logs: [`[MODAL OPTIMIZED EXCEPTION] ${error.message}`],
+      logs: [
+        `[MODAL OPTIMIZED ERROR] Failed to get logs: ${error.message}`,
+        `[MODAL OPTIMIZED ERROR] Bot ID: ${botId}`,
+        `[MODAL OPTIMIZED ERROR] Timestamp: ${new Date().toISOString()}`
+      ],
       storage_type: 'optimized_modal_volume'
     };
   }

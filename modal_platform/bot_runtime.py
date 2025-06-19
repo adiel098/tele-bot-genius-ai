@@ -1,4 +1,3 @@
-
 import modal
 import json
 import os
@@ -33,6 +32,25 @@ volume = modal.Volume.from_name("bot-files", create_if_missing=True)
 # Dictionary to store active bot instances in memory
 bot_instances: Dict[str, Any] = {}
 
+# Dictionary to store bot logs in memory
+bot_logs: Dict[str, list] = {}
+
+def add_bot_log(bot_id: str, message: str, level: str = "INFO"):
+    """Add a log entry for a specific bot"""
+    timestamp = datetime.now().isoformat()
+    log_entry = f"[{timestamp}] [{level}] {message}"
+    
+    if bot_id not in bot_logs:
+        bot_logs[bot_id] = []
+    
+    bot_logs[bot_id].append(log_entry)
+    
+    # Keep only last 1000 log entries per bot
+    if len(bot_logs[bot_id]) > 1000:
+        bot_logs[bot_id] = bot_logs[bot_id][-1000:]
+    
+    print(f"[BOT LOG {bot_id}] {log_entry}")
+
 @app.function(
     image=image,
     volumes={"/data": volume},
@@ -43,6 +61,7 @@ def optimized_store_bot_files(bot_id: str, user_id: str, bot_code: str, bot_toke
     """Optimized Modal function to store bot files with proper volume patterns"""
     try:
         print(f"[MODAL OPTIMIZED STORE] Starting optimized storage for bot {bot_id}")
+        add_bot_log(bot_id, f"Starting optimized storage for bot {bot_id}")
         
         # Create bot directory path
         bot_dir = f"/data/bots/{user_id}/{bot_id}"
@@ -51,6 +70,7 @@ def optimized_store_bot_files(bot_id: str, user_id: str, bot_code: str, bot_toke
         # Create directory structure
         os.makedirs(bot_dir, exist_ok=True)
         print(f"[MODAL OPTIMIZED STORE] ✓ Directory structure created")
+        add_bot_log(bot_id, "Directory structure created")
         
         # Write main bot code with proper file handling
         main_py_path = f"{bot_dir}/main.py"
@@ -67,6 +87,7 @@ def optimized_store_bot_files(bot_id: str, user_id: str, bot_code: str, bot_toke
             raise Exception("File content verification failed")
         
         print(f"[MODAL OPTIMIZED STORE] ✓ main.py written and verified")
+        add_bot_log(bot_id, f"main.py written and verified ({len(bot_code)} chars)")
         
         # Create optimized metadata
         metadata = {
@@ -86,11 +107,23 @@ def optimized_store_bot_files(bot_id: str, user_id: str, bot_code: str, bot_toke
             json.dump(metadata, f, indent=2)
         
         print(f"[MODAL OPTIMIZED STORE] ✓ Metadata written")
+        add_bot_log(bot_id, "Metadata written successfully")
+        
+        # Create logs directory and initial log file
+        logs_dir = f"{bot_dir}/logs"
+        os.makedirs(logs_dir, exist_ok=True)
+        
+        initial_log = f"[{datetime.now().isoformat()}] [INFO] Bot {bot_id} stored successfully\n"
+        with open(f"{logs_dir}/bot.log", "w", encoding='utf-8') as f:
+            f.write(initial_log)
+        
+        add_bot_log(bot_id, "Initial log file created")
         
         # CRITICAL: Explicit volume commit in proper Modal function context
         print(f"[MODAL OPTIMIZED STORE] Committing volume changes...")
         volume.commit()
         print(f"[MODAL OPTIMIZED STORE] ✓ Volume committed successfully")
+        add_bot_log(bot_id, "Volume committed successfully")
         
         # Post-commit verification
         verification_logs = []
@@ -124,12 +157,14 @@ def optimized_store_bot_files(bot_id: str, user_id: str, bot_code: str, bot_toke
                 f"[MODAL OPTIMIZED] Bot {bot_id} stored with enhanced patterns",
                 f"[MODAL OPTIMIZED] File size: {len(bot_code)} characters",
                 f"[MODAL OPTIMIZED] Volume committed in proper function context",
-                f"[MODAL OPTIMIZED] Verification passed: {len(verification_logs)} checks"
+                f"[MODAL OPTIMIZED] Verification passed: {len(verification_logs)} checks",
+                f"[MODAL OPTIMIZED] Logs directory created"
             ]
         }
         
     except Exception as e:
         print(f"[MODAL OPTIMIZED STORE] ✗ Error: {str(e)}")
+        add_bot_log(bot_id, f"Storage error: {str(e)}", "ERROR")
         import traceback
         traceback.print_exc()
         return {
@@ -149,11 +184,13 @@ def optimized_load_bot_files(bot_id: str, user_id: str):
     """Optimized Modal function to load bot files with proper reload patterns"""
     try:
         print(f"[MODAL OPTIMIZED LOAD] Starting optimized load for bot {bot_id}")
+        add_bot_log(bot_id, f"Starting optimized load for bot {bot_id}")
         
         # CRITICAL: Always reload volume before reading to get latest state
         print(f"[MODAL OPTIMIZED LOAD] Reloading volume for latest state...")
         volume.reload()
         print(f"[MODAL OPTIMIZED LOAD] ✓ Volume reloaded successfully")
+        add_bot_log(bot_id, "Volume reloaded successfully")
         
         bot_dir = f"/data/bots/{user_id}/{bot_id}"
         print(f"[MODAL OPTIMIZED LOAD] Target directory: {bot_dir}")
@@ -254,6 +291,7 @@ def optimized_load_bot_files(bot_id: str, user_id: str):
         
     except Exception as e:
         print(f"[MODAL OPTIMIZED LOAD] ✗ Exception: {str(e)}")
+        add_bot_log(bot_id, f"Load error: {str(e)}", "ERROR")
         import traceback
         traceback.print_exc()
         return {
@@ -263,6 +301,98 @@ def optimized_load_bot_files(bot_id: str, user_id: str):
             "storage_method": "optimized_modal_volume",
             "logs": [f"[MODAL OPTIMIZED ERROR] Load failed: {str(e)}"]
         }
+
+@app.function(
+    image=image,
+    volumes={"/data": volume},
+    min_containers=1,
+    timeout=3600
+)
+def get_bot_logs_from_volume(bot_id: str, user_id: str):
+    """Get bot logs from volume storage"""
+    try:
+        print(f"[MODAL LOGS] Getting logs for bot {bot_id}")
+        
+        # Reload volume to get latest state
+        volume.reload()
+        
+        bot_dir = f"/data/bots/{user_id}/{bot_id}"
+        logs_file = f"{bot_dir}/logs/bot.log"
+        
+        logs = []
+        
+        # Get logs from memory first
+        if bot_id in bot_logs:
+            logs.extend(bot_logs[bot_id])
+        
+        # Get logs from volume if file exists
+        if os.path.exists(logs_file):
+            try:
+                with open(logs_file, "r", encoding='utf-8') as f:
+                    file_logs = f.readlines()
+                    logs.extend([log.strip() for log in file_logs if log.strip()])
+            except Exception as e:
+                logs.append(f"[ERROR] Failed to read log file: {str(e)}")
+        
+        # If no logs found, provide default message
+        if not logs:
+            logs = [
+                f"[{datetime.now().isoformat()}] [INFO] No logs available for bot {bot_id}",
+                f"[{datetime.now().isoformat()}] [INFO] Bot may not have been started yet"
+            ]
+        
+        return {
+            "success": True,
+            "logs": logs,
+            "log_count": len(logs),
+            "bot_id": bot_id,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        print(f"[MODAL LOGS] Error getting logs: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "logs": [f"[ERROR] Failed to get logs: {str(e)}"],
+            "bot_id": bot_id
+        }
+
+@app.function(
+    image=image,
+    volumes={"/data": volume},
+    min_containers=1,
+    timeout=3600
+)
+def append_bot_log_to_volume(bot_id: str, user_id: str, message: str, level: str = "INFO"):
+    """Append log message to bot's volume log file"""
+    try:
+        volume.reload()
+        
+        bot_dir = f"/data/bots/{user_id}/{bot_id}"
+        logs_dir = f"{bot_dir}/logs"
+        logs_file = f"{logs_dir}/bot.log"
+        
+        # Ensure logs directory exists
+        os.makedirs(logs_dir, exist_ok=True)
+        
+        # Append log message
+        timestamp = datetime.now().isoformat()
+        log_entry = f"[{timestamp}] [{level}] {message}\n"
+        
+        with open(logs_file, "a", encoding='utf-8') as f:
+            f.write(log_entry)
+        
+        volume.commit()
+        
+        # Also add to memory logs
+        add_bot_log(bot_id, message, level)
+        
+        return {"success": True, "message": "Log appended"}
+        
+    except Exception as e:
+        print(f"[MODAL LOG APPEND] Error: {str(e)}")
+        return {"success": False, "error": str(e)}
 
 @app.function(
     image=image,
@@ -418,6 +548,7 @@ def comprehensive_volume_health_check(bot_id: str = None, user_id: str = None):
         
     except Exception as e:
         print(f"[MODAL HEALTH CHECK] ✗ Exception: {str(e)}")
+        add_bot_log(None, f"Health check error: {str(e)}", "ERROR")
         import traceback
         traceback.print_exc()
         return {
@@ -446,6 +577,69 @@ def telegram_bot_service():
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @web_app.get("/logs/{bot_id}")
+    async def get_bot_logs_endpoint(bot_id: str, user_id: str = None):
+        """Get logs for a specific bot"""
+        try:
+            print(f"[MODAL LOGS API] Getting logs for bot {bot_id}")
+            
+            # If user_id not provided, try to find it
+            if not user_id:
+                volume.reload()
+                base_dir = "/data/bots"
+                if os.path.exists(base_dir):
+                    for user_dir in os.listdir(base_dir):
+                        bot_path = f"{base_dir}/{user_dir}/{bot_id}"
+                        if os.path.exists(bot_path):
+                            user_id = user_dir
+                            break
+            
+            if not user_id:
+                return {
+                    "success": False,
+                    "error": "Bot not found",
+                    "logs": [f"[ERROR] Bot {bot_id} not found in any user directory"]
+                }
+            
+            # Get logs using Modal function
+            result = get_bot_logs_from_volume.remote(bot_id, user_id)
+            
+            print(f"[MODAL LOGS API] Retrieved {len(result.get('logs', []))} log entries")
+            
+            return result
+            
+        except Exception as e:
+            print(f"[MODAL LOGS API] Error: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e),
+                "logs": [f"[ERROR] Failed to get logs: {str(e)}"]
+            }
+
+    @web_app.post("/logs/{bot_id}")
+    async def append_bot_log_endpoint(bot_id: str, request: Request):
+        """Append log message to bot logs"""
+        try:
+            body = await request.json()
+            user_id = body.get("user_id")
+            message = body.get("message", "")
+            level = body.get("level", "INFO")
+            
+            if not user_id or not message:
+                raise HTTPException(status_code=400, detail="Missing user_id or message")
+            
+            # Append log using Modal function
+            result = append_bot_log_to_volume.remote(bot_id, user_id, message, level)
+            
+            return result
+            
+        except Exception as e:
+            print(f"[MODAL LOG APPEND API] Error: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
 
     @web_app.post("/store-bot/{bot_id}")
     async def optimized_store_bot_endpoint(bot_id: str, request: Request):
@@ -546,6 +740,7 @@ def telegram_bot_service():
         """Load and initialize a bot instance with proper volume reload"""
         try:
             print(f"[MODAL OPTIMIZED] Loading bot instance {bot_id}")
+            add_bot_log(bot_id, f"Loading bot instance {bot_id}")
             
             # Reload volume to get latest bot files
             volume.reload()
@@ -559,6 +754,8 @@ def telegram_bot_service():
             # Load and execute bot code
             with open(f"{bot_dir}/main.py", "r") as f:
                 bot_code = f.read()
+            
+            add_bot_log(bot_id, "Bot code loaded from volume")
             
             # Create a namespace for the bot code
             bot_namespace = {"__name__": "__main__"}
@@ -585,13 +782,16 @@ def telegram_bot_service():
                     "loaded_at": datetime.now().isoformat()
                 }
                 print(f"[MODAL OPTIMIZED] Bot {bot_id} loaded and initialized successfully")
+                add_bot_log(bot_id, "Bot loaded and initialized successfully")
                 return True
             else:
                 print(f"[MODAL OPTIMIZED] No application instance found in bot {bot_id} code")
+                add_bot_log(bot_id, "No application instance found in bot code", "ERROR")
                 return False
                 
         except Exception as e:
             print(f"[MODAL OPTIMIZED] Error loading bot {bot_id}: {str(e)}")
+            add_bot_log(bot_id, f"Error loading bot: {str(e)}", "ERROR")
             return False
 
     @web_app.post("/webhook/{bot_id}")
@@ -600,6 +800,7 @@ def telegram_bot_service():
         try:
             body = await request.json()
             print(f"[MODAL OPTIMIZED] Bot {bot_id} received webhook: {body}")
+            add_bot_log(bot_id, f"Received webhook: {json.dumps(body)[:100]}...")
             
             # Load bot if not already loaded
             if bot_id not in bot_instances:
@@ -620,6 +821,7 @@ def telegram_bot_service():
                         await load_bot_instance(bot_id, user_dirs[0])
                 except Exception as e:
                     print(f"[MODAL OPTIMIZED] Error finding bot {bot_id}: {str(e)}")
+                    add_bot_log(bot_id, f"Error finding bot: {str(e)}", "ERROR")
             
             # Process webhook with bot handler
             if bot_id in bot_instances:
@@ -632,14 +834,17 @@ def telegram_bot_service():
                 if update and bot_handler:
                     # Process the update asynchronously
                     await bot_handler.process_update(update)
+                    add_bot_log(bot_id, "Webhook processed successfully")
                 
                 return {"ok": True}
             else:
                 print(f"[MODAL OPTIMIZED] Bot {bot_id} not found or not loaded")
+                add_bot_log(bot_id, "Bot not found or not loaded", "ERROR")
                 return {"ok": False, "error": "Bot not found"}
                 
         except Exception as e:
             print(f"[MODAL OPTIMIZED] Error processing webhook for bot {bot_id}: {str(e)}")
+            add_bot_log(bot_id, f"Webhook error: {str(e)}", "ERROR")
             raise HTTPException(status_code=500, detail=str(e))
 
     # ... keep existing code (register webhook, unregister webhook, status endpoints)
