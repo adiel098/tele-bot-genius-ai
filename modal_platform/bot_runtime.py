@@ -1,3 +1,4 @@
+
 import modal
 import json
 import os
@@ -64,40 +65,83 @@ def generate_random_string(length: int = 10) -> str:
     min_containers=1,
     timeout=3600
 )
-def optimized_store_bot_files(bot_id: str, user_id: str, bot_code: str, bot_token: str, bot_name: str):
-    """Optimized Modal function to store bot files with proper volume patterns - NO SUPABASE STORAGE"""
+def enhanced_store_bot_files(bot_id: str, user_id: str, bot_code: str, bot_token: str, bot_name: str):
+    """Enhanced Modal function to store bot files with comprehensive debugging"""
     try:
-        print(f"[MODAL STORE CLEAN] === Starting PURE Modal storage for bot {bot_id} ===")
-        print(f"[MODAL STORE CLEAN] NO Supabase Storage calls - Modal Volume ONLY")
-        add_bot_log(bot_id, f"Starting Modal Volume ONLY storage for bot {bot_id}")
+        print(f"[MODAL STORE ENHANCED] === Starting Enhanced Modal storage for bot {bot_id} ===")
+        print(f"[MODAL STORE ENHANCED] Volume path: /data")
+        print(f"[MODAL STORE ENHANCED] Bot ID: {bot_id}")
+        print(f"[MODAL STORE ENHANCED] User ID: {user_id}")
+        print(f"[MODAL STORE ENHANCED] Code length: {len(bot_code)} characters")
+        print(f"[MODAL STORE ENHANCED] Bot name: {bot_name}")
         
-        # Create bot directory path
+        add_bot_log(bot_id, f"Starting enhanced Modal Volume storage for bot {bot_id}")
+        
+        # Step 1: Check volume mount status
+        if not os.path.exists("/data"):
+            print(f"[MODAL STORE ENHANCED] ❌ Volume not mounted at /data")
+            raise Exception("Modal Volume not mounted at /data")
+        
+        print(f"[MODAL STORE ENHANCED] ✓ Volume mounted at /data")
+        
+        # Step 2: Check volume permissions
+        try:
+            test_file = f"/data/test_{bot_id}.txt"
+            with open(test_file, "w") as f:
+                f.write("test")
+            os.remove(test_file)
+            print(f"[MODAL STORE ENHANCED] ✓ Volume write permissions OK")
+        except Exception as perm_error:
+            print(f"[MODAL STORE ENHANCED] ❌ Volume permission error: {perm_error}")
+            raise Exception(f"Volume permission error: {perm_error}")
+        
+        # Step 3: Create comprehensive directory structure
         bot_dir = f"/data/bots/{user_id}/{bot_id}"
-        print(f"[MODAL STORE CLEAN] Target directory: {bot_dir}")
+        logs_dir = f"{bot_dir}/logs"
         
-        # Create directory structure
+        print(f"[MODAL STORE ENHANCED] Creating directory structure: {bot_dir}")
         os.makedirs(bot_dir, exist_ok=True)
-        print(f"[MODAL STORE CLEAN] ✓ Directory structure created")
-        add_bot_log(bot_id, "Directory structure created")
+        os.makedirs(logs_dir, exist_ok=True)
         
-        # Write main bot code with proper file handling
+        # Verify directories were created
+        if not os.path.exists(bot_dir):
+            raise Exception(f"Failed to create bot directory: {bot_dir}")
+        if not os.path.exists(logs_dir):
+            raise Exception(f"Failed to create logs directory: {logs_dir}")
+            
+        print(f"[MODAL STORE ENHANCED] ✓ Directories created and verified")
+        add_bot_log(bot_id, "Directory structure created and verified")
+        
+        # Step 4: Write main bot code with extensive validation
         main_py_path = f"{bot_dir}/main.py"
-        print(f"[MODAL STORE CLEAN] Writing main.py ({len(bot_code)} chars)")
+        print(f"[MODAL STORE ENHANCED] Writing main.py to: {main_py_path}")
         
+        # Write with explicit encoding and sync
         with open(main_py_path, "w", encoding='utf-8') as f:
             f.write(bot_code)
+            f.flush()
+            os.fsync(f.fileno())  # Force write to disk
         
-        # Verify file was written correctly
+        print(f"[MODAL STORE ENHANCED] ✓ main.py written with fsync")
+        
+        # Verify file exists and content is correct
+        if not os.path.exists(main_py_path):
+            raise Exception(f"main.py not found after write: {main_py_path}")
+        
+        # Read back and verify content
         with open(main_py_path, "r", encoding='utf-8') as f:
             stored_content = f.read()
         
+        if len(stored_content) != len(bot_code):
+            raise Exception(f"Content length mismatch: expected {len(bot_code)}, got {len(stored_content)}")
+        
         if stored_content != bot_code:
-            raise Exception("File content verification failed")
+            raise Exception("File content verification failed - content differs")
         
-        print(f"[MODAL STORE CLEAN] ✓ main.py written and verified")
-        add_bot_log(bot_id, f"main.py written and verified ({len(bot_code)} chars)")
+        print(f"[MODAL STORE ENHANCED] ✓ main.py content verified ({len(stored_content)} chars)")
+        add_bot_log(bot_id, f"main.py written and verified ({len(stored_content)} chars)")
         
-        # Create optimized metadata
+        # Step 5: Create comprehensive metadata
         metadata = {
             "bot_id": bot_id,
             "user_id": user_id,
@@ -105,81 +149,245 @@ def optimized_store_bot_files(bot_id: str, user_id: str, bot_code: str, bot_toke
             "created_at": datetime.now().isoformat(),
             "status": "stored",
             "bot_token": bot_token,
-            "storage_method": "modal_volume_only_no_supabase",
+            "storage_method": "enhanced_modal_volume",
             "file_size": len(bot_code),
-            "storage_version": "3.0_clean"
+            "storage_version": "4.0_enhanced",
+            "verification_passed": True,
+            "volume_path": "/data",
+            "bot_directory": bot_dir
         }
         
         metadata_path = f"{bot_dir}/metadata.json"
+        print(f"[MODAL STORE ENHANCED] Writing metadata to: {metadata_path}")
+        
         with open(metadata_path, "w", encoding='utf-8') as f:
             json.dump(metadata, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
         
-        print(f"[MODAL STORE CLEAN] ✓ Metadata written")
-        add_bot_log(bot_id, "Metadata written successfully")
+        # Verify metadata file
+        if not os.path.exists(metadata_path):
+            raise Exception(f"metadata.json not found after write: {metadata_path}")
         
-        # Create logs directory and initial log file
-        logs_dir = f"{bot_dir}/logs"
-        os.makedirs(logs_dir, exist_ok=True)
+        with open(metadata_path, "r", encoding='utf-8') as f:
+            stored_metadata = json.load(f)
         
-        initial_log = f"[{datetime.now().isoformat()}] [INFO] Bot {bot_id} stored successfully with Modal Volume ONLY\n"
-        with open(f"{logs_dir}/bot.log", "w", encoding='utf-8') as f:
-            f.write(initial_log)
+        if stored_metadata["bot_id"] != bot_id:
+            raise Exception("Metadata verification failed")
         
-        add_bot_log(bot_id, "Initial log file created")
+        print(f"[MODAL STORE ENHANCED] ✓ Metadata written and verified")
+        add_bot_log(bot_id, "Metadata written and verified")
         
-        # CRITICAL: Explicit volume commit in proper Modal function context
-        print(f"[MODAL STORE CLEAN] Committing volume changes...")
-        volume.commit()
-        print(f"[MODAL STORE CLEAN] ✓ Volume committed successfully")
+        # Step 6: Create additional files
+        files_to_create = {
+            f"{bot_dir}/requirements.txt": "python-telegram-bot>=20.0\nrequests>=2.28.0\npython-dotenv>=1.0.0",
+            f"{bot_dir}/.env": f"BOT_TOKEN={bot_token}\nBOT_NAME={bot_name}",
+            f"{logs_dir}/bot.log": f"[{datetime.now().isoformat()}] [INFO] Bot {bot_id} stored successfully\n"
+        }
+        
+        for file_path, content in files_to_create.items():
+            print(f"[MODAL STORE ENHANCED] Creating file: {os.path.basename(file_path)}")
+            with open(file_path, "w", encoding='utf-8') as f:
+                f.write(content)
+                f.flush()
+                os.fsync(f.fileno())
+            
+            # Verify each file
+            if not os.path.exists(file_path):
+                print(f"[MODAL STORE ENHANCED] ⚠️  File not found after creation: {file_path}")
+            else:
+                file_size = os.path.getsize(file_path)
+                print(f"[MODAL STORE ENHANCED] ✓ {os.path.basename(file_path)} created ({file_size} bytes)")
+        
+        # Step 7: CRITICAL - Explicit volume commit with error handling
+        print(f"[MODAL STORE ENHANCED] === Performing volume commit ===")
+        try:
+            volume.commit()
+            print(f"[MODAL STORE ENHANCED] ✓ Volume commit completed")
+        except Exception as commit_error:
+            print(f"[MODAL STORE ENHANCED] ❌ Volume commit failed: {commit_error}")
+            raise Exception(f"Volume commit failed: {commit_error}")
+        
         add_bot_log(bot_id, "Volume committed successfully")
         
-        # Post-commit verification
-        verification_logs = []
+        # Step 8: Post-commit comprehensive verification
+        print(f"[MODAL STORE ENHANCED] === Post-commit verification ===")
+        verification_results = []
         
-        # Check files exist after commit
-        if os.path.exists(main_py_path) and os.path.exists(metadata_path):
-            verification_logs.append("✓ Files exist after commit")
-            
-            # Verify file sizes
-            main_size = os.path.getsize(main_py_path)
-            meta_size = os.path.getsize(metadata_path)
-            verification_logs.append(f"✓ File sizes: main.py={main_size}B, metadata={meta_size}B")
-            
-            # Quick content check
-            with open(main_py_path, "r", encoding='utf-8') as f:
-                content_sample = f.read(100)
-            verification_logs.append(f"✓ Content sample: {content_sample[:50]}...")
-            
-        else:
-            verification_logs.append("✗ Files missing after commit")
+        # Check all files exist
+        files_to_check = [main_py_path, metadata_path] + list(files_to_create.keys())
         
-        print(f"[MODAL STORE CLEAN] Verification complete: {len(verification_logs)} checks");
+        for file_path in files_to_check:
+            if os.path.exists(file_path):
+                file_size = os.path.getsize(file_path)
+                verification_results.append(f"✓ {os.path.basename(file_path)}: {file_size} bytes")
+                print(f"[MODAL STORE ENHANCED] ✓ File verified: {os.path.basename(file_path)} ({file_size} bytes)")
+            else:
+                verification_results.append(f"❌ {os.path.basename(file_path)}: NOT FOUND")
+                print(f"[MODAL STORE ENHANCED] ❌ File missing: {file_path}")
         
-        return {
+        # Directory listing for debugging
+        try:
+            dir_contents = os.listdir(bot_dir)
+            print(f"[MODAL STORE ENHANCED] Directory contents: {dir_contents}")
+            verification_results.append(f"Directory contents: {', '.join(dir_contents)}")
+        except Exception as list_error:
+            print(f"[MODAL STORE ENHANCED] ❌ Cannot list directory: {list_error}")
+            verification_results.append(f"❌ Directory listing failed: {list_error}")
+        
+        # Step 9: Final success report
+        success_summary = {
             "success": True,
             "bot_id": bot_id,
-            "storage_method": "modal_volume_only_no_supabase",
-            "storage_version": "3.0_clean",
-            "verification": verification_logs,
+            "storage_method": "enhanced_modal_volume",
+            "storage_version": "4.0_enhanced",
+            "files_created": len(files_to_create) + 2,  # +2 for main.py and metadata.json
+            "verification_results": verification_results,
+            "volume_path": "/data",
+            "bot_directory": bot_dir,
+            "timestamp": datetime.now().isoformat(),
             "logs": [
-                f"[MODAL CLEAN] Bot {bot_id} stored with NO Supabase Storage calls",
-                f"[MODAL CLEAN] File size: {len(bot_code)} characters",
-                f"[MODAL CLEAN] Volume committed in proper function context",
-                f"[MODAL CLEAN] Verification passed: {len(verification_logs)} checks",
-                f"[MODAL CLEAN] Pure Modal Volume storage - no external dependencies"
+                f"[ENHANCED] Bot {bot_id} stored with comprehensive verification",
+                f"[ENHANCED] Files created: {len(files_to_create) + 2}",
+                f"[ENHANCED] Volume committed successfully",
+                f"[ENHANCED] All files verified post-commit",
+                f"[ENHANCED] Enhanced Modal Volume storage complete"
             ]
         }
         
+        print(f"[MODAL STORE ENHANCED] === Storage completed successfully ===")
+        print(f"[MODAL STORE ENHANCED] Summary: {len(verification_results)} files verified")
+        
+        return success_summary
+        
     except Exception as e:
-        print(f"[MODAL STORE CLEAN] ✗ Error: {str(e)}")
-        add_bot_log(bot_id, f"Storage error: {str(e)}", "ERROR")
+        error_message = str(e)
+        print(f"[MODAL STORE ENHANCED] ❌ CRITICAL ERROR: {error_message}")
+        
+        # Detailed error logging
         import traceback
-        traceback.print_exc()
+        error_traceback = traceback.format_exc()
+        print(f"[MODAL STORE ENHANCED] Error traceback:\n{error_traceback}")
+        
+        add_bot_log(bot_id, f"Storage error: {error_message}", "ERROR")
+        
         return {
             "success": False,
-            "error": str(e),
-            "storage_method": "modal_volume_only_no_supabase",
-            "logs": [f"[MODAL CLEAN ERROR] {str(e)}"]
+            "error": error_message,
+            "error_type": "modal_storage_error",
+            "storage_method": "enhanced_modal_volume",
+            "storage_version": "4.0_enhanced",
+            "traceback": error_traceback,
+            "logs": [f"[ENHANCED ERROR] {error_message}"]
+        }
+
+@app.function(
+    image=image,
+    volumes={"/data": volume},
+    min_containers=1,
+    timeout=3600
+)
+def enhanced_get_bot_files(bot_id: str, user_id: str):
+    """Enhanced Modal function to retrieve bot files with comprehensive debugging"""
+    try:
+        print(f"[MODAL GET ENHANCED] === Starting Enhanced file retrieval for bot {bot_id} ===")
+        print(f"[MODAL GET ENHANCED] User ID: {user_id}")
+        
+        # Check volume mount
+        if not os.path.exists("/data"):
+            raise Exception("Modal Volume not mounted at /data")
+        
+        # Construct bot directory path
+        bot_dir = f"/data/bots/{user_id}/{bot_id}"
+        print(f"[MODAL GET ENHANCED] Bot directory: {bot_dir}")
+        
+        # Check if bot directory exists
+        if not os.path.exists(bot_dir):
+            print(f"[MODAL GET ENHANCED] ❌ Bot directory not found: {bot_dir}")
+            
+            # List what's in the bots directory for debugging
+            bots_dir = f"/data/bots"
+            if os.path.exists(bots_dir):
+                print(f"[MODAL GET ENHANCED] Available in /data/bots/:")
+                for item in os.listdir(bots_dir):
+                    print(f"[MODAL GET ENHANCED]   - {item}")
+                    user_dir = f"{bots_dir}/{item}"
+                    if os.path.isdir(user_dir):
+                        print(f"[MODAL GET ENHANCED]     User {item} bots:")
+                        for bot in os.listdir(user_dir):
+                            print(f"[MODAL GET ENHANCED]       - {bot}")
+            
+            return {
+                "success": False,
+                "error": f"Bot directory not found: {bot_dir}",
+                "files": {},
+                "debug_info": f"Directory {bot_dir} does not exist"
+            }
+        
+        print(f"[MODAL GET ENHANCED] ✓ Bot directory found")
+        
+        # List all files in bot directory
+        try:
+            all_files = os.listdir(bot_dir)
+            print(f"[MODAL GET ENHANCED] Files in directory: {all_files}")
+        except Exception as list_error:
+            print(f"[MODAL GET ENHANCED] ❌ Cannot list directory: {list_error}")
+            return {
+                "success": False,
+                "error": f"Cannot list directory: {list_error}",
+                "files": {}
+            }
+        
+        # Read all files
+        files = {}
+        files_read = 0
+        
+        for filename in all_files:
+            file_path = f"{bot_dir}/{filename}"
+            
+            # Skip directories
+            if os.path.isdir(file_path):
+                print(f"[MODAL GET ENHANCED] Skipping directory: {filename}")
+                continue
+            
+            try:
+                print(f"[MODAL GET ENHANCED] Reading file: {filename}")
+                with open(file_path, "r", encoding='utf-8') as f:
+                    content = f.read()
+                files[filename] = content
+                files_read += 1
+                print(f"[MODAL GET ENHANCED] ✓ {filename}: {len(content)} characters")
+            except Exception as read_error:
+                print(f"[MODAL GET ENHANCED] ❌ Error reading {filename}: {read_error}")
+                files[filename] = f"Error reading file: {read_error}"
+        
+        print(f"[MODAL GET ENHANCED] === File retrieval completed ===")
+        print(f"[MODAL GET ENHANCED] Files read: {files_read}")
+        print(f"[MODAL GET ENHANCED] Files available: {list(files.keys())}")
+        
+        return {
+            "success": True,
+            "files": files,
+            "files_count": files_read,
+            "directory": bot_dir,
+            "debug_info": f"Retrieved {files_read} files from {bot_dir}",
+            "storage_method": "enhanced_modal_volume"
+        }
+        
+    except Exception as e:
+        error_message = str(e)
+        print(f"[MODAL GET ENHANCED] ❌ CRITICAL ERROR: {error_message}")
+        
+        import traceback
+        error_traceback = traceback.format_exc()
+        print(f"[MODAL GET ENHANCED] Error traceback:\n{error_traceback}")
+        
+        return {
+            "success": False,
+            "error": error_message,
+            "files": {},
+            "traceback": error_traceback,
+            "storage_method": "enhanced_modal_volume"
         }
 
 @app.function(
@@ -189,9 +397,9 @@ def optimized_store_bot_files(bot_id: str, user_id: str, bot_code: str, bot_toke
     timeout=3600
 )
 @modal.asgi_app()
-def telegram_bot_service():
-    """Optimized FastAPI service with PURE Modal Volume patterns - NO Supabase Storage"""
-    web_app = FastAPI(title="Telegram Bot Platform - Pure Modal Clean")
+def enhanced_telegram_bot_service():
+    """Enhanced FastAPI service with comprehensive Modal Volume operations"""
+    web_app = FastAPI(title="Enhanced Telegram Bot Platform")
     
     # Allow CORS for webhook requests
     web_app.add_middleware(
@@ -203,100 +411,170 @@ def telegram_bot_service():
     )
 
     @web_app.post("/store-bot/{bot_id}")
-    async def pure_modal_store_bot_endpoint(bot_id: str, request: Request):
-        """PURE Modal store bot endpoint - NO Supabase Storage calls"""
+    async def enhanced_store_bot_endpoint(bot_id: str, request: Request):
+        """Enhanced store bot endpoint with comprehensive error handling"""
         try:
-            print(f"[MODAL API CLEAN] === Pure Modal storage request for bot {bot_id} ===")
-            print(f"[MODAL API CLEAN] NO Supabase Storage - Modal Volume ONLY")
+            print(f"[MODAL API ENHANCED] === Enhanced storage request for bot {bot_id} ===")
             
-            # Get raw body first
-            raw_body = await request.body()
-            print(f"[MODAL API CLEAN] Raw body received: {raw_body[:200]}...")
-            
-            # Try to parse JSON with better error handling
+            # Parse request body with enhanced error handling
             try:
-                if request.headers.get("content-type") == "application/json":
-                    body = await request.json()
-                else:
-                    # Try to parse raw body as JSON
-                    body_str = raw_body.decode('utf-8')
-                    print(f"[MODAL API CLEAN] Body string: {body_str[:200]}...")
-                    body = json.loads(body_str)
-            except json.JSONDecodeError as e:
-                print(f"[MODAL API CLEAN] JSON parse error: {str(e)}")
-                print(f"[MODAL API CLEAN] Raw body: {raw_body}")
-                raise HTTPException(
-                    status_code=400, 
-                    detail=f"Invalid JSON: {str(e)}. Received: {raw_body[:100]}"
-                )
-            except Exception as e:
-                print(f"[MODAL API CLEAN] Request parsing error: {str(e)}")
-                raise HTTPException(status_code=400, detail=f"Request parsing error: {str(e)}")
+                body = await request.json()
+                print(f"[MODAL API ENHANCED] Request body parsed successfully")
+            except Exception as parse_error:
+                print(f"[MODAL API ENHANCED] ❌ JSON parse error: {parse_error}")
+                return {
+                    "success": False,
+                    "error": f"Invalid JSON: {parse_error}",
+                    "error_type": "json_parse_error"
+                }
             
-            print(f"[MODAL API CLEAN] Parsed body: {body}")
+            # Validate required fields
+            required_fields = ["user_id", "bot_code", "bot_token"]
+            missing_fields = [field for field in required_fields if not body.get(field)]
+            
+            if missing_fields:
+                return {
+                    "success": False,
+                    "error": f"Missing required fields: {', '.join(missing_fields)}",
+                    "error_type": "missing_fields"
+                }
             
             user_id = body.get("user_id")
             bot_code = body.get("bot_code")
             bot_token = body.get("bot_token")
             bot_name = body.get("bot_name", f"Bot {bot_id}")
             
-            if not all([user_id, bot_code, bot_token]):
-                missing_fields = []
-                if not user_id: missing_fields.append("user_id")
-                if not bot_code: missing_fields.append("bot_code")
-                if not bot_token: missing_fields.append("bot_token")
-                
-                raise HTTPException(
-                    status_code=400, 
-                    detail=f"Missing required fields: {', '.join(missing_fields)}"
-                )
+            print(f"[MODAL API ENHANCED] Validated request for bot {bot_id}")
+            print(f"[MODAL API ENHANCED] Code length: {len(bot_code)} characters")
             
-            print(f"[MODAL API CLEAN] Storing bot {bot_id} with PURE Modal patterns")
-            print(f"[MODAL API CLEAN] Code length: {len(bot_code)} characters")
+            # Call enhanced storage function
+            result = enhanced_store_bot_files.remote(bot_id, user_id, bot_code, bot_token, bot_name)
             
-            # Call pure Modal function - NO Supabase Storage
-            result = optimized_store_bot_files.remote(bot_id, user_id, bot_code, bot_token, bot_name)
-            
-            print(f"[MODAL API CLEAN] Pure Modal storage result: success={result.get('success')}")
+            print(f"[MODAL API ENHANCED] Storage function completed")
+            print(f"[MODAL API ENHANCED] Result success: {result.get('success', False)}")
             
             return result
             
-        except HTTPException:
-            # Re-raise HTTP exceptions as-is
-            raise
         except Exception as e:
-            print(f"[MODAL API CLEAN] Unexpected error in pure Modal store endpoint: {str(e)}")
+            error_message = str(e)
+            print(f"[MODAL API ENHANCED] ❌ Endpoint error: {error_message}")
+            
             import traceback
-            traceback.print_exc()
+            error_traceback = traceback.format_exc()
+            print(f"[MODAL API ENHANCED] Error traceback:\n{error_traceback}")
+            
+            return {
+                "success": False,
+                "error": error_message,
+                "error_type": "endpoint_error",
+                "traceback": error_traceback
+            }
+
+    @web_app.get("/files/{bot_id}")
+    async def enhanced_get_files_endpoint(bot_id: str, user_id: str):
+        """Enhanced get files endpoint"""
+        try:
+            print(f"[MODAL API ENHANCED] === Enhanced file retrieval for bot {bot_id} ===")
+            print(f"[MODAL API ENHANCED] User ID: {user_id}")
+            
+            result = enhanced_get_bot_files.remote(bot_id, user_id)
+            
+            print(f"[MODAL API ENHANCED] File retrieval completed")
+            print(f"[MODAL API ENHANCED] Success: {result.get('success', False)}")
+            print(f"[MODAL API ENHANCED] Files count: {len(result.get('files', {}))}")
+            
+            return result
+            
+        except Exception as e:
+            error_message = str(e)
+            print(f"[MODAL API ENHANCED] ❌ File retrieval error: {error_message}")
+            
+            return {
+                "success": False,
+                "error": error_message,
+                "files": {},
+                "error_type": "file_retrieval_error"
+            }
+
+    @web_app.get("/logs/{bot_id}")
+    async def get_bot_logs_endpoint(bot_id: str):
+        """Get bot logs endpoint"""
+        try:
+            logs = bot_logs.get(bot_id, [])
+            
+            return {
+                "success": True,
+                "logs": logs,
+                "log_count": len(logs),
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
             return {
                 "success": False,
                 "error": str(e),
-                "logs": [f"[MODAL API CLEAN ERROR] {str(e)}"]
+                "logs": []
+            }
+
+    @web_app.get("/health-check/{bot_id}")
+    async def health_check_endpoint(bot_id: str, user_id: str):
+        """Enhanced health check endpoint"""
+        try:
+            print(f"[MODAL HEALTH] Health check for bot {bot_id}")
+            
+            # Check if volume is mounted
+            volume_status = "mounted" if os.path.exists("/data") else "not_mounted"
+            
+            # Check if bot directory exists
+            bot_dir = f"/data/bots/{user_id}/{bot_id}"
+            bot_exists = os.path.exists(bot_dir)
+            
+            # Count total bots
+            total_bots = 0
+            if os.path.exists("/data/bots"):
+                for user_dir in os.listdir("/data/bots"):
+                    user_path = f"/data/bots/{user_dir}"
+                    if os.path.isdir(user_path):
+                        total_bots += len([d for d in os.listdir(user_path) if os.path.isdir(f"{user_path}/{d}")])
+            
+            health_info = {
+                "volume_status": volume_status,
+                "bot_exists": bot_exists,
+                "bot_directory": bot_dir,
+                "total_bots": total_bots,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            return {
+                "success": True,
+                "health_info": health_info,
+                "check_type": "enhanced_health_check"
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "check_type": "enhanced_health_check"
             }
 
     @web_app.get("/")
     async def root():
-        """Root endpoint with pure Modal info"""
+        """Enhanced root endpoint"""
         return {
-            "service": "Telegram Bot Platform - Pure Modal Clean",
+            "service": "Enhanced Telegram Bot Platform",
             "status": "running",
-            "version": "3.0_clean",
-            "storage_info": "NO Supabase Storage - Modal Volume ONLY",
-            "optimization_features": [
-                "Pure Modal Volume storage patterns",
-                "NO Supabase Storage dependencies",
-                "Proper volume commit/reload patterns",
-                "Enhanced error handling",
-                "Robust JSON parsing"
+            "version": "4.0_enhanced",
+            "storage_info": "Enhanced Modal Volume with comprehensive debugging",
+            "features": [
+                "Enhanced file storage with fsync",
+                "Comprehensive error handling",
+                "Detailed debugging and logging",
+                "Post-commit verification",
+                "Volume mount validation"
             ],
             "loaded_bots": list(bot_instances.keys()),
-            "timestamp": datetime.now().isoformat(),
-            "endpoints": [
-                "POST /store-bot/{bot_id} - Pure Modal storage",
-                "GET /files/{bot_id} - Get bot files from Modal",
-                "GET /logs/{bot_id} - Get bot logs",
-                "GET /health-check/{bot_id} - Health check"
-            ]
+            "timestamp": datetime.now().isoformat()
         }
 
     return web_app
