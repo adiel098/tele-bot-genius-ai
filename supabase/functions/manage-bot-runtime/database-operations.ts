@@ -21,29 +21,25 @@ export async function getBotData(botId: string, userId: string) {
 }
 
 export async function getBotFiles(userId: string, botId: string): Promise<string> {
-  const { data: files } = await supabase.storage
-    .from('bot-files')
-    .list(`${userId}/${botId}`);
-
-  let mainCode = '';
-  if (files && files.length > 0) {
-    // Look for main.py or bot.py
-    const mainFile = files.find(f => f.name === 'main.py' || f.name === 'bot.py') || files[0];
+  // Get files from Modal volume instead of Supabase storage
+  try {
+    const modalUrl = 'https://efhwjkhqbbucvedgznba--telegram-bot-service.modal.run';
+    const response = await fetch(`${modalUrl}/files/${botId}?user_id=${userId}`);
     
-    const { data: fileData } = await supabase.storage
-      .from('bot-files')
-      .download(`${userId}/${botId}/${mainFile.name}`);
-
-    if (fileData) {
-      mainCode = await fileData.text();
+    if (!response.ok) {
+      throw new Error('Failed to fetch files from Modal');
     }
-  }
+    
+    const data = await response.json();
+    
+    if (!data.success || !data.files || !data.files['main.py']) {
+      throw new Error('No main.py file found in Modal volume');
+    }
 
-  if (!mainCode) {
-    throw new Error('No code found for bot');
+    return data.files['main.py'];
+  } catch (error) {
+    throw new Error('Failed to load bot code from Modal: ' + error.message);
   }
-
-  return mainCode;
 }
 
 export async function updateBotStatus(botId: string, status: string, logs: string[], containerId?: string) {

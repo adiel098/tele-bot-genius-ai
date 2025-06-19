@@ -1,4 +1,3 @@
-
 import modal
 import json
 import os
@@ -147,6 +146,54 @@ def telegram_bot_service():
                 "success": False,
                 "error": str(e),
                 "logs": [f"[MODAL ERROR] Failed to store bot: {str(e)}"]
+            }
+
+    @web_app.post("/store-helm-file/{bot_id}")
+    async def store_helm_file_endpoint(bot_id: str, request: Request):
+        """Store Helm chart files in Modal volume"""
+        try:
+            body = await request.json()
+            
+            user_id = body.get("user_id")
+            filename = body.get("filename")
+            content = body.get("content")
+            
+            if not all([user_id, filename, content]):
+                raise HTTPException(status_code=400, detail="Missing required fields")
+            
+            print(f"[MODAL] Storing Helm file {filename} for bot {bot_id}")
+            
+            # Create helm directory in Modal volume
+            helm_dir = f"/data/bots/{user_id}/{bot_id}/helm"
+            os.makedirs(helm_dir, exist_ok=True)
+            
+            # Handle nested template files
+            file_path = f"{helm_dir}/{filename}"
+            file_dir = os.path.dirname(file_path)
+            if file_dir != helm_dir:
+                os.makedirs(file_dir, exist_ok=True)
+            
+            # Write Helm file
+            with open(file_path, "w") as f:
+                f.write(content)
+            print(f"[MODAL] Wrote {filename}: {len(content)} characters")
+            
+            # Commit changes to volume
+            volume.commit()
+            print(f"[MODAL] Helm file {filename} committed to volume")
+            
+            return {
+                "success": True,
+                "filename": filename,
+                "bot_id": bot_id,
+                "stored_at": file_path
+            }
+            
+        except Exception as e:
+            print(f"[MODAL] Error storing Helm file {filename}: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
             }
 
     @web_app.get("/debug/volume/{bot_id}")

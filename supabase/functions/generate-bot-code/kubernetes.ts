@@ -1,4 +1,3 @@
-
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -300,7 +299,7 @@ export async function deployToKubernetes(botId: string, userId: string, botName:
     // Generate health check
     const healthCheck = generateHealthCheck();
 
-    // Upload Helm chart files to storage
+    // Store Helm chart files in Modal volume instead of Supabase storage
     const helmFiles = {
       ...helmChart,
       'Dockerfile': dockerfile,
@@ -308,14 +307,30 @@ export async function deployToKubernetes(botId: string, userId: string, botName:
       ...files
     };
 
-    // Store Helm chart in storage
-    for (const [filename, content] of Object.entries(helmFiles)) {
-      const filePath = `${userId}/${botId}/helm/${filename}`;
-      await supabase.storage
-        .from('bot-files')
-        .upload(filePath, new Blob([content], { type: 'text/plain' }), {
-          upsert: true
+    try {
+      // Store each Helm file in Modal volume
+      const modalUrl = 'https://efhwjkhqbbucvedgznba--telegram-bot-service.modal.run';
+      
+      for (const [filename, content] of Object.entries(helmFiles)) {
+        const storeResponse = await fetch(`${modalUrl}/store-helm-file/${botId}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            user_id: userId,
+            filename: filename,
+            content: content
+          })
         });
+
+        if (!storeResponse.ok) {
+          console.error(`Failed to store ${filename} in Modal volume`);
+        }
+      }
+    } catch (modalError) {
+      console.error('Error storing Helm files in Modal volume:', modalError);
+      // Continue with deployment info even if storage fails
     }
 
     // Log deployment information
@@ -324,6 +339,7 @@ export async function deployToKubernetes(botId: string, userId: string, botName:
 [${new Date().toISOString()}] Namespace: ${kubernetesConfig.namespace}
 [${new Date().toISOString()}] Resources: CPU=${kubernetesConfig.resources.cpu}, Memory=${kubernetesConfig.resources.memory}
 [${new Date().toISOString()}] Helm chart created with health checks
+[${new Date().toISOString()}] Files stored in Modal volume
 [${new Date().toISOString()}] Ready for deployment to Kubernetes cluster
 [${new Date().toISOString()}] Use: helm install bot-${botId} ./helm-chart
 `;
@@ -337,7 +353,7 @@ export async function deployToKubernetes(botId: string, userId: string, botName:
         deployment_config: {
           type: 'kubernetes',
           namespace: kubernetesConfig.namespace,
-          helm_chart_path: `${userId}/${botId}/helm/`,
+          helm_chart_path: `modal-volume:/bots/${userId}/${botId}/helm/`,
           resources: kubernetesConfig.resources
         }
       })
@@ -346,7 +362,7 @@ export async function deployToKubernetes(botId: string, userId: string, botName:
     return {
       success: true,
       namespace: kubernetesConfig.namespace,
-      helmChartPath: `${userId}/${botId}/helm/`,
+      helmChartPath: `modal-volume:/bots/${userId}/${botId}/helm/`,
       deploymentCommand: `helm install bot-${botId} ./helm-chart --set bot.token=${process.env.BOT_TOKEN}`
     };
 
