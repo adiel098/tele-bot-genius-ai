@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -145,34 +144,30 @@ const Workspace = () => {
     setBotError(null); // Clear previous errors
 
     try {
-      const response = await fetch(`https://efhwjkhqbbucvedgznba.functions.supabase.co/generate-bot-code`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVmaHdqa2hxYmJ1Y3ZlZGd6bmJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU5MzEzMjUsImV4cCI6MjA2MTUwNzMyNX0.kvUFs7psZ9acIJee4QIF2-zECdR4aTzvBKrYsV2v_fk'
-        },
-        body: JSON.stringify({
+      // Use modal-bot-manager with modify-bot action for proper file storage
+      const { data, error } = await supabase.functions.invoke('modal-bot-manager', {
+        body: {
+          action: 'modify-bot',
           botId: bot.id,
-          prompt: content,
-          token: bot.token
-        })
+          userId: user.id,
+          modificationPrompt: content
+        }
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Function call failed:', response.status, errorText);
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      if (error) {
+        console.error('Modal bot manager error:', error);
+        throw new Error(`Failed to modify bot: ${error.message}`);
       }
-
-      const data = await response.json();
 
       if (data.success) {
         toast({
           title: "Bot Updated! 🎉",
-          description: "Your bot code has been generated and deployed to Modal successfully",
+          description: "Your bot code has been generated and stored in Modal successfully",
         });
         setBotError(null); // Clear errors on success
+        
+        // The conversation history is automatically updated by the modal-bot-manager function
+        // No need to manually add AI message here as it's handled by the real-time subscription
       } else {
         // Check if it's a bot conflict error
         if (data.errorType) {
