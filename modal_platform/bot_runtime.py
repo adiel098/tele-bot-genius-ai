@@ -9,6 +9,9 @@ import aiohttp
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 import io
+import uuid
+import random
+import string
 
 # Configure Modal app
 app = modal.App("telegram-bot-platform")
@@ -50,6 +53,221 @@ def add_bot_log(bot_id: str, message: str, level: str = "INFO"):
         bot_logs[bot_id] = bot_logs[bot_id][-1000:]
     
     print(f"[BOT LOG {bot_id}] {log_entry}")
+
+def generate_random_string(length: int = 10) -> str:
+    """Generate a random string for testing"""
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
+
+@app.function(
+    image=image,
+    volumes={"/data": volume},
+    min_containers=1,
+    timeout=3600
+)
+def create_test_file(test_id: str = None):
+    """Create a test file in Modal volume for testing storage functionality"""
+    try:
+        if not test_id:
+            test_id = str(uuid.uuid4())[:8]
+        
+        print(f"[MODAL TEST] Creating test file with ID: {test_id}")
+        
+        # Create test directory
+        test_dir = "/data/test_files"
+        os.makedirs(test_dir, exist_ok=True)
+        print(f"[MODAL TEST] ✓ Test directory created: {test_dir}")
+        
+        # Generate test content
+        test_content = {
+            "test_id": test_id,
+            "created_at": datetime.now().isoformat(),
+            "random_data": generate_random_string(50),
+            "test_numbers": [random.randint(1, 100) for _ in range(10)],
+            "test_message": f"This is a test file created at {datetime.now()}",
+            "storage_test": True
+        }
+        
+        # Write test file
+        test_file_path = f"{test_dir}/{test_id}.json"
+        with open(test_file_path, "w", encoding='utf-8') as f:
+            json.dump(test_content, f, indent=2)
+        
+        print(f"[MODAL TEST] ✓ Test file written: {len(json.dumps(test_content))} characters")
+        
+        # Commit volume changes
+        print(f"[MODAL TEST] Committing volume changes...")
+        volume.commit()
+        print(f"[MODAL TEST] ✓ Volume committed successfully")
+        
+        # Verify file was written correctly by reading it back
+        volume.reload()
+        print(f"[MODAL TEST] ✓ Volume reloaded for verification")
+        
+        if os.path.exists(test_file_path):
+            with open(test_file_path, "r", encoding='utf-8') as f:
+                stored_content = json.load(f)
+            
+            # Verify content matches
+            content_matches = stored_content == test_content
+            file_size = os.path.getsize(test_file_path)
+            
+            print(f"[MODAL TEST] ✓ Verification complete: content_matches={content_matches}, size={file_size}B")
+            
+            return {
+                "success": True,
+                "test_id": test_id,
+                "file_path": test_file_path,
+                "content_matches": content_matches,
+                "file_size": file_size,
+                "test_content": test_content,
+                "verification_result": "PASSED" if content_matches else "FAILED",
+                "logs": [
+                    f"[MODAL TEST] Test file {test_id} created successfully",
+                    f"[MODAL TEST] File size: {file_size} bytes",
+                    f"[MODAL TEST] Content verification: {'PASSED' if content_matches else 'FAILED'}",
+                    f"[MODAL TEST] Volume commit and reload successful"
+                ]
+            }
+        else:
+            return {
+                "success": False,
+                "error": "File not found after commit and reload",
+                "test_id": test_id,
+                "logs": [f"[MODAL TEST ERROR] File not found after volume operations"]
+            }
+            
+    except Exception as e:
+        print(f"[MODAL TEST] ✗ Error creating test file: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "error": str(e),
+            "test_id": test_id,
+            "logs": [f"[MODAL TEST ERROR] {str(e)}"]
+        }
+
+@app.function(
+    image=image,
+    volumes={"/data": volume},
+    min_containers=1,
+    timeout=3600
+)
+def get_test_file(test_id: str):
+    """Retrieve a specific test file by ID"""
+    try:
+        print(f"[MODAL TEST] Retrieving test file: {test_id}")
+        
+        # Reload volume to get latest state
+        volume.reload()
+        
+        test_file_path = f"/data/test_files/{test_id}.json"
+        
+        if not os.path.exists(test_file_path):
+            return {
+                "success": False,
+                "error": f"Test file {test_id} not found",
+                "test_id": test_id
+            }
+        
+        # Read test file
+        with open(test_file_path, "r", encoding='utf-8') as f:
+            content = json.load(f)
+        
+        file_size = os.path.getsize(test_file_path)
+        
+        print(f"[MODAL TEST] ✓ Test file {test_id} retrieved successfully")
+        
+        return {
+            "success": True,
+            "test_id": test_id,
+            "file_path": test_file_path,
+            "file_size": file_size,
+            "content": content,
+            "retrieved_at": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        print(f"[MODAL TEST] ✗ Error retrieving test file {test_id}: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "test_id": test_id
+        }
+
+@app.function(
+    image=image,
+    volumes={"/data": volume},
+    min_containers=1,
+    timeout=3600
+)
+def list_test_files():
+    """List all test files in the volume"""
+    try:
+        print(f"[MODAL TEST] Listing all test files")
+        
+        # Reload volume to get latest state
+        volume.reload()
+        
+        test_dir = "/data/test_files"
+        
+        if not os.path.exists(test_dir):
+            return {
+                "success": True,
+                "test_files": [],
+                "total_count": 0,
+                "message": "No test files directory found"
+            }
+        
+        # List all test files
+        test_files = []
+        for filename in os.listdir(test_dir):
+            if filename.endswith('.json'):
+                file_path = os.path.join(test_dir, filename)
+                test_id = filename.replace('.json', '')
+                
+                try:
+                    file_size = os.path.getsize(file_path)
+                    
+                    # Try to read file content for basic info
+                    with open(file_path, "r", encoding='utf-8') as f:
+                        content = json.load(f)
+                    
+                    test_files.append({
+                        "test_id": test_id,
+                        "filename": filename,
+                        "file_size": file_size,
+                        "created_at": content.get("created_at", "unknown"),
+                        "has_valid_content": True
+                    })
+                    
+                except Exception as e:
+                    test_files.append({
+                        "test_id": test_id,
+                        "filename": filename,
+                        "file_size": 0,
+                        "created_at": "unknown",
+                        "has_valid_content": False,
+                        "error": str(e)
+                    })
+        
+        print(f"[MODAL TEST] ✓ Found {len(test_files)} test files")
+        
+        return {
+            "success": True,
+            "test_files": test_files,
+            "total_count": len(test_files),
+            "directory": test_dir,
+            "listed_at": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        print(f"[MODAL TEST] ✗ Error listing test files: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "test_files": []
+        }
 
 @app.function(
     image=image,
@@ -577,6 +795,92 @@ def telegram_bot_service():
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @web_app.post("/test-volume")
+    async def create_test_file_endpoint(request: Request):
+        """Create a test file in Modal volume"""
+        try:
+            body = await request.json() if request.headers.get("content-type") == "application/json" else {}
+            test_id = body.get("test_id")
+            
+            print(f"[MODAL TEST API] Creating test file, test_id: {test_id}")
+            
+            # Call Modal function to create test file
+            result = create_test_file.remote(test_id)
+            
+            print(f"[MODAL TEST API] Test file creation result: success={result.get('success')}")
+            
+            return result
+            
+        except Exception as e:
+            print(f"[MODAL TEST API] Error in test file creation: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e),
+                "logs": [f"[MODAL TEST API ERROR] {str(e)}"]
+            }
+
+    @web_app.get("/test-volume/{test_id}")
+    async def get_test_file_endpoint(test_id: str):
+        """Get a specific test file by ID"""
+        try:
+            print(f"[MODAL TEST API] Retrieving test file: {test_id}")
+            
+            # Call Modal function to get test file
+            result = get_test_file.remote(test_id)
+            
+            print(f"[MODAL TEST API] Test file retrieval result: success={result.get('success')}")
+            
+            return result
+            
+        except Exception as e:
+            print(f"[MODAL TEST API] Error retrieving test file: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e),
+                "test_id": test_id
+            }
+
+    @web_app.get("/list-test-files")
+    async def list_test_files_endpoint():
+        """List all test files in the volume"""
+        try:
+            print(f"[MODAL TEST API] Listing test files")
+            
+            # Call Modal function to list test files
+            result = list_test_files.remote()
+            
+            print(f"[MODAL TEST API] Test files list result: success={result.get('success')}, count={result.get('total_count', 0)}")
+            
+            return result
+            
+        except Exception as e:
+            print(f"[MODAL TEST API] Error listing test files: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e),
+                "test_files": []
+            }
+
+    @web_app.get("/health")
+    async def simple_health_check():
+        """Simple health check endpoint"""
+        return {
+            "status": "healthy",
+            "service": "Telegram Bot Platform - Optimized",
+            "version": "2.0",
+            "timestamp": datetime.now().isoformat(),
+            "volume_mount": os.path.exists("/data"),
+            "endpoints": [
+                "/health",
+                "/health-check",
+                "/test-volume",
+                "/list-test-files",
+                "/logs/{bot_id}",
+                "/store-bot/{bot_id}",
+                "/files/{bot_id}"
+            ]
+        }
 
     @web_app.get("/logs/{bot_id}")
     async def get_bot_logs_endpoint(bot_id: str, user_id: str = None):
