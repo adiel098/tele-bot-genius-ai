@@ -23,17 +23,17 @@ serve(async (req) => {
   try {
     const { action, botId, userId, prompt, token, name, modificationPrompt } = await req.json();
 
-    console.log(`[MODAL-MANAGER ENHANCED] === Starting ${action} for bot ${botId} ===`);
-    console.log(`[MODAL-MANAGER ENHANCED] Request payload:`, { action, botId, userId, hasPrompt: !!prompt, hasToken: !!token, hasName: !!name, hasModificationPrompt: !!modificationPrompt });
+    console.log(`[MODAL-MANAGER CLEAN] === Starting ${action} for bot ${botId} ===`);
+    console.log(`[MODAL-MANAGER CLEAN] Request payload:`, { action, botId, userId, hasPrompt: !!prompt, hasToken: !!token, hasName: !!name, hasModificationPrompt: !!modificationPrompt });
 
     let result;
 
     switch (action) {
       case 'create-bot':
-        result = await enhancedCreateBot(botId, userId, name, prompt, token);
+        result = await cleanCreateBot(botId, userId, name, prompt, token);
         break;
       case 'modify-bot':
-        result = await enhancedModifyBot(botId, userId, modificationPrompt);
+        result = await cleanModifyBot(botId, userId, modificationPrompt);
         break;
       case 'start-bot':
         result = await optimizedStartBot(botId, userId);
@@ -54,7 +54,7 @@ serve(async (req) => {
         result = await optimizedFixBot(botId, userId);
         break;
       case 'get-files':
-        result = await enhancedGetBotFiles(botId, userId);
+        result = await cleanGetBotFiles(botId, userId);
         break;
       case 'health-check':
         result = await comprehensiveHealthCheck(botId, userId);
@@ -63,8 +63,8 @@ serve(async (req) => {
         throw new Error(`Unknown action: ${action}`);
     }
 
-    console.log(`[MODAL-MANAGER ENHANCED] === Completed ${action} for bot ${botId} ===`);
-    console.log(`[MODAL-MANAGER ENHANCED] Final result:`, { success: result.success, hasError: !!result.error });
+    console.log(`[MODAL-MANAGER CLEAN] === Completed ${action} for bot ${botId} ===`);
+    console.log(`[MODAL-MANAGER CLEAN] Final result:`, { success: result.success, hasError: !!result.error });
 
     return new Response(JSON.stringify({
       success: true,
@@ -74,8 +74,8 @@ serve(async (req) => {
     });
 
   } catch (error) {
-    console.error('[MODAL-MANAGER ENHANCED] Critical Error:', error);
-    console.error('[MODAL-MANAGER ENHANCED] Error stack:', error.stack);
+    console.error('[MODAL-MANAGER CLEAN] Critical Error:', error);
+    console.error('[MODAL-MANAGER CLEAN] Error stack:', error.stack);
     return new Response(JSON.stringify({
       success: false,
       error: error.message,
@@ -88,10 +88,10 @@ serve(async (req) => {
 });
 
 async function generateBotCodeWithOpenAI(prompt: string, token: string, conversationHistory: any[] = []) {
-  console.log('[MODAL-MANAGER ENHANCED] === OpenAI Code Generation Started ===');
-  console.log('[MODAL-MANAGER ENHANCED] Prompt length:', prompt.length);
-  console.log('[MODAL-MANAGER ENHANCED] Token provided:', token ? 'Yes' : 'No');
-  console.log('[MODAL-MANAGER ENHANCED] Conversation history length:', conversationHistory.length);
+  console.log('[MODAL-MANAGER CLEAN] === OpenAI Code Generation Started ===');
+  console.log('[MODAL-MANAGER CLEAN] Prompt length:', prompt.length);
+  console.log('[MODAL-MANAGER CLEAN] Token provided:', token ? 'Yes' : 'No');
+  console.log('[MODAL-MANAGER CLEAN] Conversation history length:', conversationHistory.length);
   
   const messages = [
     {
@@ -153,7 +153,7 @@ Create a Telegram bot with the following requirements: ${prompt}`
 
   // Add conversation history if provided
   if (conversationHistory && conversationHistory.length > 0) {
-    console.log('[MODAL-MANAGER ENHANCED] Adding conversation history to OpenAI request');
+    console.log('[MODAL-MANAGER CLEAN] Adding conversation history to OpenAI request');
     for (const msg of conversationHistory.slice(-5)) {
       messages.push({
         role: msg.role,
@@ -162,7 +162,7 @@ Create a Telegram bot with the following requirements: ${prompt}`
     }
   }
 
-  console.log('[MODAL-MANAGER ENHANCED] Sending request to OpenAI API...');
+  console.log('[MODAL-MANAGER CLEAN] Sending request to OpenAI API...');
   const startTime = Date.now();
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -180,35 +180,35 @@ Create a Telegram bot with the following requirements: ${prompt}`
   });
 
   const apiTime = Date.now() - startTime;
-  console.log('[MODAL-MANAGER ENHANCED] OpenAI API response time:', `${apiTime}ms`);
+  console.log('[MODAL-MANAGER CLEAN] OpenAI API response time:', `${apiTime}ms`);
 
   if (!response.ok) {
-    console.error('[MODAL-MANAGER ENHANCED] OpenAI API error:', response.status, response.statusText);
+    console.error('[MODAL-MANAGER CLEAN] OpenAI API error:', response.status, response.statusText);
     throw new Error(`OpenAI API error: ${response.status}`);
   }
 
   const data = await response.json();
-  console.log('[MODAL-MANAGER ENHANCED] OpenAI response received, tokens used:', data.usage);
+  console.log('[MODAL-MANAGER CLEAN] OpenAI response received, tokens used:', data.usage);
   
   const assistantResponse = data.choices[0].message.content;
-  console.log('[MODAL-MANAGER ENHANCED] Generated response length:', assistantResponse.length);
+  console.log('[MODAL-MANAGER CLEAN] Generated response length:', assistantResponse.length);
 
   // Extract code from response
   const codeStart = assistantResponse.indexOf('```python');
   const codeEnd = assistantResponse.indexOf('```', codeStart + 9);
   
   let generatedCode = assistantResponse;
-  let explanation = "Generated Telegram bot code with enhanced patterns";
+  let explanation = "Generated Telegram bot code with Modal Volume storage";
   
   if (codeStart !== -1 && codeEnd !== -1) {
     generatedCode = assistantResponse.substring(codeStart + 9, codeEnd).trim();
     explanation = assistantResponse.substring(0, codeStart).trim();
-    console.log('[MODAL-MANAGER ENHANCED] Code extracted from markdown, length:', generatedCode.length);
+    console.log('[MODAL-MANAGER CLEAN] Code extracted from markdown, length:', generatedCode.length);
   } else {
-    console.log('[MODAL-MANAGER ENHANCED] No markdown code block found, using full response');
+    console.log('[MODAL-MANAGER CLEAN] No markdown code block found, using full response');
   }
 
-  console.log('[MODAL-MANAGER ENHANCED] === OpenAI Code Generation Completed ===');
+  console.log('[MODAL-MANAGER CLEAN] === OpenAI Code Generation Completed ===');
 
   return {
     success: true,
@@ -217,12 +217,12 @@ Create a Telegram bot with the following requirements: ${prompt}`
   };
 }
 
-async function enhancedCreateBot(botId: string, userId: string, name: string, prompt: string, token: string) {
-  console.log(`[MODAL-MANAGER ENHANCED] === Enhanced Bot Creation Process for ${botId} ===`);
-  console.log(`[MODAL-MANAGER ENHANCED] Bot details:`, { botId, userId, name, tokenLength: token.length });
+async function cleanCreateBot(botId: string, userId: string, name: string, prompt: string, token: string) {
+  console.log(`[MODAL-MANAGER CLEAN] === Clean Bot Creation Process for ${botId} ===`);
+  console.log(`[MODAL-MANAGER CLEAN] Bot details:`, { botId, userId, name, tokenLength: token.length });
   
   // Get conversation history
-  console.log(`[MODAL-MANAGER ENHANCED] Fetching conversation history for bot ${botId}`);
+  console.log(`[MODAL-MANAGER CLEAN] Fetching conversation history for bot ${botId}`);
   const { data: bot } = await supabase
     .from('bots')
     .select('conversation_history')
@@ -230,41 +230,36 @@ async function enhancedCreateBot(botId: string, userId: string, name: string, pr
     .single();
 
   const conversationHistory = bot?.conversation_history || [];
-  console.log(`[MODAL-MANAGER ENHANCED] Conversation history items:`, conversationHistory.length);
+  console.log(`[MODAL-MANAGER CLEAN] Conversation history items:`, conversationHistory.length);
 
   // Step 1: Generate bot code using OpenAI
-  console.log(`[MODAL-MANAGER ENHANCED] Step 1: Generating code with OpenAI`);
+  console.log(`[MODAL-MANAGER CLEAN] Step 1: Generating code with OpenAI`);
   const codeResult = await generateBotCodeWithOpenAI(prompt, token, conversationHistory);
 
   if (!codeResult.success) {
-    console.error(`[MODAL-MANAGER ENHANCED] Code generation failed for bot ${botId}`);
+    console.error(`[MODAL-MANAGER CLEAN] Code generation failed for bot ${botId}`);
     throw new Error('Failed to generate bot code');
   }
 
-  console.log(`[MODAL-MANAGER ENHANCED] Code generated successfully: ${codeResult.code.length} characters`);
+  console.log(`[MODAL-MANAGER CLEAN] Code generated successfully: ${codeResult.code.length} characters`);
 
-  // Step 2: Create individual files from the generated code
-  console.log(`[MODAL-MANAGER ENHANCED] Step 2: Creating individual files for storage`);
-  const botFiles = await createBotFiles(codeResult.code, token, name);
-  console.log(`[MODAL-MANAGER ENHANCED] Created ${Object.keys(botFiles).length} files:`, Object.keys(botFiles));
+  // Step 2: Store bot directly in Modal Volume using the correct endpoint
+  console.log(`[MODAL-MANAGER CLEAN] Step 2: Storing bot in Modal Volume ONLY`);
+  const storeResult = await storeInModalOnly(botId, userId, codeResult.code, token, name);
 
-  // Step 3: Store each file individually in Modal volume
-  console.log(`[MODAL-MANAGER ENHANCED] Step 3: Storing files in Modal volume`);
-  const storageResult = await storeFilesInModal(botId, userId, botFiles);
-
-  if (!storageResult.success) {
-    console.error(`[MODAL-MANAGER ENHANCED] File storage failed:`, storageResult.error);
-    throw new Error(`Failed to store bot files: ${storageResult.error}`);
+  if (!storeResult.success) {
+    console.error(`[MODAL-MANAGER CLEAN] Modal storage failed:`, storeResult.error);
+    throw new Error(`Failed to store bot in Modal: ${storeResult.error}`);
   }
 
-  console.log(`[MODAL-MANAGER ENHANCED] Files stored successfully:`, storageResult.storedFiles);
+  console.log(`[MODAL-MANAGER CLEAN] Bot stored successfully in Modal Volume`);
 
-  // Step 4: Verify file storage
-  console.log(`[MODAL-MANAGER ENHANCED] Step 4: Verifying file storage`);
-  const verificationResult = await verifyBotFiles(botId, userId);
+  // Step 3: Verify storage by retrieving files
+  console.log(`[MODAL-MANAGER CLEAN] Step 3: Verifying Modal storage`);
+  const verificationResult = await verifyModalStorage(botId, userId);
   
-  // Step 5: Update conversation history
-  console.log(`[MODAL-MANAGER ENHANCED] Step 5: Updating conversation history`);
+  // Step 4: Update conversation history
+  console.log(`[MODAL-MANAGER CLEAN] Step 4: Updating conversation history`);
   const updatedHistory = [
     ...conversationHistory,
     {
@@ -274,521 +269,15 @@ async function enhancedCreateBot(botId: string, userId: string, name: string, pr
     },
     {
       role: 'assistant',
-      content: `Bot created with enhanced file storage! ${codeResult.explanation}
+      content: `Bot created successfully with Modal Volume storage! ${codeResult.explanation}
 
-**File Storage Details:**
-${storageResult.details}
+**Storage Details:**
+${storeResult.details}
 
 **Verification Results:**
 ${verificationResult.summary}
 
-**Created Files:**
-${Object.keys(botFiles).map(name => `- ${name} (${botFiles[name].length} chars)`).join('\n')}
-
-Your bot code has been successfully generated and stored in Modal with comprehensive verification.`,
-      timestamp: new Date().toISOString(),
-      files: botFiles
-    }
-  ];
-
-  // Update bot in database
-  await supabase
-    .from('bots')
-    .update({
-      status: 'stored',
-      runtime_status: 'stopped',
-      conversation_history: updatedHistory,
-      runtime_logs: `Files stored: ${Object.keys(botFiles).join(', ')}\n${verificationResult.summary}`,
-      files_stored: true
-    })
-    .eq('id', botId);
-
-  console.log(`[MODAL-MANAGER ENHANCED] Bot ${botId} creation completed successfully`);
-
-  return {
-    botCode: codeResult,
-    storage: storageResult,
-    verification: verificationResult,
-    files: botFiles,
-    message: 'Bot generated and stored with enhanced file management!'
-  };
-}
-
-async function createBotFiles(mainCode: string, token: string, botName: string): Promise<Record<string, string>> {
-  console.log('[MODAL-MANAGER ENHANCED] Creating individual bot files');
-  
-  const files: Record<string, string> = {};
-  
-  // Main Python file
-  files['main.py'] = mainCode;
-  console.log('[MODAL-MANAGER ENHANCED] Created main.py:', mainCode.length, 'characters');
-  
-  // Requirements file
-  files['requirements.txt'] = `python-telegram-bot==20.7
-aiohttp==3.9.1
-python-dotenv==1.0.0`;
-  console.log('[MODAL-MANAGER ENHANCED] Created requirements.txt');
-  
-  // Environment file
-  files['.env'] = `BOT_TOKEN=${token}
-BOT_NAME=${botName}`;
-  console.log('[MODAL-MANAGER ENHANCED] Created .env file');
-  
-  // Dockerfile
-  files['Dockerfile'] = `FROM python:3.11-slim
-
-WORKDIR /app
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-CMD ["python", "main.py"]`;
-  console.log('[MODAL-MANAGER ENHANCED] Created Dockerfile');
-  
-  console.log('[MODAL-MANAGER ENHANCED] All bot files created successfully');
-  return files;
-}
-
-async function storeFilesInModal(botId: string, userId: string, files: Record<string, string>) {
-  console.log(`[MODAL-MANAGER ENHANCED] === Starting Modal File Storage for bot ${botId} ===`);
-  console.log(`[MODAL-MANAGER ENHANCED] Files to store:`, Object.keys(files));
-  
-  const storedFiles: string[] = [];
-  const failedFiles: string[] = [];
-  const storageDetails: string[] = [];
-  
-  try {
-    // Store each file individually
-    for (const [filename, content] of Object.entries(files)) {
-      console.log(`[MODAL-MANAGER ENHANCED] Storing file: ${filename} (${content.length} chars)`);
-      
-      try {
-        const storeResponse = await fetch(`${MODAL_BASE_URL}/store-file/${botId}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            user_id: userId,
-            filename: filename,
-            content: content,
-            bot_name: `Bot ${botId}`
-          })
-        });
-
-        console.log(`[MODAL-MANAGER ENHANCED] Store response for ${filename}:`, storeResponse.status);
-
-        if (!storeResponse.ok) {
-          const errorText = await storeResponse.text();
-          console.error(`[MODAL-MANAGER ENHANCED] Failed to store ${filename}:`, storeResponse.status, errorText);
-          failedFiles.push(filename);
-          storageDetails.push(`❌ ${filename}: ${storeResponse.status} - ${errorText}`);
-          continue;
-        }
-
-        const storeResult = await storeResponse.json();
-        console.log(`[MODAL-MANAGER ENHANCED] Store result for ${filename}:`, storeResult);
-
-        if (storeResult.success) {
-          storedFiles.push(filename);
-          storageDetails.push(`✅ ${filename}: Stored successfully`);
-          console.log(`[MODAL-MANAGER ENHANCED] Successfully stored ${filename}`);
-        } else {
-          failedFiles.push(filename);
-          storageDetails.push(`❌ ${filename}: ${storeResult.error || 'Unknown error'}`);
-          console.error(`[MODAL-MANAGER ENHANCED] Storage failed for ${filename}:`, storeResult.error);
-        }
-      } catch (fileError) {
-        console.error(`[MODAL-MANAGER ENHANCED] Exception storing ${filename}:`, fileError);
-        failedFiles.push(filename);
-        storageDetails.push(`❌ ${filename}: Exception - ${fileError.message}`);
-      }
-    }
-
-    const success = storedFiles.length > 0;
-    console.log(`[MODAL-MANAGER ENHANCED] Storage summary: ${storedFiles.length} stored, ${failedFiles.length} failed`);
-
-    return {
-      success,
-      storedFiles,
-      failedFiles,
-      details: storageDetails.join('\n'),
-      error: failedFiles.length > 0 ? `Failed to store: ${failedFiles.join(', ')}` : null
-    };
-
-  } catch (error) {
-    console.error(`[MODAL-MANAGER ENHANCED] Critical storage error:`, error);
-    return {
-      success: false,
-      storedFiles: [],
-      failedFiles: Object.keys(files),
-      details: `Critical error: ${error.message}`,
-      error: error.message
-    };
-  }
-}
-
-async function verifyBotFiles(botId: string, userId: string) {
-  console.log(`[MODAL-MANAGER ENHANCED] === Verifying stored files for bot ${botId} ===`);
-  
-  try {
-    const verifyResponse = await fetch(`${MODAL_BASE_URL}/files/${botId}?user_id=${userId}&verify=true`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      }
-    });
-
-    console.log(`[MODAL-MANAGER ENHANCED] Verification response:`, verifyResponse.status);
-
-    if (!verifyResponse.ok) {
-      const errorText = await verifyResponse.text();
-      console.error(`[MODAL-MANAGER ENHANCED] Verification request failed:`, verifyResponse.status, errorText);
-      return {
-        success: false,
-        summary: `Verification failed: ${verifyResponse.status} - ${errorText}`,
-        files: {}
-      };
-    }
-
-    const verifyResult = await verifyResponse.json();
-    console.log(`[MODAL-MANAGER ENHANCED] Verification result:`, {
-      success: verifyResult.success,
-      fileCount: Object.keys(verifyResult.files || {}).length
-    });
-
-    if (verifyResult.success && verifyResult.files) {
-      const filesSummary = Object.entries(verifyResult.files).map(([name, content]) => 
-        `✅ ${name}: ${typeof content === 'string' ? content.length : 0} chars`
-      ).join('\n');
-      
-      return {
-        success: true,
-        summary: `Files verified successfully:\n${filesSummary}`,
-        files: verifyResult.files
-      };
-    } else {
-      return {
-        success: false,
-        summary: `Verification failed: ${verifyResult.error || 'Unknown error'}`,
-        files: {}
-      };
-    }
-
-  } catch (error) {
-    console.error(`[MODAL-MANAGER ENHANCED] Verification exception:`, error);
-    return {
-      success: false,
-      summary: `Verification exception: ${error.message}`,
-      files: {}
-    };
-  }
-}
-
-async function enhancedGetBotFiles(botId: string, userId: string) {
-  console.log(`[MODAL-MANAGER ENHANCED] === Getting files for bot ${botId} ===`);
-  
-  try {
-    const startTime = Date.now();
-    const response = await fetch(`${MODAL_BASE_URL}/files/${botId}?user_id=${userId}&enhanced=true`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      }
-    });
-
-    const requestTime = Date.now() - startTime;
-    console.log(`[MODAL-MANAGER ENHANCED] Files request completed in ${requestTime}ms, status:`, response.status);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[MODAL-MANAGER ENHANCED] Files request failed:`, response.status, errorText);
-      throw new Error(`Failed to get files: ${response.status} - ${errorText}`);
-    }
-
-    const result = await response.json();
-    console.log(`[MODAL-MANAGER ENHANCED] Files result:`, {
-      success: result.success,
-      fileCount: Object.keys(result.files || {}).length,
-      storageMethod: result.storage_method
-    });
-    
-    if (result.success && result.files) {
-      Object.keys(result.files).forEach(filename => {
-        const content = result.files[filename];
-        console.log(`[MODAL-MANAGER ENHANCED] File ${filename}: ${content?.length || 0} characters`);
-      });
-    }
-    
-    return {
-      success: true,
-      files: result.files || {},
-      storage_type: 'enhanced_modal_volume',
-      storage_method: result.storage_method || 'enhanced_modal_patterns',
-      file_count: Object.keys(result.files || {}).length,
-      request_time: `${requestTime}ms`,
-      logs: result.logs || []
-    };
-    
-  } catch (error) {
-    console.error(`[MODAL-MANAGER ENHANCED] Error getting files:`, error);
-    return {
-      success: false,
-      error: error.message,
-      files: {},
-      storage_type: 'enhanced_modal_volume'
-    };
-  }
-}
-
-async function enhancedModifyBot(botId: string, userId: string, modificationPrompt: string) {
-  console.log(`[MODAL-MANAGER ENHANCED] === Starting enhanced bot modification for ${botId} ===`);
-  console.log(`[MODAL-MANAGER ENHANCED] Modification prompt length:`, modificationPrompt.length);
-  
-  // Get current bot data
-  const { data: bot, error: botError } = await supabase
-    .from('bots')
-    .select('*')
-    .eq('id', botId)
-    .single();
-
-  if (botError || !bot) {
-    console.error(`[MODAL-MANAGER ENHANCED] Bot not found:`, botError);
-    throw new Error('Bot not found');
-  }
-
-  console.log(`[MODAL-MANAGER ENHANCED] Bot found: ${bot.name}`);
-
-  // Get current code from Modal volume
-  console.log(`[MODAL-MANAGER ENHANCED] Getting current code from Modal`);
-  const filesResult = await enhancedGetBotFiles(botId, userId);
-  
-  if (!filesResult.success) {
-    console.error(`[MODAL-MANAGER ENHANCED] Failed to get current files:`, filesResult.error);
-    throw new Error(`Failed to get current bot files: ${filesResult.error}`);
-  }
-
-  const currentCode = filesResult.files['main.py'] || '';
-  if (!currentCode) {
-    console.error(`[MODAL-MANAGER ENHANCED] No current code found for bot ${botId}`);
-    throw new Error('No current bot code found for modification');
-  }
-
-  console.log(`[MODAL-MANAGER ENHANCED] Current code retrieved: ${currentCode.length} characters`);
-
-  // Modify code using OpenAI
-  console.log(`[MODAL-MANAGER ENHANCED] Generating modified code with OpenAI`);
-  const modifyResult = await generateBotCodeWithOpenAI(
-    `Modify this existing bot code:\n\n${currentCode}\n\nModification request: ${modificationPrompt}`,
-    bot.token,
-    bot.conversation_history || []
-  );
-
-  if (!modifyResult.success) {
-    console.error(`[MODAL-MANAGER ENHANCED] Code generation failed:`, modifyResult);
-    throw new Error('Failed to generate modified bot code');
-  }
-
-  console.log(`[MODAL-MANAGER ENHANCED] Modified code generated: ${modifyResult.code.length} characters`);
-
-  // Create updated files
-  console.log(`[MODAL-MANAGER ENHANCED] Creating updated files`);
-  const updatedFiles = await createBotFiles(modifyResult.code, bot.token, bot.name);
-  
-  // Store updated files
-  console.log(`[MODAL-MANAGER ENHANCED] Storing updated files in Modal`);
-  const storageResult = await storeFilesInModal(botId, userId, updatedFiles);
-
-  if (!storageResult.success) {
-    console.error(`[MODAL-MANAGER ENHANCED] Storage failed:`, storageResult.error);
-    throw new Error(`Failed to store modified files: ${storageResult.error}`);
-  }
-
-  console.log(`[MODAL-MANAGER ENHANCED] Files stored successfully`);
-
-  // Verify storage
-  console.log(`[MODAL-MANAGER ENHANCED] Verifying storage`);
-  const verificationResult = await verifyBotFiles(botId, userId);
-
-  // Update conversation history
-  const updatedHistory = [
-    ...(bot.conversation_history || []),
-    {
-      role: 'user',
-      content: modificationPrompt,
-      timestamp: new Date().toISOString()
-    },
-    {
-      role: 'assistant',
-      content: `Bot modified with enhanced file management! ${modifyResult.explanation}
-
-**Storage Results:**
-${storageResult.details}
-
-**Verification:**
-${verificationResult.summary}
-
-Your bot code has been successfully updated and stored in Modal with comprehensive verification.`,
-      timestamp: new Date().toISOString(),
-      files: updatedFiles
-    }
-  ];
-
-  // Update bot in database
-  await supabase
-    .from('bots')
-    .update({
-      conversation_history: updatedHistory,
-      runtime_logs: `Modified and stored: ${Object.keys(updatedFiles).join(', ')}\n${verificationResult.summary}`,
-      files_stored: true
-    })
-    .eq('id', botId);
-
-  console.log(`[MODAL-MANAGER ENHANCED] Bot ${botId} modification completed successfully`);
-
-  return {
-    ...modifyResult,
-    storage: storageResult,
-    verification: verificationResult,
-    files: updatedFiles,
-    storage_type: 'enhanced_modal_volume',
-    message: 'Bot modified and stored with enhanced file management!'
-  };
-}
-
-async function optimizedCreateBot(botId: string, userId: string, name: string, prompt: string, token: string) {
-  console.log(`[MODAL-MANAGER OPTIM] Creating bot ${botId} with optimized Modal Volume patterns`);
-  
-  // Get conversation history
-  const { data: bot } = await supabase
-    .from('bots')
-    .select('conversation_history')
-    .eq('id', botId)
-    .single();
-
-  const conversationHistory = bot?.conversation_history || [];
-
-  // Step 1: Generate bot code using OpenAI
-  console.log(`[MODAL-MANAGER OPTIM] Step 1: Generating optimized code for bot ${botId}`);
-  const codeResult = await generateBotCodeWithOpenAI(prompt, token, conversationHistory);
-
-  if (!codeResult.success) {
-    console.error(`[MODAL-MANAGER OPTIM] Code generation failed for bot ${botId}`);
-    throw new Error('Failed to generate bot code');
-  }
-
-  console.log(`[MODAL-MANAGER OPTIM] Code generated successfully: ${codeResult.code.length} characters`);
-
-  // Step 2: Store bot code using optimized Modal function
-  console.log(`[MODAL-MANAGER OPTIM] Step 2: Storing bot ${botId} with optimized Modal patterns`);
-  
-  const storeResponse = await fetch(`${MODAL_BASE_URL}/store-bot/${botId}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      user_id: userId,
-      bot_code: codeResult.code,
-      bot_token: token,
-      bot_name: name || `Bot ${botId}`
-    })
-  });
-
-  if (!storeResponse.ok) {
-    const errorText = await storeResponse.text();
-    console.error(`[MODAL-MANAGER OPTIM] Optimized store request failed: ${storeResponse.status} - ${errorText}`);
-    throw new Error(`Failed to store bot with optimized patterns: ${storeResponse.status} - ${errorText}`);
-  }
-
-  const storeResult = await storeResponse.json();
-  console.log(`[MODAL-MANAGER OPTIM] Optimized store result:`, storeResult);
-
-  if (!storeResult.success) {
-    console.error(`[MODAL-MANAGER OPTIM] Optimized store operation failed:`, storeResult.error);
-    throw new Error(`Failed to store bot with optimized patterns: ${storeResult.error}`);
-  }
-
-  // Step 3: Run comprehensive health check
-  console.log(`[MODAL-MANAGER OPTIM] Step 3: Running comprehensive health check for bot ${botId}`);
-  const healthCheckResult = await comprehensiveHealthCheck(botId, userId);
-  
-  let healthStatus = "Health check completed";
-  if (healthCheckResult.success && healthCheckResult.health_info) {
-    const botCheck = healthCheckResult.health_info.specific_bot_check;
-    if (botCheck && botCheck.directory_exists) {
-      const mainPyFile = botCheck.files?.find((f: any) => f.name === 'main.py');
-      if (mainPyFile && mainPyFile.has_content) {
-        healthStatus = `✓ Health check passed: Bot stored with ${mainPyFile.content_length} chars`;
-      } else {
-        healthStatus = "⚠ Health check: Bot directory exists but main.py issues detected";
-      }
-    } else {
-      healthStatus = "✗ Health check failed: Bot directory not found";
-    }
-  }
-
-  // Step 4: Verify file retrieval with optimized patterns
-  console.log(`[MODAL-MANAGER OPTIM] Step 4: Testing optimized file retrieval for bot ${botId}`);
-  const retrievalResponse = await fetch(`${MODAL_BASE_URL}/files/${botId}?user_id=${userId}`, {
-    method: 'GET'
-  });
-
-  let retrievalStatus = "File retrieval not tested";
-  if (retrievalResponse.ok) {
-    const retrievalResult = await retrievalResponse.json();
-    console.log(`[MODAL-MANAGER OPTIM] Optimized retrieval result:`, {
-      success: retrievalResult.success,
-      fileCount: Object.keys(retrievalResult.files || {}).length,
-      storageMethod: retrievalResult.storage_method
-    });
-    
-    if (retrievalResult.success && retrievalResult.files?.['main.py']) {
-      const codeLength = retrievalResult.files['main.py'].length;
-      retrievalStatus = `✓ Optimized retrieval successful: main.py (${codeLength} chars)`;
-      console.log(`[MODAL-MANAGER OPTIM] Retrieved main.py with optimized patterns: ${codeLength} characters`);
-    } else {
-      retrievalStatus = `✗ Optimized retrieval failed: ${retrievalResult.error || 'No main.py found'}`;
-      console.error(`[MODAL-MANAGER OPTIM] Optimized retrieval issue:`, retrievalResult);
-    }
-  } else {
-    console.error(`[MODAL-MANAGER OPTIM] Optimized retrieval request failed: ${retrievalResponse.status}`);
-    retrievalStatus = `✗ Optimized retrieval request failed: ${retrievalResponse.status}`;
-  }
-
-  // Update conversation history
-  const updatedHistory = [
-    ...conversationHistory,
-    {
-      role: 'user',
-      content: prompt,
-      timestamp: new Date().toISOString()
-    },
-    {
-      role: 'assistant',
-      content: `Bot created with optimized Modal Volume patterns! ${codeResult.explanation}
-
-**Optimization Features:**
-- ✅ Proper volume commit/reload patterns
-- ✅ Enhanced error handling and validation
-- ✅ Comprehensive health monitoring
-- ✅ Batch operation support
-- ✅ Volume busy error prevention
-
-**Storage Verification:**
-${healthStatus}
-
-**File Retrieval Test:**
-${retrievalStatus}
-
-**Optimization Benefits:**
-- Faster and more reliable file operations
-- Better error handling and recovery
-- Comprehensive monitoring and diagnostics
-- Prevention of common volume issues
-- Enhanced logging for troubleshooting`,
+Your bot code has been successfully generated and stored in Modal Volume (no Supabase Storage used).`,
       timestamp: new Date().toISOString(),
       files: {
         'main.py': codeResult.code
@@ -803,33 +292,146 @@ ${retrievalStatus}
       status: 'stored',
       runtime_status: 'stopped',
       conversation_history: updatedHistory,
-      runtime_logs: `${healthStatus}\n${retrievalStatus}`,
+      runtime_logs: `Bot stored in Modal Volume only\n${verificationResult.summary}`,
       files_stored: true
     })
     .eq('id', botId);
 
-  console.log(`[MODAL-MANAGER OPTIM] Bot ${botId} creation completed with optimized patterns`);
+  console.log(`[MODAL-MANAGER CLEAN] Bot ${botId} creation completed successfully`);
 
   return {
     botCode: codeResult,
-    deployment: storeResult,
-    health_check: healthStatus,
-    retrieval_test: retrievalStatus,
-    optimization_features: [
-      "Proper volume commit/reload patterns",
-      "Enhanced error handling",
-      "Comprehensive health checks",
-      "Batch operation support",
-      "Volume busy error prevention"
-    ],
-    message: 'Bot generated and stored with optimized Modal Volume patterns!'
+    storage: storeResult,
+    verification: verificationResult,
+    files: {
+      'main.py': codeResult.code
+    },
+    storage_type: 'modal_volume_only',
+    message: 'Bot generated and stored in Modal Volume (no Supabase Storage)!'
   };
 }
 
-async function optimizedGetBotFiles(botId: string, userId: string) {
-  console.log(`[MODAL-MANAGER OPTIM] Getting files for bot ${botId} with optimized patterns`);
+async function storeInModalOnly(botId: string, userId: string, botCode: string, token: string, botName: string) {
+  console.log(`[MODAL-MANAGER CLEAN] === Storing in Modal Volume ONLY for bot ${botId} ===`);
+  console.log(`[MODAL-MANAGER CLEAN] Code length: ${botCode.length} characters`);
   
   try {
+    console.log(`[MODAL-MANAGER CLEAN] Calling Modal API: ${MODAL_BASE_URL}/store-bot/${botId}`);
+    
+    const storeResponse = await fetch(`${MODAL_BASE_URL}/store-bot/${botId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        bot_code: botCode,
+        bot_token: token,
+        bot_name: botName || `Bot ${botId}`
+      })
+    });
+
+    console.log(`[MODAL-MANAGER CLEAN] Modal API response status: ${storeResponse.status}`);
+
+    if (!storeResponse.ok) {
+      const errorText = await storeResponse.text();
+      console.error(`[MODAL-MANAGER CLEAN] Modal API error: ${storeResponse.status} - ${errorText}`);
+      return {
+        success: false,
+        error: `Modal API error: ${storeResponse.status} - ${errorText}`,
+        details: `Failed to store in Modal Volume: ${errorText}`
+      };
+    }
+
+    const storeResult = await storeResponse.json();
+    console.log(`[MODAL-MANAGER CLEAN] Modal API result:`, storeResult);
+
+    if (storeResult.success) {
+      return {
+        success: true,
+        details: `✅ Bot stored successfully in Modal Volume\n✅ No Supabase Storage operations performed\n✅ Modal Volume commit successful`,
+        modal_response: storeResult
+      };
+    } else {
+      return {
+        success: false,
+        error: storeResult.error || 'Unknown Modal error',
+        details: `❌ Modal storage failed: ${storeResult.error || 'Unknown error'}`
+      };
+    }
+
+  } catch (error) {
+    console.error(`[MODAL-MANAGER CLEAN] Exception storing in Modal:`, error);
+    return {
+      success: false,
+      error: error.message,
+      details: `❌ Exception during Modal storage: ${error.message}`
+    };
+  }
+}
+
+async function verifyModalStorage(botId: string, userId: string) {
+  console.log(`[MODAL-MANAGER CLEAN] === Verifying Modal storage for bot ${botId} ===`);
+  
+  try {
+    const verifyResponse = await fetch(`${MODAL_BASE_URL}/files/${botId}?user_id=${userId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+
+    console.log(`[MODAL-MANAGER CLEAN] Verification response status: ${verifyResponse.status}`);
+
+    if (!verifyResponse.ok) {
+      const errorText = await verifyResponse.text();
+      console.error(`[MODAL-MANAGER CLEAN] Verification failed: ${verifyResponse.status} - ${errorText}`);
+      return {
+        success: false,
+        summary: `❌ Verification failed: ${verifyResponse.status} - ${errorText}`,
+        files: {}
+      };
+    }
+
+    const verifyResult = await verifyResponse.json();
+    console.log(`[MODAL-MANAGER CLEAN] Verification result:`, {
+      success: verifyResult.success,
+      fileCount: Object.keys(verifyResult.files || {}).length
+    });
+
+    if (verifyResult.success && verifyResult.files) {
+      const filesSummary = Object.entries(verifyResult.files).map(([name, content]) => 
+        `✅ ${name}: ${typeof content === 'string' ? content.length : 0} chars`
+      ).join('\n');
+      
+      return {
+        success: true,
+        summary: `✅ Modal storage verified successfully:\n${filesSummary}\n✅ No Supabase Storage operations`,
+        files: verifyResult.files
+      };
+    } else {
+      return {
+        success: false,
+        summary: `❌ Verification failed: ${verifyResult.error || 'No files found in Modal'}`,
+        files: {}
+      };
+    }
+
+  } catch (error) {
+    console.error(`[MODAL-MANAGER CLEAN] Verification exception:`, error);
+    return {
+      success: false,
+      summary: `❌ Verification exception: ${error.message}`,
+      files: {}
+    };
+  }
+}
+
+async function cleanGetBotFiles(botId: string, userId: string) {
+  console.log(`[MODAL-MANAGER CLEAN] === Getting files from Modal Volume ONLY for bot ${botId} ===`);
+  
+  try {
+    const startTime = Date.now();
     const response = await fetch(`${MODAL_BASE_URL}/files/${botId}?user_id=${userId}`, {
       method: 'GET',
       headers: {
@@ -837,92 +439,168 @@ async function optimizedGetBotFiles(botId: string, userId: string) {
       }
     });
 
+    const requestTime = Date.now() - startTime;
+    console.log(`[MODAL-MANAGER CLEAN] Modal files request completed in ${requestTime}ms, status:`, response.status);
+
     if (!response.ok) {
-      console.error(`[MODAL-MANAGER OPTIM] Optimized files request failed: ${response.status}`);
-      throw new Error(`Failed to get files with optimized patterns: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`[MODAL-MANAGER CLEAN] Modal files request failed: ${response.status} - ${errorText}`);
+      throw new Error(`Failed to get files from Modal: ${response.status} - ${errorText}`);
     }
 
     const result = await response.json();
-    console.log(`[MODAL-MANAGER OPTIM] Optimized files result:`, {
+    console.log(`[MODAL-MANAGER CLEAN] Modal files result:`, {
       success: result.success,
-      fileCount: Object.keys(result.files || {}).length,
-      storageMethod: result.storage_method,
-      storageVersion: result.storage_version
+      fileCount: Object.keys(result.files || {}).length
     });
     
     if (result.success && result.files) {
       Object.keys(result.files).forEach(filename => {
         const content = result.files[filename];
-        console.log(`[MODAL-MANAGER OPTIM] File ${filename}: ${content?.length || 0} characters`);
+        console.log(`[MODAL-MANAGER CLEAN] File ${filename}: ${content?.length || 0} characters`);
       });
     }
     
     return {
       success: true,
       files: result.files || {},
-      storage_type: 'optimized_modal_volume',
-      storage_method: result.storage_method || 'optimized_modal_patterns',
-      storage_version: result.storage_version || '2.0',
-      file_count: result.file_count || 0,
+      storage_type: 'modal_volume_only',
+      storage_method: 'modal_volume_direct',
+      file_count: Object.keys(result.files || {}).length,
+      request_time: `${requestTime}ms`,
       logs: result.logs || []
     };
     
   } catch (error) {
-    console.error(`[MODAL-MANAGER OPTIM] Error getting optimized files:`, error);
+    console.error(`[MODAL-MANAGER CLEAN] Error getting Modal files:`, error);
     return {
       success: false,
       error: error.message,
       files: {},
-      storage_type: 'optimized_modal_volume',
-      storage_method: 'optimized_modal_patterns'
+      storage_type: 'modal_volume_only'
     };
   }
 }
 
-async function comprehensiveHealthCheck(botId: string, userId: string) {
-  console.log(`[MODAL-MANAGER OPTIM] Running comprehensive health check for bot ${botId}`);
+async function cleanModifyBot(botId: string, userId: string, modificationPrompt: string) {
+  console.log(`[MODAL-MANAGER CLEAN] === Starting clean bot modification for ${botId} ===`);
+  console.log(`[MODAL-MANAGER CLEAN] Modification prompt length:`, modificationPrompt.length);
   
-  try {
-    const response = await fetch(`${MODAL_BASE_URL}/health-check/${botId}?user_id=${userId}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      }
-    });
+  // Get current bot data
+  const { data: bot, error: botError } = await supabase
+    .from('bots')
+    .select('*')
+    .eq('id', botId)
+    .single();
 
-    if (!response.ok) {
-      console.error(`[MODAL-MANAGER OPTIM] Health check request failed: ${response.status}`);
-      throw new Error(`Health check failed: ${response.status}`);
-    }
-
-    const result = await response.json();
-    console.log(`[MODAL-MANAGER OPTIM] Health check result:`, {
-      success: result.success,
-      volumeStatus: result.health_info?.volume_status,
-      totalBots: result.health_info?.total_bots
-    });
-    
-    return {
-      success: true,
-      health_info: result.health_info,
-      check_type: result.check_type,
-      logs: result.logs || []
-    };
-    
-  } catch (error) {
-    console.error(`[MODAL-MANAGER OPTIM] Error in health check:`, error);
-    return {
-      success: false,
-      error: error.message,
-      check_type: 'comprehensive_health_check'
-    };
+  if (botError || !bot) {
+    console.error(`[MODAL-MANAGER CLEAN] Bot not found:`, botError);
+    throw new Error('Bot not found');
   }
+
+  console.log(`[MODAL-MANAGER CLEAN] Bot found: ${bot.name}`);
+
+  // Get current code from Modal Volume ONLY
+  console.log(`[MODAL-MANAGER CLEAN] Getting current code from Modal Volume ONLY`);
+  const filesResult = await cleanGetBotFiles(botId, userId);
+  
+  if (!filesResult.success) {
+    console.error(`[MODAL-MANAGER CLEAN] Failed to get current files from Modal:`, filesResult.error);
+    throw new Error(`Failed to get current bot files from Modal: ${filesResult.error}`);
+  }
+
+  const currentCode = filesResult.files['main.py'] || '';
+  if (!currentCode) {
+    console.error(`[MODAL-MANAGER CLEAN] No current code found in Modal for bot ${botId}`);
+    throw new Error('No current bot code found in Modal for modification');
+  }
+
+  console.log(`[MODAL-MANAGER CLEAN] Current code retrieved from Modal: ${currentCode.length} characters`);
+
+  // Modify code using OpenAI
+  console.log(`[MODAL-MANAGER CLEAN] Generating modified code with OpenAI`);
+  const modifyResult = await generateBotCodeWithOpenAI(
+    `Modify this existing bot code:\n\n${currentCode}\n\nModification request: ${modificationPrompt}`,
+    bot.token,
+    bot.conversation_history || []
+  );
+
+  if (!modifyResult.success) {
+    console.error(`[MODAL-MANAGER CLEAN] Code generation failed:`, modifyResult);
+    throw new Error('Failed to generate modified bot code');
+  }
+
+  console.log(`[MODAL-MANAGER CLEAN] Modified code generated: ${modifyResult.code.length} characters`);
+
+  // Store updated code in Modal Volume ONLY
+  console.log(`[MODAL-MANAGER CLEAN] Storing updated code in Modal Volume ONLY`);
+  const storeResult = await storeInModalOnly(botId, userId, modifyResult.code, bot.token, bot.name);
+
+  if (!storeResult.success) {
+    console.error(`[MODAL-MANAGER CLEAN] Modal storage failed:`, storeResult.error);
+    throw new Error(`Failed to store modified code in Modal: ${storeResult.error}`);
+  }
+
+  console.log(`[MODAL-MANAGER CLEAN] Modified code stored successfully in Modal`);
+
+  // Verify storage
+  console.log(`[MODAL-MANAGER CLEAN] Verifying Modal storage`);
+  const verificationResult = await verifyModalStorage(botId, userId);
+
+  // Update conversation history
+  const updatedHistory = [
+    ...(bot.conversation_history || []),
+    {
+      role: 'user',
+      content: modificationPrompt,
+      timestamp: new Date().toISOString()
+    },
+    {
+      role: 'assistant',
+      content: `Bot modified successfully with Modal Volume storage! ${modifyResult.explanation}
+
+**Storage Results:**
+${storeResult.details}
+
+**Verification:**
+${verificationResult.summary}
+
+Your bot code has been successfully updated and stored in Modal Volume (no Supabase Storage operations).`,
+      timestamp: new Date().toISOString(),
+      files: {
+        'main.py': modifyResult.code
+      }
+    }
+  ];
+
+  // Update bot in database
+  await supabase
+    .from('bots')
+    .update({
+      conversation_history: updatedHistory,
+      runtime_logs: `Modified and stored in Modal Volume only\n${verificationResult.summary}`,
+      files_stored: true
+    })
+    .eq('id', botId);
+
+  console.log(`[MODAL-MANAGER CLEAN] Bot ${botId} modification completed successfully`);
+
+  return {
+    ...modifyResult,
+    storage: storeResult,
+    verification: verificationResult,
+    files: {
+      'main.py': modifyResult.code
+    },
+    storage_type: 'modal_volume_only',
+    message: 'Bot modified and stored in Modal Volume (no Supabase Storage)!'
+  };
 }
 
 async function optimizedStartBot(botId: string, userId: string) {
-  console.log(`[MODAL-MANAGER OPTIM] Starting bot ${botId} with optimized patterns`);
+  console.log(`[MODAL-MANAGER CLEAN] Starting bot ${botId} with Modal Volume`);
   
-  // Step 1: Load bot in the optimized FastAPI service
+  // Step 1: Load bot in the Modal service
   const loadResponse = await fetch(`${MODAL_BASE_URL}/load-bot/${botId}`, {
     method: 'POST',
     headers: {
@@ -953,15 +631,15 @@ async function optimizedStartBot(botId: string, userId: string) {
       },
       body: JSON.stringify({
         user_id: userId,
-        message: `Bot ${botId} started via optimized Modal service`,
+        message: `Bot ${botId} started via Modal service`,
         level: 'INFO'
       })
     });
   } catch (logError) {
-    console.warn(`[MODAL-MANAGER OPTIM] Failed to add startup log:`, logError.message);
+    console.warn(`[MODAL-MANAGER CLEAN] Failed to add startup log:`, logError.message);
   }
 
-  // Step 3: Register webhook with Telegram using optimized FastAPI endpoint
+  // Step 3: Register webhook with Telegram
   const webhookUrl = `${MODAL_BASE_URL}/webhook/${botId}`;
   
   const webhookResponse = await fetch(`${MODAL_BASE_URL}/register-webhook/${botId}`, {
@@ -977,7 +655,7 @@ async function optimizedStartBot(botId: string, userId: string) {
 
   if (!webhookResponse.ok) {
     const errorText = await webhookResponse.text();
-    console.error(`[MODAL-MANAGER OPTIM] Optimized webhook registration failed: ${errorText}`);
+    console.error(`[MODAL-MANAGER CLEAN] Webhook registration failed: ${errorText}`);
   }
 
   const webhookResult = await webhookResponse.json();
@@ -987,7 +665,7 @@ async function optimizedStartBot(botId: string, userId: string) {
     .from('bots')
     .update({
       runtime_status: webhookResult.success ? 'running' : 'stopped',
-      runtime_logs: `Bot loaded from Modal volume\nWebhook URL: ${webhookUrl}\nStatus: ${webhookResult.success ? 'Running' : 'Failed'}`
+      runtime_logs: `Bot loaded from Modal Volume\nWebhook URL: ${webhookUrl}\nStatus: ${webhookResult.success ? 'Running' : 'Failed'}`
     })
     .eq('id', botId);
 
@@ -996,27 +674,21 @@ async function optimizedStartBot(botId: string, userId: string) {
     status: webhookResult.success ? 'running' : 'stopped',
     service_url: MODAL_BASE_URL,
     webhook_url: webhookUrl,
-    storage_type: 'optimized_modal_volume',
-    optimization_features: [
-      "Enhanced volume reload patterns",
-      "Improved error handling",
-      "Better webhook management",
-      "Real-time logging system"
-    ],
+    storage_type: 'modal_volume_only',
     logs: [
-      `[MODAL OPTIMIZED] Bot loaded with enhanced patterns`,
-      `[MODAL OPTIMIZED] Webhook registered with reliability improvements`,
-      `[MODAL OPTIMIZED] Bot ${botId} running with optimization features`,
-      `[MODAL OPTIMIZED] Logs system initialized`
+      `[MODAL CLEAN] Bot loaded from Modal Volume`,
+      `[MODAL CLEAN] Webhook registered`,
+      `[MODAL CLEAN] Bot ${botId} running`,
+      `[MODAL CLEAN] Logs system initialized`
     ]
   };
 }
 
 async function optimizedStopBot(botId: string, userId: string) {
-  console.log(`[MODAL-MANAGER OPTIM] Stopping bot ${botId} with optimized patterns`);
+  console.log(`[MODAL-MANAGER CLEAN] Stopping bot ${botId}`);
   
   try {
-    // Step 1: Unregister webhook using optimized FastAPI endpoint
+    // Step 1: Unregister webhook
     const webhookResponse = await fetch(`${MODAL_BASE_URL}/unregister-webhook/${botId}`, {
       method: 'POST',
       headers: {
@@ -1029,7 +701,7 @@ async function optimizedStopBot(botId: string, userId: string) {
 
     const webhookResult = await webhookResponse.json();
 
-    // Step 2: Unload bot from optimized FastAPI service
+    // Step 2: Unload bot
     const unloadResponse = await fetch(`${MODAL_BASE_URL}/unload-bot/${botId}`, {
       method: 'POST',
       headers: {
@@ -1043,7 +715,7 @@ async function optimizedStopBot(botId: string, userId: string) {
       .from('bots')
       .update({
         runtime_status: 'stopped',
-        runtime_logs: `Bot stopped and webhook unregistered\nUnloaded from Modal volume: ${unloadResult.success}`
+        runtime_logs: `Bot stopped and webhook unregistered\nUnloaded from Modal Volume: ${unloadResult.success}`
       })
       .eq('id', botId);
 
@@ -1052,11 +724,11 @@ async function optimizedStopBot(botId: string, userId: string) {
       status: 'stopped',
       webhook_unregistered: webhookResult.success,
       bot_unloaded: unloadResult.success,
-      storage_type: 'optimized_modal_volume'
+      storage_type: 'modal_volume_only'
     };
     
   } catch (error) {
-    console.error(`[MODAL-MANAGER OPTIM] Error stopping bot ${botId}:`, error);
+    console.error(`[MODAL-MANAGER CLEAN] Error stopping bot ${botId}:`, error);
     return {
       success: false,
       error: error.message
@@ -1065,7 +737,7 @@ async function optimizedStopBot(botId: string, userId: string) {
 }
 
 async function optimizedRestartBot(botId: string, userId: string) {
-  console.log(`[MODAL-MANAGER OPTIM] Restarting bot ${botId} with optimized patterns`);
+  console.log(`[MODAL-MANAGER CLEAN] Restarting bot ${botId}`);
   
   await optimizedStopBot(botId, userId);
   await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
@@ -1074,22 +746,20 @@ async function optimizedRestartBot(botId: string, userId: string) {
 
 async function optimizedGetBotLogs(botId: string, userId: string) {
   try {
-    console.log(`[MODAL-MANAGER OPTIM] Fetching optimized logs for bot ${botId}`);
+    console.log(`[MODAL-MANAGER CLEAN] Fetching logs from Modal for bot ${botId}`);
     
-    // Try to get logs from the optimized FastAPI service with improved error handling
     try {
       const serviceLogsResponse = await fetch(`${MODAL_BASE_URL}/logs/${botId}?user_id=${userId}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
         },
-        // Add timeout to prevent hanging
         signal: AbortSignal.timeout(30000) // 30 second timeout
       });
 
       if (serviceLogsResponse.ok) {
         const serviceLogsResult = await serviceLogsResponse.json();
-        console.log(`[MODAL-MANAGER OPTIM] Service logs result:`, {
+        console.log(`[MODAL-MANAGER CLEAN] Modal logs result:`, {
           success: serviceLogsResult.success,
           logCount: serviceLogsResult.logs?.length || 0
         });
@@ -1100,61 +770,55 @@ async function optimizedGetBotLogs(botId: string, userId: string) {
             logs: serviceLogsResult.logs || [],
             log_count: serviceLogsResult.log_count || 0,
             timestamp: serviceLogsResult.timestamp,
-            storage_type: 'optimized_modal_volume',
-            log_features: [
-              "Enhanced error detection",
-              "Performance monitoring",
-              "Volume operation tracking",
-              "Real-time log streaming"
-            ]
+            storage_type: 'modal_volume_only'
           };
         } else {
-          console.warn(`[MODAL-MANAGER OPTIM] Service returned error:`, serviceLogsResult.error);
+          console.warn(`[MODAL-MANAGER CLEAN] Modal service returned error:`, serviceLogsResult.error);
         }
       } else {
-        console.warn(`[MODAL-MANAGER OPTIM] Service responded with status:`, serviceLogsResponse.status);
+        console.warn(`[MODAL-MANAGER CLEAN] Modal service responded with status:`, serviceLogsResponse.status);
       }
     } catch (fetchError) {
-      console.error(`[MODAL-MANAGER OPTIM] Fetch error:`, fetchError.message);
+      console.error(`[MODAL-MANAGER CLEAN] Fetch error:`, fetchError.message);
     }
 
-    // Fallback: Return meaningful error message with helpful logs
+    // Fallback logs
     const fallbackLogs = [
       `[MODAL LOG SERVICE] Service temporarily unavailable`,
       `[MODAL LOG SERVICE] Bot ID: ${botId}`,
       `[MODAL LOG SERVICE] Timestamp: ${new Date().toISOString()}`,
-      `[MODAL LOG SERVICE] Attempting to reconnect to logs service...`,
+      `[MODAL LOG SERVICE] Attempting to reconnect to Modal logs service...`,
       `[MODAL LOG SERVICE] If this persists, the bot may need to be restarted`
     ];
 
     return {
-      success: true, // Return success with fallback logs instead of failing
+      success: true,
       logs: fallbackLogs,
       log_count: fallbackLogs.length,
-      storage_type: 'optimized_modal_volume',
+      storage_type: 'modal_volume_only',
       fallback_mode: true,
-      message: 'Using fallback logs - service temporarily unavailable'
+      message: 'Using fallback logs - Modal service temporarily unavailable'
     };
     
   } catch (error) {
-    console.error(`[MODAL-MANAGER OPTIM] Exception in optimized getBotLogs:`, error);
+    console.error(`[MODAL-MANAGER CLEAN] Exception in getBotLogs:`, error);
     
     return {
       success: false,
       error: error.message,
       logs: [
-        `[MODAL OPTIMIZED ERROR] Failed to get logs: ${error.message}`,
-        `[MODAL OPTIMIZED ERROR] Bot ID: ${botId}`,
-        `[MODAL OPTIMIZED ERROR] Timestamp: ${new Date().toISOString()}`
+        `[MODAL CLEAN ERROR] Failed to get logs: ${error.message}`,
+        `[MODAL CLEAN ERROR] Bot ID: ${botId}`,
+        `[MODAL CLEAN ERROR] Timestamp: ${new Date().toISOString()}`
       ],
-      storage_type: 'optimized_modal_volume'
+      storage_type: 'modal_volume_only'
     };
   }
 }
 
 async function optimizedGetBotStatus(botId: string, userId: string) {
   try {
-    // Get status from the optimized FastAPI service
+    // Get status from Modal service
     const healthResponse = await fetch(`${MODAL_BASE_URL}/health/${botId}`, {
       method: 'GET',
       headers: {
@@ -1167,195 +831,23 @@ async function optimizedGetBotStatus(botId: string, userId: string) {
       return {
         success: true,
         status: healthResult.loaded ? 'running' : 'stopped',
-        deployment_type: 'optimized_modal',
-        runtime: 'Optimized Modal FastAPI Service',
-        storage_type: 'optimized_modal_volume',
+        deployment_type: 'modal_volume',
+        runtime: 'Modal FastAPI Service',
+        storage_type: 'modal_volume_only',
         loaded: healthResult.loaded,
-        service_status: healthResult.status,
-        optimization_features: [
-          "Enhanced health monitoring",
-          "Improved status accuracy",
-          "Better performance tracking"
-        ]
+        service_status: healthResult.status
       };
     }
 
-    throw new Error(`Optimized health check failed: ${healthResponse.status}`);
+    throw new Error(`Modal health check failed: ${healthResponse.status}`);
   } catch (error) {
     return {
       success: false,
       error: error.message,
       status: 'error',
-      storage_type: 'optimized_modal_volume'
+      storage_type: 'modal_volume_only'
     };
   }
-}
-
-async function optimizedModifyBot(botId: string, userId: string, modificationPrompt: string) {
-  console.log(`[MODAL-MANAGER OPTIM] Starting bot modification for ${botId} with enhanced error handling`);
-  
-  // Get current bot data
-  const { data: bot, error: botError } = await supabase
-    .from('bots')
-    .select('*')
-    .eq('id', botId)
-    .single();
-
-  if (botError || !bot) {
-    console.error(`[MODAL-MANAGER OPTIM] Bot not found:`, botError);
-    throw new Error('Bot not found');
-  }
-
-  console.log(`[MODAL-MANAGER OPTIM] Bot found: ${bot.name}, getting current code`);
-
-  // Get current code from optimized Modal volume
-  const codeResponse = await fetch(`${MODAL_BASE_URL}/files/${botId}?user_id=${userId}`, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-    }
-  });
-
-  if (!codeResponse.ok) {
-    const errorText = await codeResponse.text();
-    console.error(`[MODAL-MANAGER OPTIM] Failed to get current code: ${codeResponse.status} - ${errorText}`);
-    throw new Error(`Failed to get current bot code: ${codeResponse.status} - ${errorText}`);
-  }
-
-  const codeData = await codeResponse.json();
-  const currentCode = codeData.files?.['main.py'] || '';
-
-  if (!currentCode) {
-    console.error(`[MODAL-MANAGER OPTIM] No current code found for bot ${botId}`);
-    throw new Error('No current bot code found for modification');
-  }
-
-  console.log(`[MODAL-MANAGER OPTIM] Current code retrieved: ${currentCode.length} characters`);
-
-  // Modify code using OpenAI
-  console.log(`[MODAL-MANAGER OPTIM] Generating modified code with OpenAI`);
-  const modifyResult = await generateBotCodeWithOpenAI(
-    `Modify this existing bot code:\n\n${currentCode}\n\nModification request: ${modificationPrompt}`,
-    bot.token,
-    bot.conversation_history || []
-  );
-
-  if (!modifyResult.success) {
-    console.error(`[MODAL-MANAGER OPTIM] Code generation failed:`, modifyResult);
-    throw new Error('Failed to generate modified bot code');
-  }
-
-  console.log(`[MODAL-MANAGER OPTIM] Modified code generated: ${modifyResult.code.length} characters`);
-
-  // Store updated code using optimized Modal patterns with comprehensive error handling
-  console.log(`[MODAL-MANAGER OPTIM] Storing modified code to Modal volume`);
-  
-  const storeResponse = await fetch(`${MODAL_BASE_URL}/store-bot/${botId}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      user_id: userId,
-      bot_code: modifyResult.code,
-      bot_token: bot.token,
-      bot_name: bot.name
-    })
-  });
-
-  if (!storeResponse.ok) {
-    const errorText = await storeResponse.text();
-    console.error(`[MODAL-MANAGER OPTIM] Store request failed: ${storeResponse.status} - ${errorText}`);
-    throw new Error(`Failed to store modified code: ${storeResponse.status} - ${errorText}`);
-  }
-
-  const storeResult = await storeResponse.json();
-  console.log(`[MODAL-MANAGER OPTIM] Store result:`, storeResult);
-
-  if (!storeResult.success) {
-    console.error(`[MODAL-MANAGER OPTIM] Store operation failed:`, storeResult.error);
-    throw new Error(`Failed to store modified code: ${storeResult.error}`);
-  }
-
-  console.log(`[MODAL-MANAGER OPTIM] Code stored successfully, verifying storage`);
-
-  // Verify file storage by attempting to retrieve the updated code
-  const verifyResponse = await fetch(`${MODAL_BASE_URL}/files/${botId}?user_id=${userId}`, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-    }
-  });
-
-  let verificationStatus = "Storage verification failed";
-  if (verifyResponse.ok) {
-    const verifyResult = await verifyResponse.json();
-    if (verifyResult.success && verifyResult.files?.['main.py']) {
-      const storedCodeLength = verifyResult.files['main.py'].length;
-      verificationStatus = `✓ Storage verified: main.py (${storedCodeLength} chars)`;
-      console.log(`[MODAL-MANAGER OPTIM] Storage verification successful: ${storedCodeLength} characters`);
-    } else {
-      verificationStatus = `✗ Storage verification failed: ${verifyResult.error || 'No main.py found'}`;
-      console.error(`[MODAL-MANAGER OPTIM] Storage verification failed:`, verifyResult);
-    }
-  } else {
-    console.error(`[MODAL-MANAGER OPTIM] Storage verification request failed: ${verifyResponse.status}`);
-    verificationStatus = `✗ Storage verification request failed: ${verifyResponse.status}`;
-  }
-
-  // Update conversation history only after successful storage
-  const updatedHistory = [
-    ...(bot.conversation_history || []),
-    {
-      role: 'user',
-      content: modificationPrompt,
-      timestamp: new Date().toISOString()
-    },
-    {
-      role: 'assistant',
-      content: `Bot modified successfully with optimized Modal Volume patterns! ${modifyResult.explanation}
-
-**Storage Verification:**
-${verificationStatus}
-
-**Optimization Features:**
-- ✅ Enhanced error handling and validation
-- ✅ Comprehensive storage verification
-- ✅ Robust Modal volume operations
-- ✅ Detailed logging for troubleshooting
-
-Your bot code has been successfully updated and stored in Modal.`,
-      timestamp: new Date().toISOString(),
-      files: {
-        'main.py': modifyResult.code
-      }
-    }
-  ];
-
-  // Update bot in database with enhanced status tracking
-  await supabase
-    .from('bots')
-    .update({
-      conversation_history: updatedHistory,
-      runtime_logs: `Modified bot code stored successfully\n${verificationStatus}`,
-      files_stored: true
-    })
-    .eq('id', botId);
-
-  console.log(`[MODAL-MANAGER OPTIM] Bot ${botId} modification completed successfully`);
-
-  return {
-    ...modifyResult,
-    storage_verification: verificationStatus,
-    storage_type: 'optimized_modal_volume',
-    optimization_features: [
-      "Enhanced error handling and validation",
-      "Comprehensive storage verification", 
-      "Robust Modal volume operations",
-      "Detailed logging for troubleshooting"
-    ],
-    message: 'Bot modified and stored with optimized Modal Volume patterns!'
-  };
 }
 
 async function optimizedFixBot(botId: string, userId: string) {
@@ -1363,7 +855,7 @@ async function optimizedFixBot(botId: string, userId: string) {
   const logs = await optimizedGetBotLogs(botId, userId);
   const errorLogs = logs.logs?.join('\n') || '';
 
-  // Get current code from optimized Modal volume
+  // Get current code from Modal Volume
   const codeResponse = await fetch(`${MODAL_BASE_URL}/files/${botId}?user_id=${userId}`, {
     method: 'GET',
     headers: {
@@ -1374,6 +866,48 @@ async function optimizedFixBot(botId: string, userId: string) {
   const codeData = await codeResponse.json();
   const currentCode = codeData.files?.['main.py'] || '';
 
-  // Fix via optimized modification
-  return await optimizedModifyBot(botId, userId, `Fix the following errors in the bot with optimized patterns:\n\n${errorLogs}\n\nCurrent code has issues, please fix them using best practices.`);
+  // Fix via clean modification
+  return await cleanModifyBot(botId, userId, `Fix the following errors in the bot:\n\n${errorLogs}\n\nCurrent code has issues, please fix them using best practices.`);
+}
+
+async function comprehensiveHealthCheck(botId: string, userId: string) {
+  console.log(`[MODAL-MANAGER CLEAN] Running health check for bot ${botId}`);
+  
+  try {
+    const response = await fetch(`${MODAL_BASE_URL}/health-check/${botId}?user_id=${userId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+
+    if (!response.ok) {
+      console.error(`[MODAL-MANAGER CLEAN] Health check request failed: ${response.status}`);
+      throw new Error(`Health check failed: ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log(`[MODAL-MANAGER CLEAN] Health check result:`, {
+      success: result.success,
+      volumeStatus: result.health_info?.volume_status,
+      totalBots: result.health_info?.total_bots
+    });
+    
+    return {
+      success: true,
+      health_info: result.health_info,
+      check_type: result.check_type,
+      storage_type: 'modal_volume_only',
+      logs: result.logs || []
+    };
+    
+  } catch (error) {
+    console.error(`[MODAL-MANAGER CLEAN] Error in health check:`, error);
+    return {
+      success: false,
+      error: error.message,
+      check_type: 'comprehensive_health_check',
+      storage_type: 'modal_volume_only'
+    };
+  }
 }
