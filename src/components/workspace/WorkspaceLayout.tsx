@@ -2,7 +2,7 @@
 import { useState, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import BotRuntimeLogs from "@/components/BotRuntimeLogs";
+import BotModalLogs from "./BotModalLogs";
 import FilesPanel from "./FilesPanel";
 import ChatInterface from "./ChatInterface";
 import FileViewer from "./FileViewer";
@@ -106,7 +106,7 @@ const WorkspaceLayout = ({
               )}
             </TabsTrigger>
             <TabsTrigger value="logs" className={`relative ${logsHasErrors ? "text-red-600" : ""}`}>
-              Runtime Logs
+              Modal Logs
               {logsHasErrors && (
                 <Badge variant="destructive" className="ml-2 text-xs">
                   Errors
@@ -123,7 +123,7 @@ const WorkspaceLayout = ({
           </TabsContent>
           
           <TabsContent value="logs" className="flex-1 p-4">
-            <BotRuntimeLogs 
+            <BotModalLogs 
               botId={botId} 
               onLogsUpdate={handleLogsUpdate}
               onFixByAI={handleLogsFixByAI}

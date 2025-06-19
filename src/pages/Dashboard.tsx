@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -72,10 +73,13 @@ const Dashboard = () => {
 
   const stopBotExecution = async (botId: string) => {
     try {
-      const { data, error } = await supabase.functions.invoke('manage-bot-runtime', {
+      console.log(`Stopping bot ${botId} via Modal`);
+      
+      const { data, error } = await supabase.functions.invoke('modal-bot-manager', {
         body: {
-          action: 'stop',
-          botId
+          action: 'stop-bot',
+          botId,
+          userId: user?.id
         }
       });
 
@@ -85,7 +89,7 @@ const Dashboard = () => {
       }
 
       if (data.success) {
-        console.log(`Bot ${botId} execution stopped successfully`);
+        console.log(`Bot ${botId} execution stopped successfully via Modal`);
         return true;
       } else {
         console.error('Failed to stop bot execution:', data.error);
@@ -99,31 +103,9 @@ const Dashboard = () => {
 
   const deleteBotFiles = async (botId: string, userId: string) => {
     try {
-      // List all files in the bot's directory
-      const { data: files, error: listError } = await supabase.storage
-        .from('bot-files')
-        .list(`${userId}/${botId}`);
-
-      if (listError) {
-        console.error('Error listing bot files:', listError);
-        return false;
-      }
-
-      if (files && files.length > 0) {
-        // Delete all files in the bot's directory
-        const filePaths = files.map(file => `${userId}/${botId}/${file.name}`);
-        const { error: deleteError } = await supabase.storage
-          .from('bot-files')
-          .remove(filePaths);
-
-        if (deleteError) {
-          console.error('Error deleting bot files:', deleteError);
-          return false;
-        }
-
-        console.log(`Successfully deleted ${files.length} files for bot ${botId}`);
-      }
-
+      // Since files are stored in Modal volume, we don't need to delete them separately
+      // Modal handles cleanup when the bot is deleted from database
+      console.log(`Modal will handle file cleanup for bot ${botId}`);
       return true;
     } catch (error) {
       console.error('Error in deleteBotFiles:', error);
@@ -144,7 +126,7 @@ const Dashboard = () => {
       // Step 1: Stop the bot execution if it's running
       const bot = bots.find(b => b.id === botId);
       if (bot && (bot.runtime_status === 'running' || bot.runtime_status === 'starting')) {
-        console.log(`Stopping bot execution for ${botId}...`);
+        console.log(`Stopping bot execution for ${botId} via Modal...`);
         const stopSuccess = await stopBotExecution(botId);
         
         if (!stopSuccess) {
@@ -159,7 +141,7 @@ const Dashboard = () => {
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
 
-      // Step 2: Delete the bot files from storage
+      // Step 2: Delete the bot files (Modal handles this automatically)
       const filesDeleted = await deleteBotFiles(botId, user.id);
       
       if (!filesDeleted) {
@@ -188,7 +170,7 @@ const Dashboard = () => {
         setBots(prev => prev.filter(bot => bot.id !== botId));
         toast({
           title: "Bot deleted successfully! 🗑️",
-          description: `${botName} and all its files have been removed from the system`,
+          description: `${botName} and all its files have been removed from Modal`,
         });
       }
     } catch (error) {
@@ -228,7 +210,7 @@ const Dashboard = () => {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">TeleBot AI Dashboard</h1>
-          <p className="text-gray-600">Manage and monitor your bots</p>
+          <p className="text-gray-600">Manage and monitor your Modal-powered bots</p>
         </div>
 
         {bots.length === 0 ? (

@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -169,7 +170,7 @@ const Workspace = () => {
       if (data.success) {
         toast({
           title: "Bot Updated! 🎉",
-          description: "Your bot code has been generated and deployed successfully",
+          description: "Your bot code has been generated and deployed to Modal successfully",
         });
         setBotError(null); // Clear errors on success
       } else {
@@ -197,47 +198,36 @@ const Workspace = () => {
     setIsGenerating(true);
     
     try {
-      console.log('Sending fix request to AI with error logs:', errorLogs);
+      console.log('Sending fix request to Modal AI with error logs:', errorLogs);
       
-      const response = await fetch(`https://efhwjkhqbbucvedgznba.functions.supabase.co/fix-bot-with-ai`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVmaHdqa2hxYmJ1Y3ZlZGd6bmJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU5MzEzMjUsImV4cCI6MjA2MTUwNzMyNX0.kvUFs7psZ9acIJee4QIF2-zECdR4aTzvBKrYsV2v_fk'
-        },
-        body: JSON.stringify({
+      const { data, error } = await supabase.functions.invoke('modal-bot-manager', {
+        body: {
+          action: 'fix-bot',
           botId: bot.id,
-          errorLogs: errorLogs,
           userId: user.id
-        })
+        }
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-
-      const data = await response.json();
+      if (error) throw error;
 
       if (data.success) {
         toast({
           title: "🛠️ Bot Fixed by AI!",
-          description: "Your bot has been automatically fixed and restarted",
+          description: "Your bot has been automatically fixed and restarted via Modal",
         });
         setBotError(null);
         
         // Add an AI message to the conversation
         const aiMessage: Message = {
           role: 'assistant',
-          content: `🛠️ **Bot Fixed Automatically!**
+          content: `🛠️ **Bot Fixed Automatically via Modal!**
 
 I analyzed the error logs and found the following issues:
 \`\`\`
 ${errorLogs}
 \`\`\`
 
-I've automatically corrected the code and restarted your bot. The bot should now be working properly!
+I've automatically corrected the code and restarted your bot in the Modal runtime. The bot should now be working properly!
 
 **Changes made:**
 - Fixed import statements for python-telegram-bot v20+
@@ -245,9 +235,9 @@ I've automatically corrected the code and restarted your bot. The bot should now
 - Updated deprecated method calls
 - Ensured proper async/await usage
 
-Your bot is now running with the corrected code.`,
+Your bot is now running with the corrected code in Modal.`,
           timestamp: new Date().toISOString(),
-          files: { 'main.py': data.fixedCode }
+          files: data.fixedCode ? { 'main.py': data.fixedCode } : undefined
         };
 
         setMessages(prev => [...prev, aiMessage]);
@@ -270,9 +260,9 @@ Your bot is now running with the corrected code.`,
     if (!bot || !user) return;
     
     try {
-      const { data, error } = await supabase.functions.invoke('manage-bot-runtime', {
+      const { data, error } = await supabase.functions.invoke('modal-bot-manager', {
         body: {
-          action: 'restart',
+          action: 'restart-bot',
           botId: bot.id,
           userId: user.id
         }
@@ -284,7 +274,7 @@ Your bot is now running with the corrected code.`,
         setBotError(null);
         toast({
           title: "Bot Restart Initiated! 🔄",
-          description: "Your bot is being restarted...",
+          description: "Your bot is being restarted in Modal...",
         });
       } else {
         if (data.errorType) {
