@@ -205,7 +205,9 @@ async function createBot(botId: string, userId: string, name: string, prompt: st
     throw new Error('Failed to generate bot code');
   }
 
-  // Step 2: Store bot code in Modal using FastAPI endpoint
+  // Step 2: Store bot code directly in Modal FastAPI service
+  console.log(`[MODAL-MANAGER] Storing bot ${botId} in Modal FastAPI service`);
+  
   const storeResponse = await fetch(`${MODAL_BASE_URL}/store-bot/${botId}`, {
     method: 'POST',
     headers: {
@@ -221,10 +223,12 @@ async function createBot(botId: string, userId: string, name: string, prompt: st
 
   if (!storeResponse.ok) {
     const errorText = await storeResponse.text();
+    console.error(`[MODAL-MANAGER] Store request failed: ${storeResponse.status} - ${errorText}`);
     throw new Error(`Failed to store bot: ${storeResponse.status} - ${errorText}`);
   }
 
   const storeResult = await storeResponse.json();
+  console.log(`[MODAL-MANAGER] Store result:`, storeResult);
 
   if (!storeResult.success) {
     throw new Error(`Failed to store bot: ${storeResult.error}`);
@@ -252,7 +256,7 @@ async function createBot(botId: string, userId: string, name: string, prompt: st
       status: 'stored',
       runtime_status: 'stopped',
       conversation_history: updatedHistory,
-      runtime_logs: storeResult.logs?.join('\n') || '',
+      runtime_logs: (storeResult.logs || []).join('\n'),
       files_stored: true
     })
     .eq('id', botId);
@@ -260,7 +264,7 @@ async function createBot(botId: string, userId: string, name: string, prompt: st
   return {
     botCode: codeResult,
     deployment: storeResult,
-    message: 'Bot generated with OpenAI and stored in Modal. Ready to start!'
+    message: 'Bot generated with OpenAI and stored in Modal FastAPI service. Files verified and ready to start!'
   };
 }
 
