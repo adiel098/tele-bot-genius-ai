@@ -1,4 +1,3 @@
-
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
@@ -13,7 +12,7 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const openaiApiKey = Deno.env.get('OPENAI_API_KEY')!;
 
-// Modal service URL
+// Modal service URL - now only for execution, not storage
 const MODAL_BASE_URL = 'https://haleviadiel--telegram-bot-platform-telegram-bot-service.modal.run';
 
 serve(async (req) => {
@@ -24,44 +23,33 @@ serve(async (req) => {
   try {
     const { botId, userId, name, token, prompt } = await req.json();
     
-    console.log(`[GENERATE-BOT-CODE] === Starting bot generation for ${botId} ===`);
-    console.log(`[GENERATE-BOT-CODE] Using Modal with proper file structure`);
+    console.log(`[GENERATE-BOT-CODE HYBRID] === Starting hybrid bot generation for ${botId} ===`);
+    console.log(`[GENERATE-BOT-CODE HYBRID] Storage: Supabase | Execution: Modal`);
 
     // Step 1: Generate bot code with OpenAI
-    console.log(`[GENERATE-BOT-CODE] Step 1: Generating code with OpenAI`);
+    console.log(`[GENERATE-BOT-CODE HYBRID] Step 1: Generating code with OpenAI`);
     const codeResult = await generateBotCodeWithOpenAI(prompt, token);
 
     if (!codeResult.success) {
-      console.error(`[GENERATE-BOT-CODE] Code generation failed`);
+      console.error(`[GENERATE-BOT-CODE HYBRID] Code generation failed`);
       throw new Error('Failed to generate bot code with OpenAI');
     }
 
-    console.log(`[GENERATE-BOT-CODE] Code generated successfully: ${codeResult.code.length} characters`);
+    console.log(`[GENERATE-BOT-CODE HYBRID] Code generated successfully: ${codeResult.code.length} characters`);
 
-    // Step 2: Store in Modal with proper file structure
-    console.log(`[GENERATE-BOT-CODE] Step 2: Storing with Modal using proper file structure`);
-    let storeResult;
+    // Step 2: Store files in Supabase Storage
+    console.log(`[GENERATE-BOT-CODE HYBRID] Step 2: Storing files in Supabase Storage`);
+    const storageResult = await storeFilesInSupabaseStorage(botId, userId, codeResult.code, token, name);
     
-    try {
-      storeResult = await storeInEnhancedModal(botId, userId, codeResult.code, token, name);
-      if (!storeResult.success) {
-        console.log(`[GENERATE-BOT-CODE] Modal storage failed, using Supabase Storage fallback`);
-        storeResult = await storeInSupabaseStorage(botId, userId, codeResult.code, token, name);
-      }
-    } catch (modalError) {
-      console.log(`[GENERATE-BOT-CODE] Modal service error: ${modalError.message}, using Supabase Storage fallback`);
-      storeResult = await storeInSupabaseStorage(botId, userId, codeResult.code, token, name);
+    if (!storageResult.success) {
+      console.error(`[GENERATE-BOT-CODE HYBRID] Supabase Storage failed:`, storageResult.error);
+      throw new Error(`Failed to store bot files: ${storageResult.error}`);
     }
 
-    if (!storeResult.success) {
-      console.error(`[GENERATE-BOT-CODE] All storage methods failed:`, storeResult.error);
-      throw new Error(`Failed to store bot files: ${storeResult.error}`);
-    }
-
-    console.log(`[GENERATE-BOT-CODE] Bot stored successfully using ${storeResult.method}`);
+    console.log(`[GENERATE-BOT-CODE HYBRID] Files stored successfully in Supabase Storage`);
 
     // Step 3: Update conversation history in database
-    console.log(`[GENERATE-BOT-CODE] Step 3: Updating conversation history`);
+    console.log(`[GENERATE-BOT-CODE HYBRID] Step 3: Updating conversation history`);
     const { data: bot } = await supabase
       .from('bots')
       .select('conversation_history')
@@ -80,10 +68,12 @@ serve(async (req) => {
         role: 'assistant',
         content: `Bot created successfully! ${codeResult.explanation}
 
-**Storage Method:** ${storeResult.method}
-${storeResult.method === 'supabase_storage' ? '✅ Files stored in Supabase Storage (Modal fallback)' : '✅ Files stored in Modal with proper file structure'}
+**Hybrid Architecture:**
+✅ Files stored in Supabase Storage for persistence and management
+✅ Modal will fetch files from Supabase for execution
+✅ No permanent storage in Modal - pure execution environment
 
-Your bot code has been successfully generated and stored.`,
+Your bot code has been successfully generated and stored in Supabase. When you start the bot, Modal will fetch the files from Supabase and execute them in its optimized container environment.`,
         timestamp: new Date().toISOString(),
         files: {
           'main.py': codeResult.code
@@ -101,23 +91,24 @@ Your bot code has been successfully generated and stored.`,
       })
       .eq('id', botId);
 
-    console.log(`[GENERATE-BOT-CODE] Bot ${botId} generation completed successfully`);
+    console.log(`[GENERATE-BOT-CODE HYBRID] Bot ${botId} generation completed successfully`);
 
     return new Response(JSON.stringify({
       success: true,
       botCode: codeResult,
-      storage: storeResult,
+      storage: storageResult,
       files: {
         'main.py': codeResult.code
       },
-      storage_method: storeResult.method,
-      message: `Bot generated and stored using ${storeResult.method}!`
+      storage_method: 'hybrid_supabase_modal',
+      architecture: 'hybrid',
+      message: `Bot generated with hybrid architecture! Files stored in Supabase, execution in Modal.`
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
   } catch (error) {
-    console.error('[GENERATE-BOT-CODE] Critical Error:', error);
+    console.error('[GENERATE-BOT-CODE HYBRID] Critical Error:', error);
     return new Response(JSON.stringify({
       success: false,
       error: error.message
@@ -240,108 +231,43 @@ Create a Telegram bot with the following requirements: ${prompt}`
   };
 }
 
-async function storeInEnhancedModal(botId: string, userId: string, botCode: string, token: string, botName: string) {
-  console.log(`[GENERATE-BOT-CODE MODAL] === Storing bot ${botId} in Modal with proper file structure ===`);
-  
-  try {
-    // Create the complete file structure that Modal expects
-    const fileStructure = {
-      user_id: userId,
-      bot_name: botName || `Bot ${botId}`,
-      files: {
-        'main.py': botCode,
-        'requirements.txt': 'python-telegram-bot>=20.0\nrequests>=2.28.0\npython-dotenv>=1.0.0',
-        '.env': `BOT_TOKEN=${token}\nBOT_NAME=${botName || `Bot ${botId}`}`,
-        'metadata.json': JSON.stringify({
-          bot_id: botId,
-          user_id: userId,
-          bot_name: botName,
-          created_at: new Date().toISOString(),
-          status: 'stored',
-          storage_method: 'modal_volume'
-        }, null, 2)
-      }
-    };
-
-    console.log(`[GENERATE-BOT-CODE MODAL] Calling Modal API: ${MODAL_BASE_URL}/store-bot/${botId}`);
-    console.log(`[GENERATE-BOT-CODE MODAL] Sending file structure with ${Object.keys(fileStructure.files).length} files`);
-    
-    const storeResponse = await fetch(`${MODAL_BASE_URL}/store-bot/${botId}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(fileStructure)
-    });
-
-    console.log(`[GENERATE-BOT-CODE MODAL] Modal API response status: ${storeResponse.status}`);
-
-    if (!storeResponse.ok) {
-      const errorText = await storeResponse.text();
-      console.error(`[GENERATE-BOT-CODE MODAL] Modal API error: ${storeResponse.status} - ${errorText}`);
-      return {
-        success: false,
-        error: `Modal API error: ${storeResponse.status} - ${errorText}`,
-        method: 'modal_failed'
-      };
-    }
-
-    const storeResult = await storeResponse.json();
-    console.log(`[GENERATE-BOT-CODE MODAL] Modal API success:`, storeResult);
-
-    return {
-      success: true,
-      method: 'modal_volume',
-      details: 'Successfully stored in Modal with proper file structure',
-      response: storeResult
-    };
-
-  } catch (error) {
-    console.error(`[GENERATE-BOT-CODE MODAL] Modal service error:`, error.message);
-    return {
-      success: false,
-      error: error.message,
-      method: 'modal_unavailable'
-    };
-  }
-}
-
-async function storeInSupabaseStorage(botId: string, userId: string, botCode: string, token: string, botName: string) {
-  console.log(`[GENERATE-BOT-CODE] === Using Supabase Storage fallback for bot ${botId} ===`);
+async function storeFilesInSupabaseStorage(botId: string, userId: string, botCode: string, token: string, botName: string) {
+  console.log(`[GENERATE-BOT-CODE HYBRID STORAGE] === Storing bot ${botId} in Supabase Storage ===`);
   
   try {
     // Create bot directory structure in Supabase Storage
     const botPath = `bots/${userId}/${botId}`;
     
-    // Store main.py file
-    const { error: uploadError } = await supabase.storage
-      .from('bot-files')
-      .upload(`${botPath}/main.py`, botCode, {
-        contentType: 'text/plain',
-        upsert: true
-      });
-
-    if (uploadError) {
-      console.error('[GENERATE-BOT-CODE] Supabase Storage upload error:', uploadError);
-      throw new Error(`Storage upload failed: ${uploadError.message}`);
-    }
-
-    // Store additional files
-    const additionalFiles = {
+    // Prepare all bot files
+    const files = {
+      'main.py': botCode,
       'requirements.txt': 'python-telegram-bot>=20.0\nrequests>=2.28.0\npython-dotenv>=1.0.0',
-      '.env': `BOT_TOKEN=${token}\nBOT_NAME=${botName}`,
+      '.env': `BOT_TOKEN=${token}\nBOT_NAME=${botName || `Bot ${botId}`}`,
       'metadata.json': JSON.stringify({
         bot_id: botId,
         user_id: userId,
         bot_name: botName,
         created_at: new Date().toISOString(),
-        status: 'stored',
-        storage_method: 'supabase_storage'
-      }, null, 2)
+        storage_method: 'hybrid_supabase_modal',
+        architecture: 'hybrid',
+        description: 'Files stored in Supabase, executed in Modal'
+      }, null, 2),
+      'Dockerfile': `FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY . .
+
+CMD ["python", "main.py"]`
     };
 
-    for (const [filename, content] of Object.entries(additionalFiles)) {
-      const { error } = await supabase.storage
+    // Store all files in Supabase Storage
+    const uploadResults = [];
+    for (const [filename, content] of Object.entries(files)) {
+      const { data, error } = await supabase.storage
         .from('bot-files')
         .upload(`${botPath}/${filename}`, content, {
           contentType: 'text/plain',
@@ -349,25 +275,43 @@ async function storeInSupabaseStorage(botId: string, userId: string, botCode: st
         });
 
       if (error) {
-        console.warn(`[GENERATE-BOT-CODE] Warning: Failed to upload ${filename}:`, error.message);
+        console.error(`[GENERATE-BOT-CODE HYBRID STORAGE] Failed to upload ${filename}:`, error);
+        uploadResults.push({ filename, success: false, error: error.message });
+      } else {
+        console.log(`[GENERATE-BOT-CODE HYBRID STORAGE] Successfully uploaded ${filename}`);
+        uploadResults.push({ filename, success: true, path: data.path });
       }
     }
 
-    console.log(`[GENERATE-BOT-CODE] Successfully stored bot files in Supabase Storage`);
+    // Check if all files were uploaded successfully
+    const failedUploads = uploadResults.filter(result => !result.success);
+    if (failedUploads.length > 0) {
+      console.error(`[GENERATE-BOT-CODE HYBRID STORAGE] Some files failed to upload:`, failedUploads);
+      return {
+        success: false,
+        error: `Failed to upload files: ${failedUploads.map(f => f.filename).join(', ')}`,
+        method: 'hybrid_supabase_modal_failed'
+      };
+    }
+
+    console.log(`[GENERATE-BOT-CODE HYBRID STORAGE] All files stored successfully in Supabase Storage`);
 
     return {
       success: true,
-      method: 'supabase_storage',
-      details: 'Successfully stored in Supabase Storage as fallback',
-      path: botPath
+      method: 'hybrid_supabase_modal',
+      architecture: 'hybrid',
+      details: 'Successfully stored all files in Supabase Storage for Modal execution',
+      path: botPath,
+      files: Object.keys(files),
+      uploadResults
     };
 
   } catch (error) {
-    console.error(`[GENERATE-BOT-CODE] Supabase Storage error:`, error);
+    console.error(`[GENERATE-BOT-CODE HYBRID STORAGE] Storage error:`, error);
     return {
       success: false,
       error: error.message,
-      method: 'supabase_storage_failed'
+      method: 'hybrid_supabase_modal_failed'
     };
   }
 }
