@@ -1,4 +1,3 @@
-
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
@@ -13,16 +12,8 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const openaiApiKey = Deno.env.get('OPENAI_API_KEY')!;
 
-// Updated Modal function URLs for the new single FastAPI service architecture
+// Updated to use the single FastAPI service
 const MODAL_BASE_URL = 'https://haleviadiel--telegram-bot-platform-telegram-bot-service.modal.run';
-const MODAL_FUNCTIONS = {
-  store_bot_code: 'https://haleviadiel--telegram-bot-platform-store-bot-code.modal.run',
-  register_webhook: 'https://haleviadiel--telegram-bot-platform-register-webhook.modal.run',
-  unregister_webhook: 'https://haleviadiel--telegram-bot-platform-unregister-webhook.modal.run',
-  get_logs: 'https://haleviadiel--telegram-bot-platform-get-logs.modal.run',
-  get_status: 'https://haleviadiel--telegram-bot-platform-get-status.modal.run',
-  get_files: 'https://haleviadiel--telegram-bot-platform-get-files.modal.run'
-};
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -214,20 +205,24 @@ async function createBot(botId: string, userId: string, name: string, prompt: st
     throw new Error('Failed to generate bot code');
   }
 
-  // Step 2: Store bot code in Modal
-  const storeResponse = await fetch(MODAL_FUNCTIONS.store_bot_code, {
+  // Step 2: Store bot code in Modal using FastAPI endpoint
+  const storeResponse = await fetch(`${MODAL_BASE_URL}/store-bot/${botId}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      bot_id: botId,
       user_id: userId,
       bot_code: codeResult.code,
       bot_token: token,
       bot_name: name || `Bot ${botId}`
     })
   });
+
+  if (!storeResponse.ok) {
+    const errorText = await storeResponse.text();
+    throw new Error(`Failed to store bot: ${storeResponse.status} - ${errorText}`);
+  }
 
   const storeResult = await storeResponse.json();
 
@@ -284,26 +279,35 @@ async function startBot(botId: string, userId: string) {
       })
     });
 
+    if (!loadResponse.ok) {
+      const errorText = await loadResponse.text();
+      throw new Error(`Failed to load bot: ${loadResponse.status} - ${errorText}`);
+    }
+
     const loadResult = await loadResponse.json();
     
     if (!loadResult.success) {
       throw new Error(`Failed to load bot: ${loadResult.error}`);
     }
 
-    // Step 2: Register webhook with Telegram
+    // Step 2: Register webhook with Telegram using FastAPI endpoint
     const webhookUrl = `${MODAL_BASE_URL}/webhook/${botId}`;
     
-    const webhookResponse = await fetch(MODAL_FUNCTIONS.register_webhook, {
+    const webhookResponse = await fetch(`${MODAL_BASE_URL}/register-webhook/${botId}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        bot_id: botId,
         user_id: userId,
         webhook_url: webhookUrl
       })
     });
+
+    if (!webhookResponse.ok) {
+      const errorText = await webhookResponse.text();
+      console.error(`[MODAL-MANAGER] Webhook registration failed: ${errorText}`);
+    }
 
     const webhookResult = await webhookResponse.json();
 
@@ -351,14 +355,13 @@ async function stopBot(botId: string, userId: string) {
   console.log(`[MODAL-MANAGER] Stopping bot ${botId}`);
   
   try {
-    // Step 1: Unregister webhook
-    const webhookResponse = await fetch(MODAL_FUNCTIONS.unregister_webhook, {
+    // Step 1: Unregister webhook using FastAPI endpoint
+    const webhookResponse = await fetch(`${MODAL_BASE_URL}/unregister-webhook/${botId}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        bot_id: botId,
         user_id: userId
       })
     });
@@ -411,64 +414,27 @@ async function getBotLogs(botId: string, userId: string) {
   try {
     console.log(`[MODAL-MANAGER] Fetching logs for bot ${botId} from Modal`);
     
-    // Try to get logs from the FastAPI service first
-    try {
-      const serviceLogsResponse = await fetch(`${MODAL_BASE_URL}/logs/${botId}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      });
-
-      if (serviceLogsResponse.ok) {
-        const serviceLogsResult = await serviceLogsResponse.json();
-        if (serviceLogsResult.success) {
-          return serviceLogsResult;
-        }
-      }
-    } catch (e) {
-      console.log(`[MODAL-MANAGER] Service logs not available, trying Modal function`);
-    }
-
-    // Fallback to Modal function
-    const response = await fetch(MODAL_FUNCTIONS.get_logs, {
-      method: 'POST',
+    // Get logs from the FastAPI service
+    const serviceLogsResponse = await fetch(`${MODAL_BASE_URL}/logs/${botId}`, {
+      method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        bot_id: botId,
-        user_id: userId
-      })
+      }
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[MODAL-MANAGER] Modal logs HTTP error: ${response.status} - ${errorText}`);
-      
-      return {
-        success: false,
-        error: `Modal HTTP error: ${response.status}`,
-        logs: [`[MODAL ERROR] HTTP ${response.status}: ${errorText}`]
-      };
+    if (serviceLogsResponse.ok) {
+      const serviceLogsResult = await serviceLogsResponse.json();
+      if (serviceLogsResult.success) {
+        return serviceLogsResult;
+      }
     }
 
-    const contentType = response.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-      const textResponse = await response.text();
-      console.error(`[MODAL-MANAGER] Expected JSON but got: ${textResponse.substring(0, 100)}...`);
-      
-      return {
-        success: false,
-        error: 'Modal returned non-JSON response',
-        logs: [`[MODAL ERROR] Expected JSON but received: ${textResponse.substring(0, 200)}...`]
-      };
-    }
-
-    const result = await response.json();
-    console.log(`[MODAL-MANAGER] Successfully parsed Modal logs response`);
-    
-    return result;
+    // If service logs fail, return error
+    return {
+      success: false,
+      error: 'Failed to get logs from Modal service',
+      logs: [`[MODAL ERROR] Could not retrieve logs from FastAPI service`]
+    };
     
   } catch (error) {
     console.error(`[MODAL-MANAGER] Exception in getBotLogs:`, error);
@@ -483,7 +449,7 @@ async function getBotLogs(botId: string, userId: string) {
 
 async function getBotStatus(botId: string, userId: string) {
   try {
-    // Try to get status from the FastAPI service first
+    // Get status from the FastAPI service
     const healthResponse = await fetch(`${MODAL_BASE_URL}/health/${botId}`, {
       method: 'GET',
       headers: {
@@ -502,23 +468,15 @@ async function getBotStatus(botId: string, userId: string) {
         service_status: healthResult.status
       };
     }
-  } catch (e) {
-    console.log(`[MODAL-MANAGER] Service health check failed, trying Modal function`);
+
+    throw new Error(`Health check failed: ${healthResponse.status}`);
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message,
+      status: 'error'
+    };
   }
-
-  // Fallback to Modal function
-  const response = await fetch(MODAL_FUNCTIONS.get_status, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      bot_id: botId,
-      user_id: userId
-    })
-  });
-
-  return await response.json();
 }
 
 async function modifyBot(botId: string, userId: string, modificationPrompt: string) {
@@ -533,16 +491,12 @@ async function modifyBot(botId: string, userId: string, modificationPrompt: stri
     throw new Error('Bot not found');
   }
 
-  // Get current code from Modal
-  const codeResponse = await fetch(MODAL_FUNCTIONS.get_files, {
-    method: 'POST',
+  // Get current code from Modal using FastAPI endpoint
+  const codeResponse = await fetch(`${MODAL_BASE_URL}/files/${botId}?user_id=${userId}`, {
+    method: 'GET',
     headers: {
       'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      bot_id: botId,
-      user_id: userId
-    })
+    }
   });
 
   const codeData = await codeResponse.json();
@@ -556,14 +510,13 @@ async function modifyBot(botId: string, userId: string, modificationPrompt: stri
   );
 
   if (modifyResult.success) {
-    // Store updated code
-    await fetch(MODAL_FUNCTIONS.store_bot_code, {
+    // Store updated code using FastAPI endpoint
+    await fetch(`${MODAL_BASE_URL}/store-bot/${botId}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        bot_id: botId,
         user_id: userId,
         bot_code: modifyResult.code,
         bot_token: bot.token,
@@ -603,15 +556,11 @@ async function fixBot(botId: string, userId: string) {
   const errorLogs = logs.logs?.join('\n') || '';
 
   // Get current code
-  const codeResponse = await fetch(MODAL_FUNCTIONS.get_files, {
-    method: 'POST',
+  const codeResponse = await fetch(`${MODAL_BASE_URL}/files/${botId}?user_id=${userId}`, {
+    method: 'GET',
     headers: {
       'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      bot_id: botId,
-      user_id: userId
-    })
+    }
   });
 
   const codeData = await codeResponse.json();

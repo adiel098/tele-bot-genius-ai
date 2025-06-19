@@ -1,4 +1,3 @@
-
 import modal
 import json
 import os
@@ -108,6 +107,99 @@ def telegram_bot_service():
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # NEW: Add store bot endpoint to FastAPI service
+    @web_app.post("/store-bot/{bot_id}")
+    async def store_bot_endpoint(bot_id: str, request: Request):
+        """Store bot code via REST API"""
+        try:
+            body = await request.json()
+            
+            user_id = body.get("user_id")
+            bot_code = body.get("bot_code")
+            bot_token = body.get("bot_token")
+            bot_name = body.get("bot_name", f"Bot {bot_id}")
+            
+            if not all([user_id, bot_code, bot_token]):
+                raise HTTPException(status_code=400, detail="Missing required fields")
+            
+            # Call the Modal function to store the bot
+            store_result = store_bot_code.remote(bot_id, user_id, bot_code, bot_token, bot_name)
+            
+            return store_result
+            
+        except Exception as e:
+            print(f"[MODAL API] Error storing bot {bot_id}: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    # NEW: Add webhook registration endpoint
+    @web_app.post("/register-webhook/{bot_id}")
+    async def register_webhook_endpoint(bot_id: str, request: Request):
+        """Register webhook via REST API"""
+        try:
+            body = await request.json()
+            user_id = body.get("user_id")
+            webhook_url = body.get("webhook_url")
+            
+            if not all([user_id, webhook_url]):
+                raise HTTPException(status_code=400, detail="Missing required fields")
+            
+            # Call the Modal function to register webhook
+            webhook_result = await register_webhook.remote(bot_id, user_id, webhook_url)
+            
+            return webhook_result
+            
+        except Exception as e:
+            print(f"[MODAL API] Error registering webhook for bot {bot_id}: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    # NEW: Add webhook unregistration endpoint
+    @web_app.post("/unregister-webhook/{bot_id}")
+    async def unregister_webhook_endpoint(bot_id: str, request: Request):
+        """Unregister webhook via REST API"""
+        try:
+            body = await request.json()
+            user_id = body.get("user_id")
+            
+            if not user_id:
+                raise HTTPException(status_code=400, detail="Missing user_id")
+            
+            # Call the Modal function to unregister webhook
+            webhook_result = await unregister_webhook.remote(bot_id, user_id)
+            
+            return webhook_result
+            
+        except Exception as e:
+            print(f"[MODAL API] Error unregistering webhook for bot {bot_id}: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    # NEW: Add bot files endpoint
+    @web_app.get("/files/{bot_id}")
+    async def get_bot_files_endpoint(bot_id: str, user_id: str):
+        """Get bot files via REST API"""
+        try:
+            # Call the Modal function to get files
+            files_result = get_files.remote(bot_id, user_id)
+            
+            return files_result
+            
+        except Exception as e:
+            print(f"[MODAL API] Error getting files for bot {bot_id}: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    # NEW: Add bot status endpoint
+    @web_app.get("/status/{bot_id}")
+    async def get_bot_status_endpoint(bot_id: str, user_id: str):
+        """Get bot status via REST API"""
+        try:
+            # Call the Modal function to get status
+            status_result = get_status.remote(bot_id, user_id)
+            
+            return status_result
+            
+        except Exception as e:
+            print(f"[MODAL API] Error getting status for bot {bot_id}: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
 
     async def load_bot_instance(bot_id: str, user_id: str):
         """Load and initialize a bot instance"""
