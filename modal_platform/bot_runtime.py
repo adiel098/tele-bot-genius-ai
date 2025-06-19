@@ -75,7 +75,7 @@ def store_and_run_bot(bot_id: str, user_id: str, bot_code: str, bot_token: str, 
         print(f"[MODAL] Bot {bot_id} files stored successfully")
         
         # Start the bot immediately
-        start_result = start_telegram_bot.remote(bot_id, user_id)
+        start_result = start_bot.remote(bot_id, user_id)
         
         return {
             "success": True,
@@ -104,7 +104,7 @@ def store_and_run_bot(bot_id: str, user_id: str, bot_code: str, bot_token: str, 
     timeout=3600,
     memory=256
 )
-def start_telegram_bot(bot_id: str, user_id: str) -> Dict[str, Any]:
+def start_bot(bot_id: str, user_id: str) -> Dict[str, Any]:
     """
     Start a Telegram bot by executing the Python code
     """
@@ -171,7 +171,7 @@ def start_telegram_bot(bot_id: str, user_id: str) -> Dict[str, Any]:
     volumes={"/data": volume},
     timeout=300
 )
-def stop_telegram_bot(bot_id: str, user_id: str) -> Dict[str, Any]:
+def stop_bot(bot_id: str, user_id: str) -> Dict[str, Any]:
     """
     Stop a Telegram bot process
     """
@@ -225,7 +225,7 @@ def stop_telegram_bot(bot_id: str, user_id: str) -> Dict[str, Any]:
     secrets=secrets,
     volumes={"/data": volume}
 )
-def get_bot_logs(bot_id: str, user_id: str) -> Dict[str, Any]:
+def get_logs(bot_id: str, user_id: str) -> Dict[str, Any]:
     """
     Get bot logs from the stored files
     """
@@ -275,7 +275,7 @@ def get_bot_logs(bot_id: str, user_id: str) -> Dict[str, Any]:
     secrets=secrets,
     volumes={"/data": volume}
 )
-def get_bot_status(bot_id: str, user_id: str) -> Dict[str, Any]:
+def get_status(bot_id: str, user_id: str) -> Dict[str, Any]:
     """
     Get bot status from metadata
     """
@@ -307,7 +307,7 @@ def get_bot_status(bot_id: str, user_id: str) -> Dict[str, Any]:
     secrets=secrets,
     volumes={"/data": volume}
 )
-def get_bot_files(bot_id: str, user_id: str) -> Dict[str, Any]:
+def get_files(bot_id: str, user_id: str) -> Dict[str, Any]:
     """
     Get bot files for viewing or modification
     """

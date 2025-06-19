@@ -12,14 +12,14 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const openaiApiKey = Deno.env.get('OPENAI_API_KEY')!;
 
-// Updated Modal function URLs to match actual deployment
+// Modal function URLs - these need to match the function names in modal_platform/bot_runtime.py
 const MODAL_FUNCTIONS = {
   store_and_run: 'https://haleviadiel--telegram-bot-platform-store-and-run-bot.modal.run',
-  start_bot: 'https://haleviadiel--telegram-bot-platform-start-telegram-bot.modal.run',
-  stop_bot: 'https://haleviadiel--telegram-bot-platform-stop-telegram-bot.modal.run',
-  get_logs: 'https://haleviadiel--telegram-bot-platform-get-bot-logs.modal.run',
-  get_status: 'https://haleviadiel--telegram-bot-platform-get-bot-status.modal.run',
-  get_files: 'https://haleviadiel--telegram-bot-platform-get-bot-files.modal.run'
+  start_bot: 'https://haleviadiel--telegram-bot-platform-start-bot.modal.run',
+  stop_bot: 'https://haleviadiel--telegram-bot-platform-stop-bot.modal.run',
+  get_logs: 'https://haleviadiel--telegram-bot-platform-get-logs.modal.run',
+  get_status: 'https://haleviadiel--telegram-bot-platform-get-status.modal.run',
+  get_files: 'https://haleviadiel--telegram-bot-platform-get-files.modal.run'
 };
 
 serve(async (req) => {
