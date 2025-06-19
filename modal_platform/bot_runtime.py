@@ -6,9 +6,9 @@ import asyncio
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
-import subprocess
-import tempfile
-import shutil
+import aiohttp
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 
 # Configure Modal app
 app = modal.App("telegram-bot-platform")
@@ -20,7 +20,8 @@ image = (
         "python-telegram-bot>=20.0",
         "requests>=2.28.0",
         "python-dotenv>=1.0.0",
-        "aiohttp>=3.8.0"
+        "aiohttp>=3.8.0",
+        "fastapi[standard]>=0.115.0"
     ])
     .env({"PYTHONUNBUFFERED": "1"})
 )
@@ -31,6 +32,9 @@ volume = modal.Volume.from_name("bot-files", create_if_missing=True)
 # Shared secrets for Telegram tokens
 secrets = [modal.Secret.from_name("telegram-bot-secrets")]
 
+# Dictionary to store active bot applications
+active_bots: Dict[str, Any] = {}
+
 @app.function(
     image=image,
     secrets=secrets,
@@ -38,12 +42,12 @@ secrets = [modal.Secret.from_name("telegram-bot-secrets")]
     timeout=300,
     memory=512
 )
-def store_and_run_bot(bot_id: str, user_id: str, bot_code: str, bot_token: str, bot_name: str) -> Dict[str, Any]:
+def store_bot_code(bot_id: str, user_id: str, bot_code: str, bot_token: str, bot_name: str) -> Dict[str, Any]:
     """
-    Store bot code in Modal volume and start the bot
+    Store bot code in Modal volume without running it
     """
     try:
-        print(f"[MODAL] Storing and running bot {bot_id} for user {user_id}")
+        print(f"[MODAL] Storing bot {bot_id} for user {user_id}")
         
         # Create bot directory in Modal volume
         bot_dir = f"/data/bots/{user_id}/{bot_id}"
@@ -59,33 +63,27 @@ def store_and_run_bot(bot_id: str, user_id: str, bot_code: str, bot_token: str, 
             "user_id": user_id,
             "bot_name": bot_name,
             "created_at": datetime.now().isoformat(),
-            "status": "created"
+            "status": "stored",
+            "bot_token": bot_token
         }
         
         with open(f"{bot_dir}/metadata.json", "w") as f:
             json.dump(metadata, f)
-        
-        # Create bot token environment file
-        with open(f"{bot_dir}/.env", "w") as f:
-            f.write(f"BOT_TOKEN={bot_token}\n")
         
         # Commit changes to volume
         volume.commit()
         
         print(f"[MODAL] Bot {bot_id} files stored successfully")
         
-        # Start the bot immediately
-        start_result = start_bot.remote(bot_id, user_id)
-        
         return {
             "success": True,
             "bot_id": bot_id,
             "deployment_type": "modal",
-            "status": "running" if start_result.get("success") else "created",
+            "status": "stored",
             "logs": [
                 f"[MODAL] Bot {bot_id} stored successfully",
                 f"[MODAL] Files stored in Modal volume: {bot_dir}",
-                f"[MODAL] Bot deployment type: Modal Function"
+                f"[MODAL] Ready for deployment"
             ]
         }
         
@@ -101,123 +99,219 @@ def store_and_run_bot(bot_id: str, user_id: str, bot_code: str, bot_token: str, 
     image=image,
     secrets=secrets,
     volumes={"/data": volume},
-    timeout=3600,
-    memory=256
+    min_containers=1,
+    timeout=3600
 )
-def start_bot(bot_id: str, user_id: str) -> Dict[str, Any]:
+@modal.asgi_app()
+def create_bot_service(bot_id: str, user_id: str):
     """
-    Start a Telegram bot by executing the Python code
+    Create a FastAPI service for a specific Telegram bot
+    """
+    web_app = FastAPI(title=f"Telegram Bot {bot_id}")
+    
+    # Allow CORS for webhook requests
+    web_app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Load bot configuration on startup
+    bot_config = {}
+    bot_handler = None
+    
+    async def load_bot_config():
+        nonlocal bot_config, bot_handler
+        try:
+            bot_dir = f"/data/bots/{user_id}/{bot_id}"
+            
+            # Load metadata
+            with open(f"{bot_dir}/metadata.json", "r") as f:
+                bot_config = json.load(f)
+            
+            # Load and execute bot code
+            with open(f"{bot_dir}/main.py", "r") as f:
+                bot_code = f.read()
+            
+            # Create a namespace for the bot code
+            bot_namespace = {"__name__": "__main__"}
+            
+            # Set environment variables
+            os.environ["BOT_TOKEN"] = bot_config["bot_token"]
+            
+            # Execute bot code to get the bot instance
+            exec(bot_code, bot_namespace)
+            
+            # Try to get the application instance from the bot code
+            if "application" in bot_namespace:
+                bot_handler = bot_namespace["application"]
+            elif "app" in bot_namespace:
+                bot_handler = bot_namespace["app"]
+            
+            print(f"[MODAL] Bot {bot_id} loaded successfully")
+            
+        except Exception as e:
+            print(f"[MODAL] Error loading bot {bot_id}: {str(e)}")
+            raise
+
+    @web_app.on_event("startup")
+    async def startup_event():
+        await load_bot_config()
+
+    @web_app.post(f"/webhook/{bot_id}")
+    async def handle_webhook(request: Request):
+        """Handle incoming Telegram webhook requests"""
+        try:
+            body = await request.json()
+            
+            print(f"[MODAL] Bot {bot_id} received webhook: {body}")
+            
+            if bot_handler:
+                # Process the update with the bot
+                from telegram import Update
+                
+                update = Update.de_json(body, None)
+                if update:
+                    # Process the update asynchronously
+                    await bot_handler.process_update(update)
+                
+            return {"ok": True}
+            
+        except Exception as e:
+            print(f"[MODAL] Error processing webhook for bot {bot_id}: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @web_app.get(f"/health/{bot_id}")
+    async def health_check():
+        """Health check endpoint"""
+        return {
+            "status": "healthy",
+            "bot_id": bot_id,
+            "timestamp": datetime.now().isoformat()
+        }
+
+    @web_app.get(f"/logs/{bot_id}")
+    async def get_bot_logs():
+        """Get bot logs"""
+        try:
+            logs = [
+                f"[{datetime.now().isoformat()}] Bot {bot_id} is running",
+                f"[{datetime.now().isoformat()}] FastAPI service active",
+                f"[{datetime.now().isoformat()}] Webhook endpoint: /webhook/{bot_id}"
+            ]
+            
+            return {"success": True, "logs": logs}
+            
+        except Exception as e:
+            return {"success": False, "error": str(e), "logs": []}
+
+    return web_app
+
+@app.function(
+    image=image,
+    secrets=secrets,
+    volumes={"/data": volume}
+)
+async def register_webhook(bot_id: str, user_id: str, webhook_url: str) -> Dict[str, Any]:
+    """
+    Register webhook URL with Telegram API
     """
     try:
-        print(f"[MODAL] Starting bot {bot_id}")
+        bot_dir = f"/data/bots/{user_id}/{bot_id}"
         
+        # Load bot metadata to get token
+        with open(f"{bot_dir}/metadata.json", "r") as f:
+            metadata = json.load(f)
+        
+        bot_token = metadata["bot_token"]
+        
+        # Register webhook with Telegram
+        telegram_url = f"https://api.telegram.org/bot{bot_token}/setWebhook"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(telegram_url, json={
+                "url": webhook_url,
+                "allowed_updates": ["message", "callback_query"]
+            }) as response:
+                result = await response.json()
+                
+                if result.get("ok"):
+                    print(f"[MODAL] Webhook registered for bot {bot_id}: {webhook_url}")
+                    
+                    # Update metadata
+                    metadata["webhook_url"] = webhook_url
+                    metadata["status"] = "running"
+                    metadata["started_at"] = datetime.now().isoformat()
+                    
+                    with open(f"{bot_dir}/metadata.json", "w") as f:
+                        json.dump(metadata, f)
+                    
+                    volume.commit()
+                    
+                    return {
+                        "success": True,
+                        "webhook_url": webhook_url,
+                        "status": "running"
+                    }
+                else:
+                    raise Exception(f"Telegram API error: {result}")
+                    
+    except Exception as e:
+        print(f"[MODAL] Error registering webhook for bot {bot_id}: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+@app.function(
+    image=image,
+    secrets=secrets,
+    volumes={"/data": volume}
+)
+async def unregister_webhook(bot_id: str, user_id: str) -> Dict[str, Any]:
+    """
+    Unregister webhook from Telegram API
+    """
+    try:
         bot_dir = f"/data/bots/{user_id}/{bot_id}"
         
         # Load bot metadata
         with open(f"{bot_dir}/metadata.json", "r") as f:
             metadata = json.load(f)
         
-        # Load bot token
-        with open(f"{bot_dir}/.env", "r") as f:
-            env_content = f.read()
-            bot_token = env_content.split("=")[1].strip()
+        bot_token = metadata["bot_token"]
         
-        # Set environment variable for the bot
-        os.environ["BOT_TOKEN"] = bot_token
+        # Remove webhook from Telegram
+        telegram_url = f"https://api.telegram.org/bot{bot_token}/deleteWebhook"
         
-        # Execute bot code in a subprocess
-        bot_process = subprocess.Popen(
-            ["python", f"{bot_dir}/main.py"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            env=os.environ.copy()
-        )
-        
-        # Update metadata
-        metadata["status"] = "running"
-        metadata["started_at"] = datetime.now().isoformat()
-        metadata["process_id"] = bot_process.pid
-        
-        with open(f"{bot_dir}/metadata.json", "w") as f:
-            json.dump(metadata, f)
-        
-        volume.commit()
-        
-        print(f"[MODAL] Bot {bot_id} started successfully with PID {bot_process.pid}")
-        
-        return {
-            "success": True,
-            "status": "running",
-            "process_id": bot_process.pid,
-            "logs": [
-                f"[MODAL] Bot {bot_id} started successfully",
-                f"[MODAL] Process ID: {bot_process.pid}",
-                f"[MODAL] Runtime: Modal Function Process"
-            ]
-        }
-        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(telegram_url) as response:
+                result = await response.json()
+                
+                print(f"[MODAL] Webhook unregistered for bot {bot_id}")
+                
+                # Update metadata
+                metadata["status"] = "stopped"
+                metadata["stopped_at"] = datetime.now().isoformat()
+                metadata.pop("webhook_url", None)
+                
+                with open(f"{bot_dir}/metadata.json", "w") as f:
+                    json.dump(metadata, f)
+                
+                volume.commit()
+                
+                return {
+                    "success": True,
+                    "status": "stopped"
+                }
+                
     except Exception as e:
-        print(f"[MODAL] Error starting bot {bot_id}: {str(e)}")
+        print(f"[MODAL] Error unregistering webhook for bot {bot_id}: {str(e)}")
         return {
             "success": False,
-            "error": str(e),
-            "logs": [f"[MODAL ERROR] Failed to start bot: {str(e)}"]
-        }
-
-@app.function(
-    image=image,
-    secrets=secrets,
-    volumes={"/data": volume},
-    timeout=300
-)
-def stop_bot(bot_id: str, user_id: str) -> Dict[str, Any]:
-    """
-    Stop a Telegram bot process
-    """
-    try:
-        print(f"[MODAL] Stopping bot {bot_id}")
-        
-        bot_dir = f"/data/bots/{user_id}/{bot_id}"
-        
-        # Load and update metadata
-        with open(f"{bot_dir}/metadata.json", "r") as f:
-            metadata = json.load(f)
-        
-        # Try to kill the process if it exists
-        process_id = metadata.get("process_id")
-        if process_id:
-            try:
-                os.kill(process_id, 9)  # SIGKILL
-                print(f"[MODAL] Killed process {process_id}")
-            except ProcessLookupError:
-                print(f"[MODAL] Process {process_id} was already terminated")
-        
-        metadata["status"] = "stopped"
-        metadata["stopped_at"] = datetime.now().isoformat()
-        
-        with open(f"{bot_dir}/metadata.json", "w") as f:
-            json.dump(metadata, f)
-        
-        volume.commit()
-        
-        print(f"[MODAL] Bot {bot_id} stopped successfully")
-        
-        return {
-            "success": True,
-            "status": "stopped",
-            "logs": [
-                f"[MODAL] Bot {bot_id} stopped successfully",
-                f"[MODAL] Process terminated"
-            ]
-        }
-        
-    except Exception as e:
-        print(f"[MODAL] Error stopping bot {bot_id}: {str(e)}")
-        return {
-            "success": False,
-            "error": str(e),
-            "logs": [f"[MODAL ERROR] Failed to stop bot: {str(e)}"]
+            "error": str(e)
         }
 
 @app.function(
@@ -243,21 +337,14 @@ def get_logs(bot_id: str, user_id: str) -> Dict[str, Any]:
             f"[{current_time}] MODAL BOT RUNTIME LOGS",
             f"[{current_time}] Bot ID: {bot_id}",
             f"[{current_time}] Status: {metadata.get('status', 'unknown')}",
-            f"[{current_time}] Runtime: Modal Function"
+            f"[{current_time}] Runtime: Modal FastAPI Service"
         ]
         
         if metadata.get("status") == "running":
             logs.extend([
-                f"[{current_time}] Bot is actively processing messages",
-                f"[{current_time}] Process ID: {metadata.get('process_id', 'unknown')}"
+                f"[{current_time}] Bot is actively processing webhooks",
+                f"[{current_time}] Webhook URL: {metadata.get('webhook_url', 'Not set')}"
             ])
-        
-        # Try to read log file if it exists
-        log_file = f"{bot_dir}/bot.log"
-        if os.path.exists(log_file):
-            with open(log_file, "r") as f:
-                file_logs = f.read().strip().split('\n')
-                logs.extend(file_logs[-50:])  # Last 50 lines
         
         return {
             "success": True,
@@ -289,11 +376,11 @@ def get_status(bot_id: str, user_id: str) -> Dict[str, Any]:
             "success": True,
             "status": metadata.get("status", "unknown"),
             "deployment_type": "modal",
-            "runtime": "Modal Function",
+            "runtime": "Modal FastAPI Service",
             "created_at": metadata.get("created_at"),
             "started_at": metadata.get("started_at"),
             "stopped_at": metadata.get("stopped_at"),
-            "process_id": metadata.get("process_id")
+            "webhook_url": metadata.get("webhook_url")
         }
         
     except Exception as e:

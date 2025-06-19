@@ -1,3 +1,4 @@
+
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0';
@@ -12,11 +13,12 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const openaiApiKey = Deno.env.get('OPENAI_API_KEY')!;
 
-// Modal function URLs - these need to match the function names in modal_platform/bot_runtime.py
+// Modal function URLs for the new architecture
 const MODAL_FUNCTIONS = {
-  store_and_run: 'https://haleviadiel--telegram-bot-platform-store-and-run-bot.modal.run',
-  start_bot: 'https://haleviadiel--telegram-bot-platform-start-bot.modal.run',
-  stop_bot: 'https://haleviadiel--telegram-bot-platform-stop-bot.modal.run',
+  store_bot_code: 'https://haleviadiel--telegram-bot-platform-store-bot-code.modal.run',
+  create_bot_service: 'https://haleviadiel--telegram-bot-platform-create-bot-service.modal.run',
+  register_webhook: 'https://haleviadiel--telegram-bot-platform-register-webhook.modal.run',
+  unregister_webhook: 'https://haleviadiel--telegram-bot-platform-unregister-webhook.modal.run',
   get_logs: 'https://haleviadiel--telegram-bot-platform-get-logs.modal.run',
   get_status: 'https://haleviadiel--telegram-bot-platform-get-status.modal.run',
   get_files: 'https://haleviadiel--telegram-bot-platform-get-files.modal.run'
@@ -90,24 +92,24 @@ async function generateBotCodeWithOpenAI(prompt: string, token: string, conversa
       role: "system",
       content: `You are an expert Python developer specializing in Telegram bots using python-telegram-bot library v20+.
 
-Generate complete, production-ready Python code for Telegram bots based on user requirements.
+Generate complete, production-ready Python code for Telegram bots that work with webhooks.
 
 IMPORTANT REQUIREMENTS:
 1. Use python-telegram-bot v20+ syntax (Application, not Updater)
-2. Include proper error handling and logging
+2. Create an Application instance that can be used with webhooks
 3. Use async/await patterns correctly
 4. Make the bot token configurable via environment variable
 5. Add comprehensive comments explaining the code
+6. The code should create an 'application' variable that can be accessed globally
 
-Generate a complete main.py file that can run independently.
+Generate a complete main.py file that creates a bot application suitable for webhook processing.
 
 Example structure:
 \`\`\`python
 import logging
 import os
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import asyncio
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -116,31 +118,27 @@ logger = logging.getLogger(__name__)
 # Bot token from environment
 BOT_TOKEN = os.getenv('BOT_TOKEN', '${token}')
 
+# Create application instance
+application = Application.builder().token(BOT_TOKEN).build()
+
 # Your bot handlers here...
+async def start(update: Update, context):
+    await update.message.reply_text('Hello! I am your bot.')
 
-async def main():
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Add handlers
-    # ... your handlers here
-    
-    # Start the bot
+async def echo(update: Update, context):
+    await update.message.reply_text(update.message.text)
+
+# Add handlers
+application.add_handler(CommandHandler("start", start))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+
+# Initialize the application
+import asyncio
+async def initialize_app():
     await application.initialize()
-    await application.start()
-    await application.updater.start_polling()
-    
-    # Keep running
-    try:
-        await asyncio.Future()  # Run forever
-    except KeyboardInterrupt:
-        pass
-    finally:
-        await application.updater.stop()
-        await application.stop()
-        await application.shutdown()
 
-if __name__ == '__main__':
-    asyncio.run(main())
+# Run initialization
+asyncio.create_task(initialize_app())
 \`\`\`
 
 Create a Telegram bot with the following requirements: ${prompt}`
@@ -209,15 +207,15 @@ async function createBot(botId: string, userId: string, name: string, prompt: st
 
   const conversationHistory = bot?.conversation_history || [];
 
-  // Step 1: Generate bot code using OpenAI (directly in this edge function)
+  // Step 1: Generate bot code using OpenAI
   const codeResult = await generateBotCodeWithOpenAI(prompt, token, conversationHistory);
 
   if (!codeResult.success) {
     throw new Error('Failed to generate bot code');
   }
 
-  // Step 2: Store and run bot in Modal
-  const storeResponse = await fetch(MODAL_FUNCTIONS.store_and_run, {
+  // Step 2: Store bot code in Modal
+  const storeResponse = await fetch(MODAL_FUNCTIONS.store_bot_code, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -233,6 +231,10 @@ async function createBot(botId: string, userId: string, name: string, prompt: st
 
   const storeResult = await storeResponse.json();
 
+  if (!storeResult.success) {
+    throw new Error(`Failed to store bot: ${storeResult.error}`);
+  }
+
   // Update conversation history
   const updatedHistory = [
     ...conversationHistory,
@@ -243,7 +245,7 @@ async function createBot(botId: string, userId: string, name: string, prompt: st
     },
     {
       role: 'assistant',
-      content: `Bot created and deployed successfully! ${codeResult.explanation}`,
+      content: `Bot created and stored successfully! ${codeResult.explanation}`,
       timestamp: new Date().toISOString()
     }
   ];
@@ -252,8 +254,8 @@ async function createBot(botId: string, userId: string, name: string, prompt: st
   await supabase
     .from('bots')
     .update({
-      status: 'active',
-      runtime_status: storeResult.success ? 'running' : 'stopped',
+      status: 'stored',
+      runtime_status: 'stopped',
       conversation_history: updatedHistory,
       runtime_logs: storeResult.logs?.join('\n') || '',
       files_stored: true
@@ -263,47 +265,21 @@ async function createBot(botId: string, userId: string, name: string, prompt: st
   return {
     botCode: codeResult,
     deployment: storeResult,
-    message: 'Bot generated with OpenAI and deployed via Modal'
+    message: 'Bot generated with OpenAI and stored in Modal. Ready to start!'
   };
 }
 
-async function modifyBot(botId: string, userId: string, modificationPrompt: string) {
-  // Get current bot data
-  const { data: bot } = await supabase
-    .from('bots')
-    .select('*')
-    .eq('id', botId)
-    .single();
-
-  if (!bot) {
-    throw new Error('Bot not found');
-  }
-
-  // Get current code from Modal
-  const codeResponse = await fetch(MODAL_FUNCTIONS.get_files, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      bot_id: botId,
-      user_id: userId
-    })
-  });
-
-  const codeData = await codeResponse.json();
-  const currentCode = codeData.files?.['main.py'] || '';
-
-  // Modify code using OpenAI
-  const modifyResult = await generateBotCodeWithOpenAI(
-    `Modify this existing bot code:\n\n${currentCode}\n\nModification request: ${modificationPrompt}`,
-    bot.token,
-    bot.conversation_history || []
-  );
-
-  if (modifyResult.success) {
-    // Store updated code and restart bot
-    await fetch(MODAL_FUNCTIONS.store_and_run, {
+async function startBot(botId: string, userId: string) {
+  console.log(`[MODAL-MANAGER] Starting bot ${botId}`);
+  
+  try {
+    // Step 1: Create bot service (FastAPI app)
+    const serviceUrl = `${MODAL_FUNCTIONS.create_bot_service}?bot_id=${botId}&user_id=${userId}`;
+    
+    // Step 2: Register webhook with Telegram
+    const webhookUrl = `${serviceUrl}/webhook/${botId}`;
+    
+    const webhookResponse = await fetch(MODAL_FUNCTIONS.register_webhook, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -311,65 +287,56 @@ async function modifyBot(botId: string, userId: string, modificationPrompt: stri
       body: JSON.stringify({
         bot_id: botId,
         user_id: userId,
-        bot_code: modifyResult.code,
-        bot_token: bot.token,
-        bot_name: bot.name
+        webhook_url: webhookUrl
       })
     });
 
-    // Update conversation history
-    const updatedHistory = [
-      ...(bot.conversation_history || []),
-      {
-        role: 'user',
-        content: modificationPrompt,
-        timestamp: new Date().toISOString()
-      },
-      {
-        role: 'assistant',
-        content: `Bot modified successfully! ${modifyResult.explanation}`,
-        timestamp: new Date().toISOString()
-      }
-    ];
+    const webhookResult = await webhookResponse.json();
 
+    // Update database
     await supabase
       .from('bots')
       .update({
-        conversation_history: updatedHistory
+        runtime_status: webhookResult.success ? 'running' : 'stopped',
+        runtime_logs: `Bot service URL: ${serviceUrl}\nWebhook URL: ${webhookUrl}`
       })
       .eq('id', botId);
+
+    return {
+      success: webhookResult.success,
+      status: webhookResult.success ? 'running' : 'stopped',
+      service_url: serviceUrl,
+      webhook_url: webhookUrl,
+      logs: [
+        `[MODAL] Bot service created: ${serviceUrl}`,
+        `[MODAL] Webhook registered: ${webhookUrl}`,
+        `[MODAL] Bot ${botId} is now running`
+      ]
+    };
+    
+  } catch (error) {
+    console.error(`[MODAL-MANAGER] Error starting bot ${botId}:`, error);
+    
+    await supabase
+      .from('bots')
+      .update({
+        runtime_status: 'stopped',
+        runtime_logs: `Error starting bot: ${error.message}`
+      })
+      .eq('id', botId);
+
+    return {
+      success: false,
+      error: error.message,
+      logs: [`[MODAL ERROR] Failed to start bot: ${error.message}`]
+    };
   }
-
-  return modifyResult;
-}
-
-async function startBot(botId: string, userId: string) {
-  const response = await fetch(MODAL_FUNCTIONS.start_bot, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      bot_id: botId,
-      user_id: userId
-    })
-  });
-
-  const result = await response.json();
-
-  await supabase
-    .from('bots')
-    .update({
-      runtime_status: result.success ? 'running' : 'stopped',
-      runtime_logs: result.logs?.join('\n') || ''
-    })
-    .eq('id', botId);
-
-  return result;
 }
 
 async function stopBot(botId: string, userId: string) {
-  const response = await fetch(MODAL_FUNCTIONS.stop_bot, {
+  console.log(`[MODAL-MANAGER] Stopping bot ${botId}`);
+  
+  const response = await fetch(MODAL_FUNCTIONS.unregister_webhook, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -386,7 +353,7 @@ async function stopBot(botId: string, userId: string) {
     .from('bots')
     .update({
       runtime_status: 'stopped',
-      runtime_logs: result.logs?.join('\n') || ''
+      runtime_logs: `Bot stopped and webhook unregistered`
     })
     .eq('id', botId);
 
@@ -394,6 +361,8 @@ async function stopBot(botId: string, userId: string) {
 }
 
 async function restartBot(botId: string, userId: string) {
+  console.log(`[MODAL-MANAGER] Restarting bot ${botId}`);
+  
   await stopBot(botId, userId);
   await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
   return await startBot(botId, userId);
@@ -414,8 +383,6 @@ async function getBotLogs(botId: string, userId: string) {
       })
     });
 
-    console.log(`[MODAL-MANAGER] Modal logs response status: ${response.status}`);
-    
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`[MODAL-MANAGER] Modal logs HTTP error: ${response.status} - ${errorText}`);
@@ -428,8 +395,6 @@ async function getBotLogs(botId: string, userId: string) {
     }
 
     const contentType = response.headers.get('content-type');
-    console.log(`[MODAL-MANAGER] Modal logs content-type: ${contentType}`);
-    
     if (!contentType || !contentType.includes('application/json')) {
       const textResponse = await response.text();
       console.error(`[MODAL-MANAGER] Expected JSON but got: ${textResponse.substring(0, 100)}...`);
@@ -470,6 +435,82 @@ async function getBotStatus(botId: string, userId: string) {
   });
 
   return await response.json();
+}
+
+async function modifyBot(botId: string, userId: string, modificationPrompt: string) {
+  // Get current bot data
+  const { data: bot } = await supabase
+    .from('bots')
+    .select('*')
+    .eq('id', botId)
+    .single();
+
+  if (!bot) {
+    throw new Error('Bot not found');
+  }
+
+  // Get current code from Modal
+  const codeResponse = await fetch(MODAL_FUNCTIONS.get_files, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      bot_id: botId,
+      user_id: userId
+    })
+  });
+
+  const codeData = await codeResponse.json();
+  const currentCode = codeData.files?.['main.py'] || '';
+
+  // Modify code using OpenAI
+  const modifyResult = await generateBotCodeWithOpenAI(
+    `Modify this existing bot code:\n\n${currentCode}\n\nModification request: ${modificationPrompt}`,
+    bot.token,
+    bot.conversation_history || []
+  );
+
+  if (modifyResult.success) {
+    // Store updated code
+    await fetch(MODAL_FUNCTIONS.store_bot_code, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        bot_id: botId,
+        user_id: userId,
+        bot_code: modifyResult.code,
+        bot_token: bot.token,
+        bot_name: bot.name
+      })
+    });
+
+    // Update conversation history
+    const updatedHistory = [
+      ...(bot.conversation_history || []),
+      {
+        role: 'user',
+        content: modificationPrompt,
+        timestamp: new Date().toISOString()
+      },
+      {
+        role: 'assistant',
+        content: `Bot modified successfully! ${modifyResult.explanation}`,
+        timestamp: new Date().toISOString()
+      }
+    ];
+
+    await supabase
+      .from('bots')
+      .update({
+        conversation_history: updatedHistory
+      })
+      .eq('id', botId);
+  }
+
+  return modifyResult;
 }
 
 async function fixBot(botId: string, userId: string) {
