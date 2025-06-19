@@ -13,10 +13,10 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const openaiApiKey = Deno.env.get('OPENAI_API_KEY')!;
 
-// Modal function URLs for the new architecture
+// Updated Modal function URLs for the new single FastAPI service architecture
+const MODAL_BASE_URL = 'https://haleviadiel--telegram-bot-platform-telegram-bot-service.modal.run';
 const MODAL_FUNCTIONS = {
   store_bot_code: 'https://haleviadiel--telegram-bot-platform-store-bot-code.modal.run',
-  create_bot_service: 'https://haleviadiel--telegram-bot-platform-create-bot-service.modal.run',
   register_webhook: 'https://haleviadiel--telegram-bot-platform-register-webhook.modal.run',
   unregister_webhook: 'https://haleviadiel--telegram-bot-platform-unregister-webhook.modal.run',
   get_logs: 'https://haleviadiel--telegram-bot-platform-get-logs.modal.run',
@@ -273,11 +273,25 @@ async function startBot(botId: string, userId: string) {
   console.log(`[MODAL-MANAGER] Starting bot ${botId}`);
   
   try {
-    // Step 1: Create bot service (FastAPI app)
-    const serviceUrl = `${MODAL_FUNCTIONS.create_bot_service}?bot_id=${botId}&user_id=${userId}`;
+    // Step 1: Load bot in the FastAPI service
+    const loadResponse = await fetch(`${MODAL_BASE_URL}/load-bot/${botId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        user_id: userId
+      })
+    });
+
+    const loadResult = await loadResponse.json();
     
+    if (!loadResult.success) {
+      throw new Error(`Failed to load bot: ${loadResult.error}`);
+    }
+
     // Step 2: Register webhook with Telegram
-    const webhookUrl = `${serviceUrl}/webhook/${botId}`;
+    const webhookUrl = `${MODAL_BASE_URL}/webhook/${botId}`;
     
     const webhookResponse = await fetch(MODAL_FUNCTIONS.register_webhook, {
       method: 'POST',
@@ -298,17 +312,17 @@ async function startBot(botId: string, userId: string) {
       .from('bots')
       .update({
         runtime_status: webhookResult.success ? 'running' : 'stopped',
-        runtime_logs: `Bot service URL: ${serviceUrl}\nWebhook URL: ${webhookUrl}`
+        runtime_logs: `Bot loaded in Modal FastAPI service\nWebhook URL: ${webhookUrl}\nStatus: ${webhookResult.success ? 'Running' : 'Failed'}`
       })
       .eq('id', botId);
 
     return {
       success: webhookResult.success,
       status: webhookResult.success ? 'running' : 'stopped',
-      service_url: serviceUrl,
+      service_url: MODAL_BASE_URL,
       webhook_url: webhookUrl,
       logs: [
-        `[MODAL] Bot service created: ${serviceUrl}`,
+        `[MODAL] Bot loaded in FastAPI service`,
         `[MODAL] Webhook registered: ${webhookUrl}`,
         `[MODAL] Bot ${botId} is now running`
       ]
@@ -336,28 +350,53 @@ async function startBot(botId: string, userId: string) {
 async function stopBot(botId: string, userId: string) {
   console.log(`[MODAL-MANAGER] Stopping bot ${botId}`);
   
-  const response = await fetch(MODAL_FUNCTIONS.unregister_webhook, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      bot_id: botId,
-      user_id: userId
-    })
-  });
+  try {
+    // Step 1: Unregister webhook
+    const webhookResponse = await fetch(MODAL_FUNCTIONS.unregister_webhook, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        bot_id: botId,
+        user_id: userId
+      })
+    });
 
-  const result = await response.json();
+    const webhookResult = await webhookResponse.json();
 
-  await supabase
-    .from('bots')
-    .update({
-      runtime_status: 'stopped',
-      runtime_logs: `Bot stopped and webhook unregistered`
-    })
-    .eq('id', botId);
+    // Step 2: Unload bot from FastAPI service
+    const unloadResponse = await fetch(`${MODAL_BASE_URL}/unload-bot/${botId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
 
-  return result;
+    const unloadResult = await unloadResponse.json();
+
+    await supabase
+      .from('bots')
+      .update({
+        runtime_status: 'stopped',
+        runtime_logs: `Bot stopped and webhook unregistered\nUnloaded from service: ${unloadResult.success}`
+      })
+      .eq('id', botId);
+
+    return {
+      success: true,
+      status: 'stopped',
+      webhook_unregistered: webhookResult.success,
+      bot_unloaded: unloadResult.success
+    };
+    
+  } catch (error) {
+    console.error(`[MODAL-MANAGER] Error stopping bot ${botId}:`, error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
 }
 
 async function restartBot(botId: string, userId: string) {
@@ -372,6 +411,26 @@ async function getBotLogs(botId: string, userId: string) {
   try {
     console.log(`[MODAL-MANAGER] Fetching logs for bot ${botId} from Modal`);
     
+    // Try to get logs from the FastAPI service first
+    try {
+      const serviceLogsResponse = await fetch(`${MODAL_BASE_URL}/logs/${botId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (serviceLogsResponse.ok) {
+        const serviceLogsResult = await serviceLogsResponse.json();
+        if (serviceLogsResult.success) {
+          return serviceLogsResult;
+        }
+      }
+    } catch (e) {
+      console.log(`[MODAL-MANAGER] Service logs not available, trying Modal function`);
+    }
+
+    // Fallback to Modal function
     const response = await fetch(MODAL_FUNCTIONS.get_logs, {
       method: 'POST',
       headers: {
@@ -423,6 +482,31 @@ async function getBotLogs(botId: string, userId: string) {
 }
 
 async function getBotStatus(botId: string, userId: string) {
+  try {
+    // Try to get status from the FastAPI service first
+    const healthResponse = await fetch(`${MODAL_BASE_URL}/health/${botId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+
+    if (healthResponse.ok) {
+      const healthResult = await healthResponse.json();
+      return {
+        success: true,
+        status: healthResult.loaded ? 'running' : 'stopped',
+        deployment_type: 'modal',
+        runtime: 'Modal FastAPI Service',
+        loaded: healthResult.loaded,
+        service_status: healthResult.status
+      };
+    }
+  } catch (e) {
+    console.log(`[MODAL-MANAGER] Service health check failed, trying Modal function`);
+  }
+
+  // Fallback to Modal function
   const response = await fetch(MODAL_FUNCTIONS.get_status, {
     method: 'POST',
     headers: {

@@ -29,23 +29,17 @@ image = (
 # Persistent volume for bot files and data
 volume = modal.Volume.from_name("bot-files", create_if_missing=True)
 
-# Shared secrets for Telegram tokens
-secrets = [modal.Secret.from_name("telegram-bot-secrets")]
-
-# Dictionary to store active bot applications
-active_bots: Dict[str, Any] = {}
+# Dictionary to store active bot instances in memory
+bot_instances: Dict[str, Any] = {}
 
 @app.function(
     image=image,
-    secrets=secrets,
     volumes={"/data": volume},
     timeout=300,
     memory=512
 )
 def store_bot_code(bot_id: str, user_id: str, bot_code: str, bot_token: str, bot_name: str) -> Dict[str, Any]:
-    """
-    Store bot code in Modal volume without running it
-    """
+    """Store bot code in Modal volume"""
     try:
         print(f"[MODAL] Storing bot {bot_id} for user {user_id}")
         
@@ -97,17 +91,14 @@ def store_bot_code(bot_id: str, user_id: str, bot_code: str, bot_token: str, bot
 
 @app.function(
     image=image,
-    secrets=secrets,
     volumes={"/data": volume},
     min_containers=1,
     timeout=3600
 )
 @modal.asgi_app()
-def create_bot_service(bot_id: str, user_id: str):
-    """
-    Create a FastAPI service for a specific Telegram bot
-    """
-    web_app = FastAPI(title=f"Telegram Bot {bot_id}")
+def telegram_bot_service():
+    """Single FastAPI service that handles all Telegram bots"""
+    web_app = FastAPI(title="Telegram Bot Platform")
     
     # Allow CORS for webhook requests
     web_app.add_middleware(
@@ -118,18 +109,14 @@ def create_bot_service(bot_id: str, user_id: str):
         allow_headers=["*"],
     )
 
-    # Load bot configuration on startup
-    bot_config = {}
-    bot_handler = None
-    
-    async def load_bot_config():
-        nonlocal bot_config, bot_handler
+    async def load_bot_instance(bot_id: str, user_id: str):
+        """Load and initialize a bot instance"""
         try:
             bot_dir = f"/data/bots/{user_id}/{bot_id}"
             
             # Load metadata
             with open(f"{bot_dir}/metadata.json", "r") as f:
-                bot_config = json.load(f)
+                metadata = json.load(f)
             
             # Load and execute bot code
             with open(f"{bot_dir}/main.py", "r") as f:
@@ -138,86 +125,180 @@ def create_bot_service(bot_id: str, user_id: str):
             # Create a namespace for the bot code
             bot_namespace = {"__name__": "__main__"}
             
-            # Set environment variables
-            os.environ["BOT_TOKEN"] = bot_config["bot_token"]
+            # Set environment variables for this bot
+            os.environ["BOT_TOKEN"] = metadata["bot_token"]
             
             # Execute bot code to get the bot instance
             exec(bot_code, bot_namespace)
             
             # Try to get the application instance from the bot code
+            bot_handler = None
             if "application" in bot_namespace:
                 bot_handler = bot_namespace["application"]
             elif "app" in bot_namespace:
                 bot_handler = bot_namespace["app"]
             
-            print(f"[MODAL] Bot {bot_id} loaded successfully")
-            
+            if bot_handler:
+                # Initialize the application
+                await bot_handler.initialize()
+                bot_instances[bot_id] = {
+                    "handler": bot_handler,
+                    "metadata": metadata,
+                    "loaded_at": datetime.now().isoformat()
+                }
+                print(f"[MODAL] Bot {bot_id} loaded and initialized successfully")
+                return True
+            else:
+                print(f"[MODAL] No application instance found in bot {bot_id} code")
+                return False
+                
         except Exception as e:
             print(f"[MODAL] Error loading bot {bot_id}: {str(e)}")
-            raise
+            return False
 
-    @web_app.on_event("startup")
-    async def startup_event():
-        await load_bot_config()
-
-    @web_app.post(f"/webhook/{bot_id}")
-    async def handle_webhook(request: Request):
-        """Handle incoming Telegram webhook requests"""
+    @web_app.post("/webhook/{bot_id}")
+    async def handle_webhook(bot_id: str, request: Request):
+        """Handle incoming Telegram webhook requests for specific bot"""
         try:
             body = await request.json()
-            
             print(f"[MODAL] Bot {bot_id} received webhook: {body}")
             
-            if bot_handler:
+            # Load bot if not already loaded
+            if bot_id not in bot_instances:
+                # Try to find user_id from the request or database
+                # For now, we'll try to load from any user directory
+                user_dirs = []
+                try:
+                    base_dir = "/data/bots"
+                    if os.path.exists(base_dir):
+                        for user_dir in os.listdir(base_dir):
+                            bot_path = f"{base_dir}/{user_dir}/{bot_id}"
+                            if os.path.exists(bot_path):
+                                user_dirs.append(user_dir)
+                
+                    if user_dirs:
+                        await load_bot_instance(bot_id, user_dirs[0])
+                except Exception as e:
+                    print(f"[MODAL] Error finding bot {bot_id}: {str(e)}")
+            
+            # Process webhook with bot handler
+            if bot_id in bot_instances:
+                bot_handler = bot_instances[bot_id]["handler"]
+                
                 # Process the update with the bot
                 from telegram import Update
                 
                 update = Update.de_json(body, None)
-                if update:
+                if update and bot_handler:
                     # Process the update asynchronously
                     await bot_handler.process_update(update)
                 
-            return {"ok": True}
-            
+                return {"ok": True}
+            else:
+                print(f"[MODAL] Bot {bot_id} not found or not loaded")
+                return {"ok": False, "error": "Bot not found"}
+                
         except Exception as e:
             print(f"[MODAL] Error processing webhook for bot {bot_id}: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    @web_app.get(f"/health/{bot_id}")
-    async def health_check():
-        """Health check endpoint"""
+    @web_app.get("/health/{bot_id}")
+    async def health_check(bot_id: str):
+        """Health check endpoint for specific bot"""
+        is_loaded = bot_id in bot_instances
         return {
-            "status": "healthy",
+            "status": "healthy" if is_loaded else "not_loaded",
             "bot_id": bot_id,
+            "loaded": is_loaded,
             "timestamp": datetime.now().isoformat()
         }
 
-    @web_app.get(f"/logs/{bot_id}")
-    async def get_bot_logs():
+    @web_app.get("/logs/{bot_id}")
+    async def get_bot_logs(bot_id: str):
         """Get bot logs"""
         try:
             logs = [
-                f"[{datetime.now().isoformat()}] Bot {bot_id} is running",
-                f"[{datetime.now().isoformat()}] FastAPI service active",
+                f"[{datetime.now().isoformat()}] Bot {bot_id} FastAPI service active",
                 f"[{datetime.now().isoformat()}] Webhook endpoint: /webhook/{bot_id}"
             ]
+            
+            if bot_id in bot_instances:
+                logs.append(f"[{datetime.now().isoformat()}] Bot {bot_id} is loaded and running")
+                logs.append(f"[{datetime.now().isoformat()}] Loaded at: {bot_instances[bot_id]['loaded_at']}")
+            else:
+                logs.append(f"[{datetime.now().isoformat()}] Bot {bot_id} is not currently loaded")
             
             return {"success": True, "logs": logs}
             
         except Exception as e:
             return {"success": False, "error": str(e), "logs": []}
 
+    @web_app.post("/load-bot/{bot_id}")
+    async def load_bot(bot_id: str, request: Request):
+        """Manually load a bot instance"""
+        try:
+            body = await request.json()
+            user_id = body.get("user_id")
+            
+            if not user_id:
+                raise HTTPException(status_code=400, detail="user_id required")
+            
+            success = await load_bot_instance(bot_id, user_id)
+            
+            return {
+                "success": success,
+                "bot_id": bot_id,
+                "loaded": bot_id in bot_instances
+            }
+            
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @web_app.post("/unload-bot/{bot_id}")
+    async def unload_bot(bot_id: str):
+        """Unload a bot instance"""
+        try:
+            if bot_id in bot_instances:
+                # Clean up bot instance
+                bot_handler = bot_instances[bot_id]["handler"]
+                if hasattr(bot_handler, 'shutdown'):
+                    await bot_handler.shutdown()
+                
+                del bot_instances[bot_id]
+                
+                return {
+                    "success": True,
+                    "bot_id": bot_id,
+                    "message": "Bot unloaded successfully"
+                }
+            else:
+                return {
+                    "success": False,
+                    "bot_id": bot_id,
+                    "message": "Bot was not loaded"
+                }
+                
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @web_app.get("/")
+    async def root():
+        """Root endpoint"""
+        return {
+            "service": "Telegram Bot Platform",
+            "status": "running",
+            "loaded_bots": list(bot_instances.keys()),
+            "timestamp": datetime.now().isoformat()
+        }
+
     return web_app
 
 @app.function(
     image=image,
-    secrets=secrets,
     volumes={"/data": volume}
 )
 async def register_webhook(bot_id: str, user_id: str, webhook_url: str) -> Dict[str, Any]:
-    """
-    Register webhook URL with Telegram API
-    """
+    """Register webhook URL with Telegram API"""
     try:
         bot_dir = f"/data/bots/{user_id}/{bot_id}"
         
@@ -267,13 +348,10 @@ async def register_webhook(bot_id: str, user_id: str, webhook_url: str) -> Dict[
 
 @app.function(
     image=image,
-    secrets=secrets,
     volumes={"/data": volume}
 )
 async def unregister_webhook(bot_id: str, user_id: str) -> Dict[str, Any]:
-    """
-    Unregister webhook from Telegram API
-    """
+    """Unregister webhook from Telegram API"""
     try:
         bot_dir = f"/data/bots/{user_id}/{bot_id}"
         
@@ -316,13 +394,10 @@ async def unregister_webhook(bot_id: str, user_id: str) -> Dict[str, Any]:
 
 @app.function(
     image=image,
-    secrets=secrets,
     volumes={"/data": volume}
 )
 def get_logs(bot_id: str, user_id: str) -> Dict[str, Any]:
-    """
-    Get bot logs from the stored files
-    """
+    """Get bot logs from the stored files"""
     try:
         bot_dir = f"/data/bots/{user_id}/{bot_id}"
         
@@ -359,13 +434,10 @@ def get_logs(bot_id: str, user_id: str) -> Dict[str, Any]:
 
 @app.function(
     image=image,
-    secrets=secrets,
     volumes={"/data": volume}
 )
 def get_status(bot_id: str, user_id: str) -> Dict[str, Any]:
-    """
-    Get bot status from metadata
-    """
+    """Get bot status from metadata"""
     try:
         bot_dir = f"/data/bots/{user_id}/{bot_id}"
         
@@ -391,13 +463,10 @@ def get_status(bot_id: str, user_id: str) -> Dict[str, Any]:
 
 @app.function(
     image=image,
-    secrets=secrets,
     volumes={"/data": volume}
 )
 def get_files(bot_id: str, user_id: str) -> Dict[str, Any]:
-    """
-    Get bot files for viewing or modification
-    """
+    """Get bot files for viewing or modification"""
     try:
         bot_dir = f"/data/bots/{user_id}/{bot_id}"
         
