@@ -52,21 +52,30 @@ const WorkspaceLayout = ({
   const [activeTab, setActiveTab] = useState("files");
   const [currentFiles, setCurrentFiles] = useState(latestFiles);
 
+  console.log(`[WORKSPACE LAYOUT PURE] Rendering workspace for bot ${botId}`);
+  console.log(`[WORKSPACE LAYOUT PURE] NO storage object passed - Pure Modal ONLY`);
+  console.log(`[WORKSPACE LAYOUT PURE] Latest files count: ${Object.keys(latestFiles).length}`);
+
   const handleLogsUpdate = useCallback((logs: string, hasErrorsDetected: boolean) => {
+    console.log(`[WORKSPACE LAYOUT PURE] Logs update: hasErrors=${hasErrorsDetected}, logsLength=${logs.length}`);
     setLogsErrorContent(logs);
     setLogsHasErrors(hasErrorsDetected);
     
     // Auto-switch to logs tab if errors are detected
     if (hasErrorsDetected && activeTab === "files") {
+      console.log(`[WORKSPACE LAYOUT PURE] Auto-switching to logs tab due to errors`);
       setActiveTab("logs");
     }
   }, [activeTab]);
 
   const handleLogsFixByAI = useCallback(async (errorLogs: string) => {
+    console.log(`[WORKSPACE LAYOUT PURE] Fix by AI requested with error logs: ${errorLogs.length} characters`);
     await onFixByAI(errorLogs);
   }, [onFixByAI]);
 
   const handleFilesUpdate = useCallback((files: Record<string, string>) => {
+    console.log(`[WORKSPACE LAYOUT PURE] Files update: ${Object.keys(files).length} files`);
+    console.log(`[WORKSPACE LAYOUT PURE] Files: ${Object.keys(files).join(', ')}`);
     setCurrentFiles(files);
   }, []);
 
@@ -77,6 +86,9 @@ const WorkspaceLayout = ({
   // Use currentFiles if available, otherwise fall back to latestFiles
   const displayFiles = Object.keys(currentFiles).length > 0 ? currentFiles : latestFiles;
   const filesCount = Object.keys(displayFiles).length;
+
+  console.log(`[WORKSPACE LAYOUT PURE] Display files count: ${filesCount}`);
+  console.log(`[WORKSPACE LAYOUT PURE] Combined errors: ${combinedHasErrors}`);
 
   return (
     <div className="flex h-[calc(100vh-73px)]">

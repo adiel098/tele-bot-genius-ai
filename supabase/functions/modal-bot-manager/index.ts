@@ -12,7 +12,7 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const openaiApiKey = Deno.env.get('OPENAI_API_KEY')!;
 
-// Updated to use the optimized FastAPI service
+// Updated to use the pure Modal service
 const MODAL_BASE_URL = 'https://haleviadiel--telegram-bot-platform-telegram-bot-service.modal.run';
 
 serve(async (req) => {
@@ -23,48 +23,49 @@ serve(async (req) => {
   try {
     const { action, botId, userId, prompt, token, name, modificationPrompt } = await req.json();
 
-    console.log(`[MODAL-MANAGER CLEAN] === Starting ${action} for bot ${botId} ===`);
-    console.log(`[MODAL-MANAGER CLEAN] Request payload:`, { action, botId, userId, hasPrompt: !!prompt, hasToken: !!token, hasName: !!name, hasModificationPrompt: !!modificationPrompt });
+    console.log(`[MODAL-MANAGER PURE] === Starting ${action} for bot ${botId} ===`);
+    console.log(`[MODAL-MANAGER PURE] NO Supabase Storage - Modal Volume ONLY`);
+    console.log(`[MODAL-MANAGER PURE] Request payload:`, { action, botId, userId, hasPrompt: !!prompt, hasToken: !!token, hasName: !!name, hasModificationPrompt: !!modificationPrompt });
 
     let result;
 
     switch (action) {
       case 'create-bot':
-        result = await cleanCreateBot(botId, userId, name, prompt, token);
+        result = await pureModalCreateBot(botId, userId, name, prompt, token);
         break;
       case 'modify-bot':
-        result = await cleanModifyBot(botId, userId, modificationPrompt);
+        result = await pureModalModifyBot(botId, userId, modificationPrompt);
         break;
       case 'start-bot':
-        result = await optimizedStartBot(botId, userId);
+        result = await pureModalStartBot(botId, userId);
         break;
       case 'stop-bot':
-        result = await optimizedStopBot(botId, userId);
+        result = await pureModalStopBot(botId, userId);
         break;
       case 'restart-bot':
-        result = await optimizedRestartBot(botId, userId);
+        result = await pureModalRestartBot(botId, userId);
         break;
       case 'get-logs':
-        result = await optimizedGetBotLogs(botId, userId);
+        result = await pureModalGetBotLogs(botId, userId);
         break;
       case 'get-status':
-        result = await optimizedGetBotStatus(botId, userId);
+        result = await pureModalGetBotStatus(botId, userId);
         break;
       case 'fix-bot':
-        result = await optimizedFixBot(botId, userId);
+        result = await pureModalFixBot(botId, userId);
         break;
       case 'get-files':
-        result = await cleanGetBotFiles(botId, userId);
+        result = await pureModalGetBotFiles(botId, userId);
         break;
       case 'health-check':
-        result = await comprehensiveHealthCheck(botId, userId);
+        result = await pureModalHealthCheck(botId, userId);
         break;
       default:
         throw new Error(`Unknown action: ${action}`);
     }
 
-    console.log(`[MODAL-MANAGER CLEAN] === Completed ${action} for bot ${botId} ===`);
-    console.log(`[MODAL-MANAGER CLEAN] Final result:`, { success: result.success, hasError: !!result.error });
+    console.log(`[MODAL-MANAGER PURE] === Completed ${action} for bot ${botId} ===`);
+    console.log(`[MODAL-MANAGER PURE] Final result:`, { success: result.success, hasError: !!result.error });
 
     return new Response(JSON.stringify({
       success: true,
@@ -74,8 +75,8 @@ serve(async (req) => {
     });
 
   } catch (error) {
-    console.error('[MODAL-MANAGER CLEAN] Critical Error:', error);
-    console.error('[MODAL-MANAGER CLEAN] Error stack:', error.stack);
+    console.error('[MODAL-MANAGER PURE] Critical Error:', error);
+    console.error('[MODAL-MANAGER PURE] Error stack:', error.stack);
     return new Response(JSON.stringify({
       success: false,
       error: error.message,
@@ -88,10 +89,10 @@ serve(async (req) => {
 });
 
 async function generateBotCodeWithOpenAI(prompt: string, token: string, conversationHistory: any[] = []) {
-  console.log('[MODAL-MANAGER CLEAN] === OpenAI Code Generation Started ===');
-  console.log('[MODAL-MANAGER CLEAN] Prompt length:', prompt.length);
-  console.log('[MODAL-MANAGER CLEAN] Token provided:', token ? 'Yes' : 'No');
-  console.log('[MODAL-MANAGER CLEAN] Conversation history length:', conversationHistory.length);
+  console.log('[MODAL-MANAGER PURE] === OpenAI Code Generation Started ===');
+  console.log('[MODAL-MANAGER PURE] Prompt length:', prompt.length);
+  console.log('[MODAL-MANAGER PURE] Token provided:', token ? 'Yes' : 'No');
+  console.log('[MODAL-MANAGER PURE] Conversation history length:', conversationHistory.length);
   
   const messages = [
     {
@@ -153,7 +154,7 @@ Create a Telegram bot with the following requirements: ${prompt}`
 
   // Add conversation history if provided
   if (conversationHistory && conversationHistory.length > 0) {
-    console.log('[MODAL-MANAGER CLEAN] Adding conversation history to OpenAI request');
+    console.log('[MODAL-MANAGER PURE] Adding conversation history to OpenAI request');
     for (const msg of conversationHistory.slice(-5)) {
       messages.push({
         role: msg.role,
@@ -162,7 +163,7 @@ Create a Telegram bot with the following requirements: ${prompt}`
     }
   }
 
-  console.log('[MODAL-MANAGER CLEAN] Sending request to OpenAI API...');
+  console.log('[MODAL-MANAGER PURE] Sending request to OpenAI API...');
   const startTime = Date.now();
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -180,35 +181,35 @@ Create a Telegram bot with the following requirements: ${prompt}`
   });
 
   const apiTime = Date.now() - startTime;
-  console.log('[MODAL-MANAGER CLEAN] OpenAI API response time:', `${apiTime}ms`);
+  console.log('[MODAL-MANAGER PURE] OpenAI API response time:', `${apiTime}ms`);
 
   if (!response.ok) {
-    console.error('[MODAL-MANAGER CLEAN] OpenAI API error:', response.status, response.statusText);
+    console.error('[MODAL-MANAGER PURE] OpenAI API error:', response.status, response.statusText);
     throw new Error(`OpenAI API error: ${response.status}`);
   }
 
   const data = await response.json();
-  console.log('[MODAL-MANAGER CLEAN] OpenAI response received, tokens used:', data.usage);
+  console.log('[MODAL-MANAGER PURE] OpenAI response received, tokens used:', data.usage);
   
   const assistantResponse = data.choices[0].message.content;
-  console.log('[MODAL-MANAGER CLEAN] Generated response length:', assistantResponse.length);
+  console.log('[MODAL-MANAGER PURE] Generated response length:', assistantResponse.length);
 
   // Extract code from response
   const codeStart = assistantResponse.indexOf('```python');
   const codeEnd = assistantResponse.indexOf('```', codeStart + 9);
   
   let generatedCode = assistantResponse;
-  let explanation = "Generated Telegram bot code with Modal Volume storage";
+  let explanation = "Generated Telegram bot code with Pure Modal Volume storage";
   
   if (codeStart !== -1 && codeEnd !== -1) {
     generatedCode = assistantResponse.substring(codeStart + 9, codeEnd).trim();
     explanation = assistantResponse.substring(0, codeStart).trim();
-    console.log('[MODAL-MANAGER CLEAN] Code extracted from markdown, length:', generatedCode.length);
+    console.log('[MODAL-MANAGER PURE] Code extracted from markdown, length:', generatedCode.length);
   } else {
-    console.log('[MODAL-MANAGER CLEAN] No markdown code block found, using full response');
+    console.log('[MODAL-MANAGER PURE] No markdown code block found, using full response');
   }
 
-  console.log('[MODAL-MANAGER CLEAN] === OpenAI Code Generation Completed ===');
+  console.log('[MODAL-MANAGER PURE] === OpenAI Code Generation Completed ===');
 
   return {
     success: true,
@@ -217,12 +218,13 @@ Create a Telegram bot with the following requirements: ${prompt}`
   };
 }
 
-async function cleanCreateBot(botId: string, userId: string, name: string, prompt: string, token: string) {
-  console.log(`[MODAL-MANAGER CLEAN] === Clean Bot Creation Process for ${botId} ===`);
-  console.log(`[MODAL-MANAGER CLEAN] Bot details:`, { botId, userId, name, tokenLength: token.length });
+async function pureModalCreateBot(botId: string, userId: string, name: string, prompt: string, token: string) {
+  console.log(`[MODAL-MANAGER PURE] === Pure Modal Bot Creation Process for ${botId} ===`);
+  console.log(`[MODAL-MANAGER PURE] NO Supabase Storage - Modal Volume ONLY`);
+  console.log(`[MODAL-MANAGER PURE] Bot details:`, { botId, userId, name, tokenLength: token.length });
   
   // Get conversation history
-  console.log(`[MODAL-MANAGER CLEAN] Fetching conversation history for bot ${botId}`);
+  console.log(`[MODAL-MANAGER PURE] Fetching conversation history for bot ${botId}`);
   const { data: bot } = await supabase
     .from('bots')
     .select('conversation_history')
@@ -230,36 +232,36 @@ async function cleanCreateBot(botId: string, userId: string, name: string, promp
     .single();
 
   const conversationHistory = bot?.conversation_history || [];
-  console.log(`[MODAL-MANAGER CLEAN] Conversation history items:`, conversationHistory.length);
+  console.log(`[MODAL-MANAGER PURE] Conversation history items:`, conversationHistory.length);
 
   // Step 1: Generate bot code using OpenAI
-  console.log(`[MODAL-MANAGER CLEAN] Step 1: Generating code with OpenAI`);
+  console.log(`[MODAL-MANAGER PURE] Step 1: Generating code with OpenAI`);
   const codeResult = await generateBotCodeWithOpenAI(prompt, token, conversationHistory);
 
   if (!codeResult.success) {
-    console.error(`[MODAL-MANAGER CLEAN] Code generation failed for bot ${botId}`);
+    console.error(`[MODAL-MANAGER PURE] Code generation failed for bot ${botId}`);
     throw new Error('Failed to generate bot code');
   }
 
-  console.log(`[MODAL-MANAGER CLEAN] Code generated successfully: ${codeResult.code.length} characters`);
+  console.log(`[MODAL-MANAGER PURE] Code generated successfully: ${codeResult.code.length} characters`);
 
-  // Step 2: Store bot directly in Modal Volume using the correct endpoint
-  console.log(`[MODAL-MANAGER CLEAN] Step 2: Storing bot in Modal Volume ONLY`);
-  const storeResult = await storeInModalOnly(botId, userId, codeResult.code, token, name);
+  // Step 2: Store bot directly in Modal Volume using the PURE endpoint
+  console.log(`[MODAL-MANAGER PURE] Step 2: Storing bot in Pure Modal Volume`);
+  const storeResult = await storeInPureModalOnly(botId, userId, codeResult.code, token, name);
 
   if (!storeResult.success) {
-    console.error(`[MODAL-MANAGER CLEAN] Modal storage failed:`, storeResult.error);
-    throw new Error(`Failed to store bot in Modal: ${storeResult.error}`);
+    console.error(`[MODAL-MANAGER PURE] Pure Modal storage failed:`, storeResult.error);
+    throw new Error(`Failed to store bot in Pure Modal: ${storeResult.error}`);
   }
 
-  console.log(`[MODAL-MANAGER CLEAN] Bot stored successfully in Modal Volume`);
+  console.log(`[MODAL-MANAGER PURE] Bot stored successfully in Pure Modal Volume`);
 
   // Step 3: Verify storage by retrieving files
-  console.log(`[MODAL-MANAGER CLEAN] Step 3: Verifying Modal storage`);
-  const verificationResult = await verifyModalStorage(botId, userId);
+  console.log(`[MODAL-MANAGER PURE] Step 3: Verifying Pure Modal storage`);
+  const verificationResult = await verifyPureModalStorage(botId, userId);
   
   // Step 4: Update conversation history
-  console.log(`[MODAL-MANAGER CLEAN] Step 4: Updating conversation history`);
+  console.log(`[MODAL-MANAGER PURE] Step 4: Updating conversation history`);
   const updatedHistory = [
     ...conversationHistory,
     {
@@ -269,7 +271,7 @@ async function cleanCreateBot(botId: string, userId: string, name: string, promp
     },
     {
       role: 'assistant',
-      content: `Bot created successfully with Modal Volume storage! ${codeResult.explanation}
+      content: `Bot created successfully with Pure Modal Volume storage! ${codeResult.explanation}
 
 **Storage Details:**
 ${storeResult.details}
@@ -277,7 +279,7 @@ ${storeResult.details}
 **Verification Results:**
 ${verificationResult.summary}
 
-Your bot code has been successfully generated and stored in Modal Volume (no Supabase Storage used).`,
+Your bot code has been successfully generated and stored in Pure Modal Volume (NO Supabase Storage used).`,
       timestamp: new Date().toISOString(),
       files: {
         'main.py': codeResult.code
@@ -292,12 +294,12 @@ Your bot code has been successfully generated and stored in Modal Volume (no Sup
       status: 'stored',
       runtime_status: 'stopped',
       conversation_history: updatedHistory,
-      runtime_logs: `Bot stored in Modal Volume only\n${verificationResult.summary}`,
+      runtime_logs: `Bot stored in Pure Modal Volume only\n${verificationResult.summary}`,
       files_stored: true
     })
     .eq('id', botId);
 
-  console.log(`[MODAL-MANAGER CLEAN] Bot ${botId} creation completed successfully`);
+  console.log(`[MODAL-MANAGER PURE] Bot ${botId} creation completed successfully`);
 
   return {
     botCode: codeResult,
@@ -306,17 +308,18 @@ Your bot code has been successfully generated and stored in Modal Volume (no Sup
     files: {
       'main.py': codeResult.code
     },
-    storage_type: 'modal_volume_only',
-    message: 'Bot generated and stored in Modal Volume (no Supabase Storage)!'
+    storage_type: 'pure_modal_volume_only',
+    message: 'Bot generated and stored in Pure Modal Volume (NO Supabase Storage)!'
   };
 }
 
-async function storeInModalOnly(botId: string, userId: string, botCode: string, token: string, botName: string) {
-  console.log(`[MODAL-MANAGER CLEAN] === Storing in Modal Volume ONLY for bot ${botId} ===`);
-  console.log(`[MODAL-MANAGER CLEAN] Code length: ${botCode.length} characters`);
+async function storeInPureModalOnly(botId: string, userId: string, botCode: string, token: string, botName: string) {
+  console.log(`[MODAL-MANAGER PURE] === Storing in Pure Modal Volume ONLY for bot ${botId} ===`);
+  console.log(`[MODAL-MANAGER PURE] NO Supabase Storage calls - Modal Volume ONLY`);
+  console.log(`[MODAL-MANAGER PURE] Code length: ${botCode.length} characters`);
   
   try {
-    console.log(`[MODAL-MANAGER CLEAN] Calling Modal API: ${MODAL_BASE_URL}/store-bot/${botId}`);
+    console.log(`[MODAL-MANAGER PURE] Calling Pure Modal API: ${MODAL_BASE_URL}/store-bot/${botId}`);
     
     const storeResponse = await fetch(`${MODAL_BASE_URL}/store-bot/${botId}`, {
       method: 'POST',
@@ -331,47 +334,47 @@ async function storeInModalOnly(botId: string, userId: string, botCode: string, 
       })
     });
 
-    console.log(`[MODAL-MANAGER CLEAN] Modal API response status: ${storeResponse.status}`);
+    console.log(`[MODAL-MANAGER PURE] Pure Modal API response status: ${storeResponse.status}`);
 
     if (!storeResponse.ok) {
       const errorText = await storeResponse.text();
-      console.error(`[MODAL-MANAGER CLEAN] Modal API error: ${storeResponse.status} - ${errorText}`);
+      console.error(`[MODAL-MANAGER PURE] Pure Modal API error: ${storeResponse.status} - ${errorText}`);
       return {
         success: false,
-        error: `Modal API error: ${storeResponse.status} - ${errorText}`,
-        details: `Failed to store in Modal Volume: ${errorText}`
+        error: `Pure Modal API error: ${storeResponse.status} - ${errorText}`,
+        details: `Failed to store in Pure Modal Volume: ${errorText}`
       };
     }
 
     const storeResult = await storeResponse.json();
-    console.log(`[MODAL-MANAGER CLEAN] Modal API result:`, storeResult);
+    console.log(`[MODAL-MANAGER PURE] Pure Modal API result:`, storeResult);
 
     if (storeResult.success) {
       return {
         success: true,
-        details: `✅ Bot stored successfully in Modal Volume\n✅ No Supabase Storage operations performed\n✅ Modal Volume commit successful`,
+        details: `✅ Bot stored successfully in Pure Modal Volume\n✅ NO Supabase Storage operations performed\n✅ Pure Modal Volume commit successful`,
         modal_response: storeResult
       };
     } else {
       return {
         success: false,
-        error: storeResult.error || 'Unknown Modal error',
-        details: `❌ Modal storage failed: ${storeResult.error || 'Unknown error'}`
+        error: storeResult.error || 'Unknown Pure Modal error',
+        details: `❌ Pure Modal storage failed: ${storeResult.error || 'Unknown error'}`
       };
     }
 
   } catch (error) {
-    console.error(`[MODAL-MANAGER CLEAN] Exception storing in Modal:`, error);
+    console.error(`[MODAL-MANAGER PURE] Exception storing in Pure Modal:`, error);
     return {
       success: false,
       error: error.message,
-      details: `❌ Exception during Modal storage: ${error.message}`
+      details: `❌ Exception during Pure Modal storage: ${error.message}`
     };
   }
 }
 
-async function verifyModalStorage(botId: string, userId: string) {
-  console.log(`[MODAL-MANAGER CLEAN] === Verifying Modal storage for bot ${botId} ===`);
+async function verifyPureModalStorage(botId: string, userId: string) {
+  console.log(`[MODAL-MANAGER PURE] === Verifying Pure Modal storage for bot ${botId} ===`);
   
   try {
     const verifyResponse = await fetch(`${MODAL_BASE_URL}/files/${botId}?user_id=${userId}`, {
@@ -381,11 +384,11 @@ async function verifyModalStorage(botId: string, userId: string) {
       }
     });
 
-    console.log(`[MODAL-MANAGER CLEAN] Verification response status: ${verifyResponse.status}`);
+    console.log(`[MODAL-MANAGER PURE] Verification response status: ${verifyResponse.status}`);
 
     if (!verifyResponse.ok) {
       const errorText = await verifyResponse.text();
-      console.error(`[MODAL-MANAGER CLEAN] Verification failed: ${verifyResponse.status} - ${errorText}`);
+      console.error(`[MODAL-MANAGER PURE] Verification failed: ${verifyResponse.status} - ${errorText}`);
       return {
         success: false,
         summary: `❌ Verification failed: ${verifyResponse.status} - ${errorText}`,
@@ -394,7 +397,7 @@ async function verifyModalStorage(botId: string, userId: string) {
     }
 
     const verifyResult = await verifyResponse.json();
-    console.log(`[MODAL-MANAGER CLEAN] Verification result:`, {
+    console.log(`[MODAL-MANAGER PURE] Verification result:`, {
       success: verifyResult.success,
       fileCount: Object.keys(verifyResult.files || {}).length
     });
@@ -406,19 +409,19 @@ async function verifyModalStorage(botId: string, userId: string) {
       
       return {
         success: true,
-        summary: `✅ Modal storage verified successfully:\n${filesSummary}\n✅ No Supabase Storage operations`,
+        summary: `✅ Pure Modal storage verified successfully:\n${filesSummary}\n✅ NO Supabase Storage operations`,
         files: verifyResult.files
       };
     } else {
       return {
         success: false,
-        summary: `❌ Verification failed: ${verifyResult.error || 'No files found in Modal'}`,
+        summary: `❌ Verification failed: ${verifyResult.error || 'No files found in Pure Modal'}`,
         files: {}
       };
     }
 
   } catch (error) {
-    console.error(`[MODAL-MANAGER CLEAN] Verification exception:`, error);
+    console.error(`[MODAL-MANAGER PURE] Verification exception:`, error);
     return {
       success: false,
       summary: `❌ Verification exception: ${error.message}`,
@@ -427,8 +430,9 @@ async function verifyModalStorage(botId: string, userId: string) {
   }
 }
 
-async function cleanGetBotFiles(botId: string, userId: string) {
-  console.log(`[MODAL-MANAGER CLEAN] === Getting files from Modal Volume ONLY for bot ${botId} ===`);
+async function pureModalGetBotFiles(botId: string, userId: string) {
+  console.log(`[MODAL-MANAGER PURE] === Getting files from Pure Modal Volume ONLY for bot ${botId} ===`);
+  console.log(`[MODAL-MANAGER PURE] NO Supabase Storage calls - Modal Volume ONLY`);
   
   try {
     const startTime = Date.now();
@@ -440,16 +444,16 @@ async function cleanGetBotFiles(botId: string, userId: string) {
     });
 
     const requestTime = Date.now() - startTime;
-    console.log(`[MODAL-MANAGER CLEAN] Modal files request completed in ${requestTime}ms, status:`, response.status);
+    console.log(`[MODAL-MANAGER PURE] Pure Modal files request completed in ${requestTime}ms, status:`, response.status);
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[MODAL-MANAGER CLEAN] Modal files request failed: ${response.status} - ${errorText}`);
-      throw new Error(`Failed to get files from Modal: ${response.status} - ${errorText}`);
+      console.error(`[MODAL-MANAGER PURE] Pure Modal files request failed: ${response.status} - ${errorText}`);
+      throw new Error(`Failed to get files from Pure Modal: ${response.status} - ${errorText}`);
     }
 
     const result = await response.json();
-    console.log(`[MODAL-MANAGER CLEAN] Modal files result:`, {
+    console.log(`[MODAL-MANAGER PURE] Pure Modal files result:`, {
       success: result.success,
       fileCount: Object.keys(result.files || {}).length
     });
@@ -457,34 +461,35 @@ async function cleanGetBotFiles(botId: string, userId: string) {
     if (result.success && result.files) {
       Object.keys(result.files).forEach(filename => {
         const content = result.files[filename];
-        console.log(`[MODAL-MANAGER CLEAN] File ${filename}: ${content?.length || 0} characters`);
+        console.log(`[MODAL-MANAGER PURE] File ${filename}: ${content?.length || 0} characters`);
       });
     }
     
     return {
       success: true,
       files: result.files || {},
-      storage_type: 'modal_volume_only',
-      storage_method: 'modal_volume_direct',
+      storage_type: 'pure_modal_volume_only',
+      storage_method: 'pure_modal_volume_direct',
       file_count: Object.keys(result.files || {}).length,
       request_time: `${requestTime}ms`,
       logs: result.logs || []
     };
     
   } catch (error) {
-    console.error(`[MODAL-MANAGER CLEAN] Error getting Modal files:`, error);
+    console.error(`[MODAL-MANAGER PURE] Error getting Pure Modal files:`, error);
     return {
       success: false,
       error: error.message,
       files: {},
-      storage_type: 'modal_volume_only'
+      storage_type: 'pure_modal_volume_only'
     };
   }
 }
 
-async function cleanModifyBot(botId: string, userId: string, modificationPrompt: string) {
-  console.log(`[MODAL-MANAGER CLEAN] === Starting clean bot modification for ${botId} ===`);
-  console.log(`[MODAL-MANAGER CLEAN] Modification prompt length:`, modificationPrompt.length);
+async function pureModalModifyBot(botId: string, userId: string, modificationPrompt: string) {
+  console.log(`[MODAL-MANAGER PURE] === Starting pure modal bot modification for ${botId} ===`);
+  console.log(`[MODAL-MANAGER PURE] NO Supabase Storage - Modal Volume ONLY`);
+  console.log(`[MODAL-MANAGER PURE] Modification prompt length:`, modificationPrompt.length);
   
   // Get current bot data
   const { data: bot, error: botError } = await supabase
@@ -494,31 +499,31 @@ async function cleanModifyBot(botId: string, userId: string, modificationPrompt:
     .single();
 
   if (botError || !bot) {
-    console.error(`[MODAL-MANAGER CLEAN] Bot not found:`, botError);
+    console.error(`[MODAL-MANAGER PURE] Bot not found:`, botError);
     throw new Error('Bot not found');
   }
 
-  console.log(`[MODAL-MANAGER CLEAN] Bot found: ${bot.name}`);
+  console.log(`[MODAL-MANAGER PURE] Bot found: ${bot.name}`);
 
-  // Get current code from Modal Volume ONLY
-  console.log(`[MODAL-MANAGER CLEAN] Getting current code from Modal Volume ONLY`);
-  const filesResult = await cleanGetBotFiles(botId, userId);
+  // Get current code from Pure Modal Volume ONLY
+  console.log(`[MODAL-MANAGER PURE] Getting current code from Pure Modal Volume ONLY`);
+  const filesResult = await pureModalGetBotFiles(botId, userId);
   
   if (!filesResult.success) {
-    console.error(`[MODAL-MANAGER CLEAN] Failed to get current files from Modal:`, filesResult.error);
-    throw new Error(`Failed to get current bot files from Modal: ${filesResult.error}`);
+    console.error(`[MODAL-MANAGER PURE] Failed to get current files from Pure Modal:`, filesResult.error);
+    throw new Error(`Failed to get current bot files from Pure Modal: ${filesResult.error}`);
   }
 
   const currentCode = filesResult.files['main.py'] || '';
   if (!currentCode) {
-    console.error(`[MODAL-MANAGER CLEAN] No current code found in Modal for bot ${botId}`);
-    throw new Error('No current bot code found in Modal for modification');
+    console.error(`[MODAL-MANAGER PURE] No current code found in Pure Modal for bot ${botId}`);
+    throw new Error('No current bot code found in Pure Modal for modification');
   }
 
-  console.log(`[MODAL-MANAGER CLEAN] Current code retrieved from Modal: ${currentCode.length} characters`);
+  console.log(`[MODAL-MANAGER PURE] Current code retrieved from Pure Modal: ${currentCode.length} characters`);
 
   // Modify code using OpenAI
-  console.log(`[MODAL-MANAGER CLEAN] Generating modified code with OpenAI`);
+  console.log(`[MODAL-MANAGER PURE] Generating modified code with OpenAI`);
   const modifyResult = await generateBotCodeWithOpenAI(
     `Modify this existing bot code:\n\n${currentCode}\n\nModification request: ${modificationPrompt}`,
     bot.token,
@@ -526,26 +531,26 @@ async function cleanModifyBot(botId: string, userId: string, modificationPrompt:
   );
 
   if (!modifyResult.success) {
-    console.error(`[MODAL-MANAGER CLEAN] Code generation failed:`, modifyResult);
+    console.error(`[MODAL-MANAGER PURE] Code generation failed:`, modifyResult);
     throw new Error('Failed to generate modified bot code');
   }
 
-  console.log(`[MODAL-MANAGER CLEAN] Modified code generated: ${modifyResult.code.length} characters`);
+  console.log(`[MODAL-MANAGER PURE] Modified code generated: ${modifyResult.code.length} characters`);
 
-  // Store updated code in Modal Volume ONLY
-  console.log(`[MODAL-MANAGER CLEAN] Storing updated code in Modal Volume ONLY`);
-  const storeResult = await storeInModalOnly(botId, userId, modifyResult.code, bot.token, bot.name);
+  // Store updated code in Pure Modal Volume ONLY
+  console.log(`[MODAL-MANAGER PURE] Storing updated code in Pure Modal Volume ONLY`);
+  const storeResult = await storeInPureModalOnly(botId, userId, modifyResult.code, bot.token, bot.name);
 
   if (!storeResult.success) {
-    console.error(`[MODAL-MANAGER CLEAN] Modal storage failed:`, storeResult.error);
-    throw new Error(`Failed to store modified code in Modal: ${storeResult.error}`);
+    console.error(`[MODAL-MANAGER PURE] Pure Modal storage failed:`, storeResult.error);
+    throw new Error(`Failed to store modified code in Pure Modal: ${storeResult.error}`);
   }
 
-  console.log(`[MODAL-MANAGER CLEAN] Modified code stored successfully in Modal`);
+  console.log(`[MODAL-MANAGER PURE] Modified code stored successfully in Pure Modal`);
 
   // Verify storage
-  console.log(`[MODAL-MANAGER CLEAN] Verifying Modal storage`);
-  const verificationResult = await verifyModalStorage(botId, userId);
+  console.log(`[MODAL-MANAGER PURE] Verifying Pure Modal storage`);
+  const verificationResult = await verifyPureModalStorage(botId, userId);
 
   // Update conversation history
   const updatedHistory = [
@@ -557,7 +562,7 @@ async function cleanModifyBot(botId: string, userId: string, modificationPrompt:
     },
     {
       role: 'assistant',
-      content: `Bot modified successfully with Modal Volume storage! ${modifyResult.explanation}
+      content: `Bot modified successfully with Pure Modal Volume storage! ${modifyResult.explanation}
 
 **Storage Results:**
 ${storeResult.details}
@@ -565,7 +570,7 @@ ${storeResult.details}
 **Verification:**
 ${verificationResult.summary}
 
-Your bot code has been successfully updated and stored in Modal Volume (no Supabase Storage operations).`,
+Your bot code has been successfully updated and stored in Pure Modal Volume (NO Supabase Storage operations).`,
       timestamp: new Date().toISOString(),
       files: {
         'main.py': modifyResult.code
@@ -578,12 +583,12 @@ Your bot code has been successfully updated and stored in Modal Volume (no Supab
     .from('bots')
     .update({
       conversation_history: updatedHistory,
-      runtime_logs: `Modified and stored in Modal Volume only\n${verificationResult.summary}`,
+      runtime_logs: `Modified and stored in Pure Modal Volume only\n${verificationResult.summary}`,
       files_stored: true
     })
     .eq('id', botId);
 
-  console.log(`[MODAL-MANAGER CLEAN] Bot ${botId} modification completed successfully`);
+  console.log(`[MODAL-MANAGER PURE] Bot ${botId} modification completed successfully`);
 
   return {
     ...modifyResult,
@@ -592,13 +597,13 @@ Your bot code has been successfully updated and stored in Modal Volume (no Supab
     files: {
       'main.py': modifyResult.code
     },
-    storage_type: 'modal_volume_only',
-    message: 'Bot modified and stored in Modal Volume (no Supabase Storage)!'
+    storage_type: 'pure_modal_volume_only',
+    message: 'Bot modified and stored in Pure Modal Volume (NO Supabase Storage)!'
   };
 }
 
-async function optimizedStartBot(botId: string, userId: string) {
-  console.log(`[MODAL-MANAGER CLEAN] Starting bot ${botId} with Modal Volume`);
+async function pureModalStartBot(botId: string, userId: string) {
+  console.log(`[MODAL-MANAGER PURE] Starting bot ${botId} with Pure Modal Volume`);
   
   // Step 1: Load bot in the Modal service
   const loadResponse = await fetch(`${MODAL_BASE_URL}/load-bot/${botId}`, {
@@ -631,12 +636,12 @@ async function optimizedStartBot(botId: string, userId: string) {
       },
       body: JSON.stringify({
         user_id: userId,
-        message: `Bot ${botId} started via Modal service`,
+        message: `Bot ${botId} started via Pure Modal service`,
         level: 'INFO'
       })
     });
   } catch (logError) {
-    console.warn(`[MODAL-MANAGER CLEAN] Failed to add startup log:`, logError.message);
+    console.warn(`[MODAL-MANAGER PURE] Failed to add startup log:`, logError.message);
   }
 
   // Step 3: Register webhook with Telegram
@@ -655,7 +660,7 @@ async function optimizedStartBot(botId: string, userId: string) {
 
   if (!webhookResponse.ok) {
     const errorText = await webhookResponse.text();
-    console.error(`[MODAL-MANAGER CLEAN] Webhook registration failed: ${errorText}`);
+    console.error(`[MODAL-MANAGER PURE] Webhook registration failed: ${errorText}`);
   }
 
   const webhookResult = await webhookResponse.json();
@@ -665,7 +670,7 @@ async function optimizedStartBot(botId: string, userId: string) {
     .from('bots')
     .update({
       runtime_status: webhookResult.success ? 'running' : 'stopped',
-      runtime_logs: `Bot loaded from Modal Volume\nWebhook URL: ${webhookUrl}\nStatus: ${webhookResult.success ? 'Running' : 'Failed'}`
+      runtime_logs: `Bot loaded from Pure Modal Volume\nWebhook URL: ${webhookUrl}\nStatus: ${webhookResult.success ? 'Running' : 'Failed'}`
     })
     .eq('id', botId);
 
@@ -674,18 +679,18 @@ async function optimizedStartBot(botId: string, userId: string) {
     status: webhookResult.success ? 'running' : 'stopped',
     service_url: MODAL_BASE_URL,
     webhook_url: webhookUrl,
-    storage_type: 'modal_volume_only',
+    storage_type: 'pure_modal_volume_only',
     logs: [
-      `[MODAL CLEAN] Bot loaded from Modal Volume`,
-      `[MODAL CLEAN] Webhook registered`,
-      `[MODAL CLEAN] Bot ${botId} running`,
-      `[MODAL CLEAN] Logs system initialized`
+      `[MODAL PURE] Bot loaded from Pure Modal Volume`,
+      `[MODAL PURE] Webhook registered`,
+      `[MODAL PURE] Bot ${botId} running`,
+      `[MODAL PURE] Logs system initialized`
     ]
   };
 }
 
-async function optimizedStopBot(botId: string, userId: string) {
-  console.log(`[MODAL-MANAGER CLEAN] Stopping bot ${botId}`);
+async function pureModalStopBot(botId: string, userId: string) {
+  console.log(`[MODAL-MANAGER PURE] Stopping bot ${botId}`);
   
   try {
     // Step 1: Unregister webhook
@@ -715,7 +720,7 @@ async function optimizedStopBot(botId: string, userId: string) {
       .from('bots')
       .update({
         runtime_status: 'stopped',
-        runtime_logs: `Bot stopped and webhook unregistered\nUnloaded from Modal Volume: ${unloadResult.success}`
+        runtime_logs: `Bot stopped and webhook unregistered\nUnloaded from Pure Modal Volume: ${unloadResult.success}`
       })
       .eq('id', botId);
 
@@ -724,11 +729,11 @@ async function optimizedStopBot(botId: string, userId: string) {
       status: 'stopped',
       webhook_unregistered: webhookResult.success,
       bot_unloaded: unloadResult.success,
-      storage_type: 'modal_volume_only'
+      storage_type: 'pure_modal_volume_only'
     };
     
   } catch (error) {
-    console.error(`[MODAL-MANAGER CLEAN] Error stopping bot ${botId}:`, error);
+    console.error(`[MODAL-MANAGER PURE] Error stopping bot ${botId}:`, error);
     return {
       success: false,
       error: error.message
@@ -736,17 +741,17 @@ async function optimizedStopBot(botId: string, userId: string) {
   }
 }
 
-async function optimizedRestartBot(botId: string, userId: string) {
-  console.log(`[MODAL-MANAGER CLEAN] Restarting bot ${botId}`);
+async function pureModalRestartBot(botId: string, userId: string) {
+  console.log(`[MODAL-MANAGER PURE] Restarting bot ${botId}`);
   
-  await optimizedStopBot(botId, userId);
+  await pureModalStopBot(botId, userId);
   await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
-  return await optimizedStartBot(botId, userId);
+  return await pureModalStartBot(botId, userId);
 }
 
-async function optimizedGetBotLogs(botId: string, userId: string) {
+async function pureModalGetBotLogs(botId: string, userId: string) {
   try {
-    console.log(`[MODAL-MANAGER CLEAN] Fetching logs from Modal for bot ${botId}`);
+    console.log(`[MODAL-MANAGER PURE] Fetching logs from Pure Modal for bot ${botId}`);
     
     try {
       const serviceLogsResponse = await fetch(`${MODAL_BASE_URL}/logs/${botId}?user_id=${userId}`, {
@@ -759,7 +764,7 @@ async function optimizedGetBotLogs(botId: string, userId: string) {
 
       if (serviceLogsResponse.ok) {
         const serviceLogsResult = await serviceLogsResponse.json();
-        console.log(`[MODAL-MANAGER CLEAN] Modal logs result:`, {
+        console.log(`[MODAL-MANAGER PURE] Pure Modal logs result:`, {
           success: serviceLogsResult.success,
           logCount: serviceLogsResult.logs?.length || 0
         });
@@ -770,55 +775,55 @@ async function optimizedGetBotLogs(botId: string, userId: string) {
             logs: serviceLogsResult.logs || [],
             log_count: serviceLogsResult.log_count || 0,
             timestamp: serviceLogsResult.timestamp,
-            storage_type: 'modal_volume_only'
+            storage_type: 'pure_modal_volume_only'
           };
         } else {
-          console.warn(`[MODAL-MANAGER CLEAN] Modal service returned error:`, serviceLogsResult.error);
+          console.warn(`[MODAL-MANAGER PURE] Pure Modal service returned error:`, serviceLogsResult.error);
         }
       } else {
-        console.warn(`[MODAL-MANAGER CLEAN] Modal service responded with status:`, serviceLogsResponse.status);
+        console.warn(`[MODAL-MANAGER PURE] Pure Modal service responded with status:`, serviceLogsResponse.status);
       }
     } catch (fetchError) {
-      console.error(`[MODAL-MANAGER CLEAN] Fetch error:`, fetchError.message);
+      console.error(`[MODAL-MANAGER PURE] Fetch error:`, fetchError.message);
     }
 
     // Fallback logs
     const fallbackLogs = [
-      `[MODAL LOG SERVICE] Service temporarily unavailable`,
-      `[MODAL LOG SERVICE] Bot ID: ${botId}`,
-      `[MODAL LOG SERVICE] Timestamp: ${new Date().toISOString()}`,
-      `[MODAL LOG SERVICE] Attempting to reconnect to Modal logs service...`,
-      `[MODAL LOG SERVICE] If this persists, the bot may need to be restarted`
+      `[MODAL PURE LOG SERVICE] Service temporarily unavailable`,
+      `[MODAL PURE LOG SERVICE] Bot ID: ${botId}`,
+      `[MODAL PURE LOG SERVICE] Timestamp: ${new Date().toISOString()}`,
+      `[MODAL PURE LOG SERVICE] Attempting to reconnect to Pure Modal logs service...`,
+      `[MODAL PURE LOG SERVICE] If this persists, the bot may need to be restarted`
     ];
 
     return {
       success: true,
       logs: fallbackLogs,
       log_count: fallbackLogs.length,
-      storage_type: 'modal_volume_only',
+      storage_type: 'pure_modal_volume_only',
       fallback_mode: true,
-      message: 'Using fallback logs - Modal service temporarily unavailable'
+      message: 'Using fallback logs - Pure Modal service temporarily unavailable'
     };
     
   } catch (error) {
-    console.error(`[MODAL-MANAGER CLEAN] Exception in getBotLogs:`, error);
+    console.error(`[MODAL-MANAGER PURE] Exception in getBotLogs:`, error);
     
     return {
       success: false,
       error: error.message,
       logs: [
-        `[MODAL CLEAN ERROR] Failed to get logs: ${error.message}`,
-        `[MODAL CLEAN ERROR] Bot ID: ${botId}`,
-        `[MODAL CLEAN ERROR] Timestamp: ${new Date().toISOString()}`
+        `[MODAL PURE ERROR] Failed to get logs: ${error.message}`,
+        `[MODAL PURE ERROR] Bot ID: ${botId}`,
+        `[MODAL PURE ERROR] Timestamp: ${new Date().toISOString()}`
       ],
-      storage_type: 'modal_volume_only'
+      storage_type: 'pure_modal_volume_only'
     };
   }
 }
 
-async function optimizedGetBotStatus(botId: string, userId: string) {
+async function pureModalGetBotStatus(botId: string, userId: string) {
   try {
-    // Get status from Modal service
+    // Get status from Pure Modal service
     const healthResponse = await fetch(`${MODAL_BASE_URL}/health/${botId}`, {
       method: 'GET',
       headers: {
@@ -831,31 +836,31 @@ async function optimizedGetBotStatus(botId: string, userId: string) {
       return {
         success: true,
         status: healthResult.loaded ? 'running' : 'stopped',
-        deployment_type: 'modal_volume',
-        runtime: 'Modal FastAPI Service',
-        storage_type: 'modal_volume_only',
+        deployment_type: 'pure_modal_volume',
+        runtime: 'Pure Modal FastAPI Service',
+        storage_type: 'pure_modal_volume_only',
         loaded: healthResult.loaded,
         service_status: healthResult.status
       };
     }
 
-    throw new Error(`Modal health check failed: ${healthResponse.status}`);
+    throw new Error(`Pure Modal health check failed: ${healthResponse.status}`);
   } catch (error) {
     return {
       success: false,
       error: error.message,
       status: 'error',
-      storage_type: 'modal_volume_only'
+      storage_type: 'pure_modal_volume_only'
     };
   }
 }
 
-async function optimizedFixBot(botId: string, userId: string) {
+async function pureModalFixBot(botId: string, userId: string) {
   // Get current logs to identify errors
-  const logs = await optimizedGetBotLogs(botId, userId);
+  const logs = await pureModalGetBotLogs(botId, userId);
   const errorLogs = logs.logs?.join('\n') || '';
 
-  // Get current code from Modal Volume
+  // Get current code from Pure Modal Volume
   const codeResponse = await fetch(`${MODAL_BASE_URL}/files/${botId}?user_id=${userId}`, {
     method: 'GET',
     headers: {
@@ -866,12 +871,12 @@ async function optimizedFixBot(botId: string, userId: string) {
   const codeData = await codeResponse.json();
   const currentCode = codeData.files?.['main.py'] || '';
 
-  // Fix via clean modification
-  return await cleanModifyBot(botId, userId, `Fix the following errors in the bot:\n\n${errorLogs}\n\nCurrent code has issues, please fix them using best practices.`);
+  // Fix via pure modal modification
+  return await pureModalModifyBot(botId, userId, `Fix the following errors in the bot:\n\n${errorLogs}\n\nCurrent code has issues, please fix them using best practices.`);
 }
 
-async function comprehensiveHealthCheck(botId: string, userId: string) {
-  console.log(`[MODAL-MANAGER CLEAN] Running health check for bot ${botId}`);
+async function pureModalHealthCheck(botId: string, userId: string) {
+  console.log(`[MODAL-MANAGER PURE] Running health check for bot ${botId}`);
   
   try {
     const response = await fetch(`${MODAL_BASE_URL}/health-check/${botId}?user_id=${userId}`, {
@@ -882,12 +887,12 @@ async function comprehensiveHealthCheck(botId: string, userId: string) {
     });
 
     if (!response.ok) {
-      console.error(`[MODAL-MANAGER CLEAN] Health check request failed: ${response.status}`);
+      console.error(`[MODAL-MANAGER PURE] Health check request failed: ${response.status}`);
       throw new Error(`Health check failed: ${response.status}`);
     }
 
     const result = await response.json();
-    console.log(`[MODAL-MANAGER CLEAN] Health check result:`, {
+    console.log(`[MODAL-MANAGER PURE] Health check result:`, {
       success: result.success,
       volumeStatus: result.health_info?.volume_status,
       totalBots: result.health_info?.total_bots
@@ -897,17 +902,17 @@ async function comprehensiveHealthCheck(botId: string, userId: string) {
       success: true,
       health_info: result.health_info,
       check_type: result.check_type,
-      storage_type: 'modal_volume_only',
+      storage_type: 'pure_modal_volume_only',
       logs: result.logs || []
     };
     
   } catch (error) {
-    console.error(`[MODAL-MANAGER CLEAN] Error in health check:`, error);
+    console.error(`[MODAL-MANAGER PURE] Error in health check:`, error);
     return {
       success: false,
       error: error.message,
       check_type: 'comprehensive_health_check',
-      storage_type: 'modal_volume_only'
+      storage_type: 'pure_modal_volume_only'
     };
   }
 }
