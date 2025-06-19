@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -133,8 +134,8 @@ const Workspace = () => {
   const sendMessage = async (content: string) => {
     if (!content || !bot || isGenerating || !session) return;
 
-    console.log(`[WORKSPACE ENHANCED] === Starting message send for bot ${bot.id} ===`);
-    console.log(`[WORKSPACE ENHANCED] Message content:`, { contentLength: content.length, botId: bot.id, userId: user.id });
+    console.log(`[WORKSPACE HYBRID] === Starting message send for bot ${bot.id} ===`);
+    console.log(`[WORKSPACE HYBRID] Hybrid Architecture: Supabase Storage + Modal Execution`);
 
     const userMessage: Message = {
       role: 'user',
@@ -149,13 +150,7 @@ const Workspace = () => {
     const startTime = Date.now();
 
     try {
-      console.log(`[WORKSPACE ENHANCED] Invoking modal-bot-manager with modify-bot action`);
-      console.log(`[WORKSPACE ENHANCED] Request payload:`, {
-        action: 'modify-bot',
-        botId: bot.id,
-        userId: user.id,
-        modificationPromptLength: content.length
-      });
+      console.log(`[WORKSPACE HYBRID] Invoking modal-bot-manager with modify-bot action`);
 
       const { data, error } = await supabase.functions.invoke('modal-bot-manager', {
         body: {
@@ -167,76 +162,43 @@ const Workspace = () => {
       });
 
       const requestTime = Date.now() - startTime;
-      console.log(`[WORKSPACE ENHANCED] Edge function response received in ${requestTime}ms`);
-      console.log(`[WORKSPACE ENHANCED] Response data:`, {
+      console.log(`[WORKSPACE HYBRID] Hybrid response received in ${requestTime}ms`);
+      console.log(`[WORKSPACE HYBRID] Response:`, {
         success: data?.success,
-        hasError: !!error,
-        errorMessage: error?.message,
-        hasFiles: !!data?.files,
+        architecture: data?.architecture,
         storageType: data?.storage_type
       });
 
       if (error) {
-        console.error('[WORKSPACE ENHANCED] Edge function error:', error);
-        throw new Error(`Edge function error: ${error.message}`);
+        console.error('[WORKSPACE HYBRID] Error:', error);
+        throw new Error(`Hybrid function error: ${error.message}`);
       }
 
       if (data.success) {
-        console.log(`[WORKSPACE ENHANCED] Bot modification successful!`);
-        console.log(`[WORKSPACE ENHANCED] Storage details:`, {
-          storageType: data.storage_type,
-          hasVerification: !!data.verification,
-          hasStorage: !!data.storage,
-          filesCount: data.files ? Object.keys(data.files).length : 0
-        });
-
+        console.log(`[WORKSPACE HYBRID] Bot modification successful with hybrid architecture!`);
+        
         toast({
           title: "Bot Updated! 🎉",
-          description: data.message || "Your bot code has been generated and stored successfully",
+          description: data.message || "Your bot has been updated with hybrid Supabase + Modal architecture",
         });
         setBotError(null);
         
-        // Log file storage results
+        // Log hybrid architecture details
         if (data.files) {
-          console.log(`[WORKSPACE ENHANCED] Files received from modification:`, Object.keys(data.files));
-          Object.entries(data.files).forEach(([filename, content]) => {
-            console.log(`[WORKSPACE ENHANCED] File ${filename}: ${typeof content === 'string' ? content.length : 0} characters`);
-          });
-        }
-
-        if (data.storage) {
-          console.log(`[WORKSPACE ENHANCED] Storage operation results:`, {
-            storedFiles: data.storage.storedFiles,
-            failedFiles: data.storage.failedFiles,
-            details: data.storage.details
-          });
-        }
-
-        if (data.verification) {
-          console.log(`[WORKSPACE ENHANCED] Verification results:`, {
-            success: data.verification.success,
-            summary: data.verification.summary
-          });
+          console.log(`[WORKSPACE HYBRID] Files managed in Supabase:`, Object.keys(data.files));
         }
         
       } else {
-        console.error('[WORKSPACE ENHANCED] Bot modification failed:', data);
+        console.error('[WORKSPACE HYBRID] Bot modification failed:', data);
         
         if (data.errorType) {
-          console.log(`[WORKSPACE ENHANCED] Setting bot error:`, { type: data.errorType, message: data.error });
           setBotError({ type: data.errorType, message: data.error || 'Unknown error' });
         }
         throw new Error(data.error || 'Failed to generate bot code');
       }
     } catch (error) {
       const totalTime = Date.now() - startTime;
-      console.error(`[WORKSPACE ENHANCED] Error after ${totalTime}ms:`, error);
-      console.error(`[WORKSPACE ENHANCED] Error details:`, {
-        message: error.message,
-        stack: error.stack,
-        botId: bot.id,
-        userId: user.id
-      });
+      console.error(`[WORKSPACE HYBRID] Error after ${totalTime}ms:`, error);
 
       toast({
         title: "Error",
@@ -245,7 +207,7 @@ const Workspace = () => {
       });
     } finally {
       const totalTime = Date.now() - startTime;
-      console.log(`[WORKSPACE ENHANCED] === Message send completed in ${totalTime}ms ===`);
+      console.log(`[WORKSPACE HYBRID] === Message send completed in ${totalTime}ms ===`);
       setIsGenerating(false);
     }
   };
@@ -253,79 +215,71 @@ const Workspace = () => {
   const handleFixByAI = async (errorLogs: string) => {
     if (!bot || !session) return;
 
-    console.log(`[WORKSPACE ENHANCED] === Starting AI fix for bot ${bot.id} ===`);
-    console.log(`[WORKSPACE ENHANCED] Error logs length:`, errorLogs.length);
+    console.log(`[WORKSPACE HYBRID] === Starting AI fix with hybrid architecture ===`);
 
     setIsGenerating(true);
     const startTime = Date.now();
     
     try {
-      console.log('[WORKSPACE ENHANCED] Invoking modal-bot-manager with fix-bot action');
+      console.log('[WORKSPACE HYBRID] Invoking modal-bot-manager with fix-bot action');
       
       const { data, error } = await supabase.functions.invoke('modal-bot-manager', {
         body: {
           action: 'fix-bot',
           botId: bot.id,
-          userId: user.id
+          userId: user.id,
+          errorLogs: errorLogs
         }
       });
 
       const requestTime = Date.now() - startTime;
-      console.log(`[WORKSPACE ENHANCED] Fix request completed in ${requestTime}ms`);
-      console.log(`[WORKSPACE ENHANCED] Fix response:`, {
-        success: data?.success,
-        hasError: !!error,
-        hasFixedCode: !!data?.fixedCode
-      });
+      console.log(`[WORKSPACE HYBRID] Fix request completed in ${requestTime}ms`);
 
       if (error) {
-        console.error('[WORKSPACE ENHANCED] Fix request error:', error);
+        console.error('[WORKSPACE HYBRID] Fix request error:', error);
         throw error;
       }
 
       if (data.success) {
-        console.log(`[WORKSPACE ENHANCED] AI fix successful!`);
+        console.log(`[WORKSPACE HYBRID] AI fix successful with hybrid architecture!`);
         
         toast({
           title: "🛠️ Bot Fixed by AI!",
-          description: data.message || "Your bot has been automatically fixed and restarted",
+          description: "Your bot has been automatically fixed using Supabase + Modal hybrid architecture",
         });
         setBotError(null);
         
         // Add an AI message to the conversation
         const aiMessage: Message = {
           role: 'assistant',
-          content: `🛠️ **Bot Fixed Automatically!**
+          content: `🛠️ **Bot Fixed Automatically with Hybrid Architecture!**
 
-I analyzed the error logs and applied fixes to resolve the issues:
+I analyzed the error logs and applied fixes using our Supabase + Modal hybrid system:
+
+**Architecture Used:**
+✅ Files stored and managed in Supabase Storage
+✅ Bot execution optimized in Modal containers
+✅ Real-time logs from Modal execution environment
+
+**Error Fixed:**
 \`\`\`
-${errorLogs}
+${errorLogs.slice(0, 200)}...
 \`\`\`
 
-**Fix Results:**
-${data.storage_verification || 'Code has been corrected and stored'}
-
-**Changes Applied:**
-- Fixed import statements for python-telegram-bot v20+
-- Corrected any syntax errors  
-- Updated deprecated method calls
-- Ensured proper async/await usage
-
-Your bot is now running with the corrected code.`,
+Your bot is now running with the corrected code in Modal's optimized environment.`,
           timestamp: new Date().toISOString(),
-          files: data.files || (data.fixedCode ? { 'main.py': data.fixedCode } : undefined)
+          files: data.files
         };
 
         setMessages(prev => [...prev, aiMessage]);
         
-        console.log(`[WORKSPACE ENHANCED] AI fix message added to conversation`);
       } else {
-        console.error('[WORKSPACE ENHANCED] AI fix failed:', data);
+        console.error('[WORKSPACE HYBRID] AI fix failed:', data);
         throw new Error(data.error || 'Failed to fix bot');
       }
     } catch (error) {
       const totalTime = Date.now() - startTime;
-      console.error(`[WORKSPACE ENHANCED] Fix error after ${totalTime}ms:`, error);
+      console.error(`[WORKSPACE HYBRID] Fix error after ${totalTime}ms:`, error);
       
       toast({
         title: "Fix Failed",
@@ -334,7 +288,7 @@ Your bot is now running with the corrected code.`,
       });
     } finally {
       const totalTime = Date.now() - startTime;
-      console.log(`[WORKSPACE ENHANCED] === AI fix completed in ${totalTime}ms ===`);
+      console.log(`[WORKSPACE HYBRID] === AI fix completed in ${totalTime}ms ===`);
       setIsGenerating(false);
     }
   };
@@ -342,24 +296,24 @@ Your bot is now running with the corrected code.`,
   const handleRetryBot = async () => {
     if (!bot || !user) return;
     
-    console.log(`[WORKSPACE ENHANCED] === Starting bot retry for ${bot.id} ===`);
+    console.log(`[WORKSPACE HYBRID] === Starting bot retry with hybrid architecture ===`);
     
     try {
       const { data, error } = await supabase.functions.invoke('modal-bot-manager', {
         body: {
-          action: 'restart-bot',
+          action: 'start-bot',
           botId: bot.id,
           userId: user.id
         }
       });
 
-      console.log(`[WORKSPACE ENHANCED] Retry response:`, {
+      console.log(`[WORKSPACE HYBRID] Retry response:`, {
         success: data?.success,
-        hasError: !!error
+        architecture: data?.architecture
       });
 
       if (error) {
-        console.error('[WORKSPACE ENHANCED] Retry error:', error);
+        console.error('[WORKSPACE HYBRID] Retry error:', error);
         throw error;
       }
 
@@ -367,9 +321,9 @@ Your bot is now running with the corrected code.`,
         setBotError(null);
         toast({
           title: "Bot Restart Initiated! 🔄",
-          description: "Your bot is being restarted...",
+          description: "Your bot is being restarted with Supabase + Modal hybrid architecture",
         });
-        console.log(`[WORKSPACE ENHANCED] Bot restart successful`);
+        console.log(`[WORKSPACE HYBRID] Bot restart successful`);
       } else {
         if (data.errorType) {
           setBotError({ type: data.errorType, message: data.error || 'Unknown error' });
@@ -377,7 +331,7 @@ Your bot is now running with the corrected code.`,
         throw new Error(data.error || 'Failed to restart bot');
       }
     } catch (error) {
-      console.error('[WORKSPACE ENHANCED] Retry error:', error);
+      console.error('[WORKSPACE HYBRID] Retry error:', error);
       toast({
         title: "Error",
         description: `Failed to restart bot: ${error.message}`,
@@ -407,7 +361,8 @@ Your bot is now running with the corrected code.`,
           <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center animate-pulse">
             <span className="text-white text-2xl">🤖</span>
           </div>
-          <p className="text-gray-600">Loading workspace...</p>
+          <p className="text-gray-600">Loading hybrid workspace...</p>
+          <p className="text-sm text-gray-500 mt-2">Supabase Storage + Modal Execution</p>
         </div>
       </div>
     );

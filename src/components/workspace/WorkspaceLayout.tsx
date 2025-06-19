@@ -52,30 +52,30 @@ const WorkspaceLayout = ({
   const [activeTab, setActiveTab] = useState("files");
   const [currentFiles, setCurrentFiles] = useState(latestFiles);
 
-  console.log(`[WORKSPACE LAYOUT PURE] Rendering workspace for bot ${botId}`);
-  console.log(`[WORKSPACE LAYOUT PURE] NO storage object passed - Pure Modal ONLY`);
-  console.log(`[WORKSPACE LAYOUT PURE] Latest files count: ${Object.keys(latestFiles).length}`);
+  console.log(`[WORKSPACE LAYOUT HYBRID] Rendering hybrid workspace for bot ${botId}`);
+  console.log(`[WORKSPACE LAYOUT HYBRID] Architecture: Supabase Storage + Modal Execution`);
+  console.log(`[WORKSPACE LAYOUT HYBRID] Latest files count: ${Object.keys(latestFiles).length}`);
 
   const handleLogsUpdate = useCallback((logs: string, hasErrorsDetected: boolean) => {
-    console.log(`[WORKSPACE LAYOUT PURE] Logs update: hasErrors=${hasErrorsDetected}, logsLength=${logs.length}`);
+    console.log(`[WORKSPACE LAYOUT HYBRID] Modal logs update: hasErrors=${hasErrorsDetected}, logsLength=${logs.length}`);
     setLogsErrorContent(logs);
     setLogsHasErrors(hasErrorsDetected);
     
     // Auto-switch to logs tab if errors are detected
     if (hasErrorsDetected && activeTab === "files") {
-      console.log(`[WORKSPACE LAYOUT PURE] Auto-switching to logs tab due to errors`);
+      console.log(`[WORKSPACE LAYOUT HYBRID] Auto-switching to logs tab due to Modal errors`);
       setActiveTab("logs");
     }
   }, [activeTab]);
 
   const handleLogsFixByAI = useCallback(async (errorLogs: string) => {
-    console.log(`[WORKSPACE LAYOUT PURE] Fix by AI requested with error logs: ${errorLogs.length} characters`);
+    console.log(`[WORKSPACE LAYOUT HYBRID] Fix by AI requested for Modal error logs: ${errorLogs.length} characters`);
     await onFixByAI(errorLogs);
   }, [onFixByAI]);
 
   const handleFilesUpdate = useCallback((files: Record<string, string>) => {
-    console.log(`[WORKSPACE LAYOUT PURE] Files update: ${Object.keys(files).length} files`);
-    console.log(`[WORKSPACE LAYOUT PURE] Files: ${Object.keys(files).join(', ')}`);
+    console.log(`[WORKSPACE LAYOUT HYBRID] Supabase files update: ${Object.keys(files).length} files`);
+    console.log(`[WORKSPACE LAYOUT HYBRID] Files: ${Object.keys(files).join(', ')}`);
     setCurrentFiles(files);
   }, []);
 
@@ -87,8 +87,8 @@ const WorkspaceLayout = ({
   const displayFiles = Object.keys(currentFiles).length > 0 ? currentFiles : latestFiles;
   const filesCount = Object.keys(displayFiles).length;
 
-  console.log(`[WORKSPACE LAYOUT PURE] Display files count: ${filesCount}`);
-  console.log(`[WORKSPACE LAYOUT PURE] Combined errors: ${combinedHasErrors}`);
+  console.log(`[WORKSPACE LAYOUT HYBRID] Display files count: ${filesCount}`);
+  console.log(`[WORKSPACE LAYOUT HYBRID] Combined errors: ${combinedHasErrors}`);
 
   return (
     <div className="flex h-[calc(100vh-73px)]">
@@ -117,7 +117,7 @@ const WorkspaceLayout = ({
         <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
           <TabsList className="grid w-full grid-cols-2 mx-4 mt-4">
             <TabsTrigger value="files" className="relative">
-              Files
+              Supabase Files
               {filesCount > 0 && (
                 <Badge variant="secondary" className="ml-2 text-xs">
                   {filesCount}
@@ -138,6 +138,9 @@ const WorkspaceLayout = ({
           </TabsList>
           
           <TabsContent value="files" className="flex-1 p-4">
+            <div className="mb-2 text-xs text-gray-500">
+              📁 Files stored in Supabase Storage
+            </div>
             <FilesPanel 
               files={displayFiles} 
               onFileSelect={onFileSelect}
@@ -147,6 +150,9 @@ const WorkspaceLayout = ({
           </TabsContent>
           
           <TabsContent value="logs" className="flex-1 p-4">
+            <div className="mb-2 text-xs text-gray-500">
+              🚀 Live execution logs from Modal
+            </div>
             <BotModalLogs 
               botId={botId} 
               onLogsUpdate={handleLogsUpdate}
