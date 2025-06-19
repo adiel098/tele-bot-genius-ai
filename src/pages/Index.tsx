@@ -11,13 +11,9 @@ import BotCreationProgress from "@/components/BotCreationProgress";
 import ExistingBots from "@/components/ExistingBots";
 
 const Index = () => {
-  const {
-    user
-  } = useAuth();
+  const { user, session } = useAuth();
   const navigate = useNavigate();
-  const {
-    toast
-  } = useToast();
+  const { toast } = useToast();
   const [token, setToken] = useState("");
   const [prompt, setPrompt] = useState("");
   const [isCreating, setIsCreating] = useState(false);
@@ -54,7 +50,7 @@ const Index = () => {
   };
   const handleCreateBot = async () => {
     // Check if user is authenticated first
-    if (!user) {
+    if (!user || !session) {
       toast({
         title: "Authentication Required",
         description: "Please sign in to create a bot",
@@ -75,21 +71,23 @@ const Index = () => {
     setIsCreating(true);
     setCreationStep(0);
     try {
-      // Step 1: Analyzing requirements
-      const {
-        data,
-        error
-      } = await supabase.from('bots').insert({
-        user_id: user.id,
-        name: "AI Bot",
-        token: token, // Use the existing token field
-        status: 'creating',
-        conversation_history: [{
-          role: 'user',
-          content: prompt,
-          timestamp: new Date().toISOString()
-        }]
-      }).select().single();
+      // Step 1: Create bot record in database
+      const { data, error } = await supabase
+        .from('bots')
+        .insert({
+          user_id: user.id,
+          name: "AI Bot",
+          token: token,
+          status: 'creating',
+          conversation_history: [{
+            role: 'user',
+            content: prompt,
+            timestamp: new Date().toISOString()
+          }]
+        })
+        .select()
+        .single();
+
       if (error) {
         console.error('Error creating bot:', error);
         toast({
@@ -99,29 +97,32 @@ const Index = () => {
         });
         return;
       }
+
       setCreationStep(1);
 
-      // Step 2: Generate bot code using the AI engine
-      const response = await fetch('https://efhwjkhqbbucvedgznba.functions.supabase.co/generate-bot-code', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
+      // Step 2: Generate bot code using the AI engine with proper authentication
+      const { data: result, error: generateError } = await supabase.functions.invoke('generate-bot-code', {
+        body: {
           botId: data.id,
-          prompt: prompt,
-          token: token
-        })
+          userId: user.id,
+          name: "AI Bot",
+          token: token,
+          prompt: prompt
+        }
       });
+
       setCreationStep(2);
 
       // Simulate enhanced deployment preparation
       await new Promise(resolve => setTimeout(resolve, 2000));
       setCreationStep(3);
       
-      const result = await response.json();
+      if (generateError) {
+        console.error('Error generating bot code:', generateError);
+        throw new Error(generateError.message || 'Failed to generate bot code');
+      }
       
-      if (result.success) {
+      if (result && result.success) {
         const deploymentType = result.deployment?.type || 'kubernetes';
         const deploymentMessage = deploymentType === 'kubernetes' 
           ? "Your bot is running on Kubernetes with auto-scaling! 🚀"
@@ -133,13 +134,13 @@ const Index = () => {
         });
         navigate(`/workspace/${data.id}`);
       } else {
-        throw new Error(result.error || 'Failed to generate bot code');
+        throw new Error(result?.error || 'Failed to generate bot code');
       }
     } catch (error) {
       console.error('Error:', error);
       toast({
         title: "Error",
-        description: "An unexpected error occurred. Please try again.",
+        description: error.message || "An unexpected error occurred. Please try again.",
         variant: "destructive"
       });
     } finally {
