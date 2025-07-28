@@ -183,6 +183,58 @@ const Workspace = () => {
     };
   }, [user, botId, navigate, toast]);
 
+  // Auto-deploy bot when files are ready and bot hasn't been deployed yet
+  useEffect(() => {
+    const autoDeployBot = async () => {
+      if (!bot || !user || !session) return;
+      
+      // Check if bot has files but hasn't been deployed (status is still 'pending' or similar)
+      const hasFiles = bot.files_stored || (messages.length > 0 && getLastMessageWithFiles(messages));
+      const needsDeployment = bot.status === 'pending' || bot.runtime_status === 'pending' || 
+                             (hasFiles && !bot.container_id && bot.runtime_status !== 'running' && bot.runtime_status !== 'error');
+      
+      if (hasFiles && needsDeployment && !isGenerating) {
+        console.log('[WORKSPACE] Auto-deploying bot with files...');
+        
+        setIsGenerating(true);
+        
+        try {
+          const { data, error } = await supabase.functions.invoke('bot-manager', {
+            body: {
+              action: 'start-bot',
+              botId: bot.id,
+              userId: user.id
+            }
+          });
+
+          if (error) {
+            console.error('[WORKSPACE] Auto-deploy error:', error);
+            return;
+          }
+
+          if (data.success) {
+            toast({
+              title: "🚀 Bot Auto-Deployed!",
+              description: "Your bot is now running automatically",
+            });
+            console.log('[WORKSPACE] Bot auto-deployment successful');
+          }
+        } catch (error) {
+          console.error('[WORKSPACE] Auto-deploy failed:', error);
+        } finally {
+          setIsGenerating(false);
+        }
+      }
+    };
+
+    // Small delay to ensure all data is loaded
+    const timer = setTimeout(() => {
+      autoDeployBot();
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [bot, user, session, messages, isGenerating, toast]);
+
   const sendMessage = async (content: string) => {
     if (!content || !bot || isGenerating || !session) return;
 
