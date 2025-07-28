@@ -107,10 +107,13 @@ async function startBotInFlyio(botId: string, userId: string, token: string, org
     await createFlyApp(appName, org, token);
     logs.push(`[BOT-MANAGER] App created successfully`);
     
-    // Deploy the bot
-    logs.push(`[BOT-MANAGER] Starting deployment process...`);
-    const deployResult = await deployBotToFly(appName, {
-      'main.py': mainPy,
+    // Deploy the bot using volume-based storage
+    logs.push(`[BOT-MANAGER] Creating volume and deploying bot...`);
+    // Convert webhook code to polling mode
+    const convertedMainPy = convertWebhookToPolling(mainPy);
+    
+    const deployResult = await deployBotToFlyWithVolume(appName, {
+      'main.py': convertedMainPy,
       'requirements.txt': requirementsTxt,
       '.env': envFile
     }, token);
@@ -848,6 +851,311 @@ async function createFlyApp(appName: string, org: string, token: string): Promis
   }
 
   console.log(`[BOT-MANAGER] App created successfully: ${appName} in org ${targetOrg.slug}`);
+}
+
+async function deployBotToFlyWithVolume(appName: string, files: Record<string, string>, token: string): Promise<any> {
+  console.log(`[BOT-MANAGER] Starting volume-based deployment for ${appName}`);
+  
+  try {
+    // First, cleanup any existing machines and volumes for this app
+    console.log(`[BOT-MANAGER] Cleaning up existing resources...`);
+    await cleanupExistingMachines(appName, token);
+    await cleanupExistingVolumes(appName, token);
+    
+    // Create a volume for bot files
+    const volumeName = `${appName}-files`;
+    console.log(`[BOT-MANAGER] Creating volume: ${volumeName}`);
+    
+    const volumeConfig = {
+      name: volumeName,
+      size_gb: 1,
+      region: 'iad'
+    };
+    
+    const volumeResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/volumes`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(volumeConfig)
+    });
+    
+    if (!volumeResponse.ok) {
+      const errorText = await volumeResponse.text();
+      console.error(`[BOT-MANAGER] Volume creation failed: ${errorText}`);
+      throw new Error(`Failed to create volume: ${errorText}`);
+    }
+    
+    const volume = await volumeResponse.json();
+    console.log(`[BOT-MANAGER] Volume created: ${volume.id}`);
+    
+    // Create a temporary machine to upload files to the volume
+    console.log(`[BOT-MANAGER] Creating file upload machine...`);
+    
+    // Prepare files with proper escaping for shell
+    const escapedFiles = Object.entries(files).map(([filename, content]) => {
+      // Escape content for safe shell handling
+      const escapedContent = content
+        .replace(/\\/g, '\\\\')
+        .replace(/"/g, '\\"')
+        .replace(/`/g, '\\`')
+        .replace(/\$/g, '\\$');
+      
+      return { filename, content: escapedContent };
+    });
+    
+    // Create script to write files to volume
+    const fileUploadScript = `#!/bin/bash
+set -e
+echo "=== Volume File Upload Started ==="
+
+# Create bot directory in volume
+mkdir -p /data/bot
+cd /data/bot
+
+echo "=== Writing Bot Files to Volume ==="
+${escapedFiles.map(({ filename, content }) => `
+echo "Writing ${filename}..."
+cat > "${filename}" << 'BOTFILE_EOF'
+${content}
+BOTFILE_EOF
+echo "${filename} written successfully"
+`).join('')}
+
+echo "=== Files written to volume successfully ==="
+ls -la /data/bot/
+echo "=== File contents verification ==="
+${escapedFiles.map(({ filename }) => `
+echo "--- ${filename} ---"
+head -10 "/data/bot/${filename}"
+echo "--- End ${filename} ---"
+`).join('')}
+
+echo "=== Volume setup completed ==="
+`;
+
+    const uploadMachineConfig = {
+      config: {
+        image: 'alpine:latest',
+        init: {
+          cmd: ['/bin/sh', '-c', fileUploadScript]
+        },
+        mounts: [
+          {
+            volume: volume.id,
+            path: '/data'
+          }
+        ],
+        guest: {
+          cpu_kind: 'shared',
+          cpus: 1,
+          memory_mb: 256
+        },
+        restart: {
+          policy: 'no'
+        },
+        auto_destroy: true  // Auto-destroy after completion
+      },
+      region: 'iad'
+    };
+
+    const uploadMachineResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(uploadMachineConfig)
+    });
+
+    if (!uploadMachineResponse.ok) {
+      const errorText = await uploadMachineResponse.text();
+      console.error(`[BOT-MANAGER] Upload machine creation failed: ${errorText}`);
+      throw new Error(`Failed to create upload machine: ${errorText}`);
+    }
+
+    const uploadMachine = await uploadMachineResponse.json();
+    console.log(`[BOT-MANAGER] Upload machine created: ${uploadMachine.id}`);
+    
+    // Wait for upload to complete
+    console.log(`[BOT-MANAGER] Waiting for file upload to complete...`);
+    await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds for upload
+    
+    // Create the main bot machine that uses the volume
+    console.log(`[BOT-MANAGER] Creating main bot machine with volume...`);
+    
+    const botToken = extractTokenFromEnv(files['.env']) || '';
+    
+    const botRunScript = `#!/bin/bash
+set -e
+echo "=== Bot Startup from Volume ==="
+cd /data/bot
+
+echo "=== Volume Contents ==="
+ls -la /data/bot/
+
+echo "=== Installing Python Dependencies ==="
+pip install --no-cache-dir python-telegram-bot python-dotenv requests aiohttp || {
+    echo "ERROR: Failed to install base dependencies"
+    exit 1
+}
+
+echo "=== Installing Additional Requirements ==="
+if [ -s requirements.txt ]; then
+    pip install --no-cache-dir -r requirements.txt || {
+        echo "ERROR: Failed to install requirements from requirements.txt"
+        exit 1
+    }
+else
+    echo "No additional requirements found"
+fi
+
+echo "=== Validating Python Syntax ==="
+python -m py_compile main.py || {
+    echo "SYNTAX_ERROR: Python syntax validation failed in main.py"
+    python -c "
+import sys
+try:
+    with open('main.py', 'r') as f:
+        compile(f.read(), 'main.py', 'exec')
+    print('Syntax validation passed')
+except SyntaxError as e:
+    print(f'SYNTAX_ERROR: {e.msg} at line {e.lineno}')
+    sys.exit(1)
+except Exception as e:
+    print(f'SYNTAX_ERROR: {str(e)}')
+    sys.exit(1)
+"
+    exit 1
+}
+
+echo "=== Starting Bot from Volume ==="
+python main.py || {
+    echo "RUNTIME_ERROR: Bot failed to start"
+    exit 1
+}`;
+
+    const botMachineConfig = {
+      config: {
+        image: 'python:3.11-slim',
+        init: {
+          cmd: ['/bin/bash', '-c', botRunScript]
+        },
+        env: {
+          PYTHONUNBUFFERED: '1',
+          BOT_TOKEN: botToken
+        },
+        mounts: [
+          {
+            volume: volume.id,
+            path: '/data'
+          }
+        ],
+        guest: {
+          cpu_kind: 'shared',
+          cpus: 1,
+          memory_mb: 512
+        },
+        restart: {
+          policy: 'no'  // Don't auto-restart on failure
+        },
+        auto_destroy: false
+      },
+      region: 'iad'
+    };
+
+    // Create bot machine
+    const botMachineResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(botMachineConfig)
+    });
+
+    if (!botMachineResponse.ok) {
+      const errorText = await botMachineResponse.text();
+      console.error(`[BOT-MANAGER] Bot machine creation failed: ${errorText}`);
+      throw new Error(`Failed to create bot machine: ${errorText}`);
+    }
+
+    const botMachine = await botMachineResponse.json();
+    console.log(`[BOT-MANAGER] Bot machine created: ${botMachine.id}`);
+
+    // Wait for machine to be ready
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    console.log(`[BOT-MANAGER] Volume-based deployment completed for machine: ${botMachine.id}`);
+    
+    return {
+      id: botMachine.id,
+      appName,
+      volumeId: volume.id,
+      status: 'deployed',
+      machine: botMachine
+    };
+    
+  } catch (error) {
+    console.error(`[BOT-MANAGER] Volume-based deployment failed:`, error);
+    throw error;
+  }
+}
+
+async function cleanupExistingVolumes(appName: string, token: string): Promise<void> {
+  console.log(`[BOT-MANAGER] Cleaning up existing volumes for app ${appName}`);
+  
+  try {
+    // Get all volumes for this app
+    const volumesResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/volumes`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!volumesResponse.ok) {
+      if (volumesResponse.status === 404) {
+        console.log(`[BOT-MANAGER] App ${appName} not found, no volume cleanup needed`);
+        return;
+      }
+      console.log(`[BOT-MANAGER] Failed to list volumes: ${volumesResponse.status}`);
+      return;
+    }
+
+    const volumes = await volumesResponse.json();
+    console.log(`[BOT-MANAGER] Found ${volumes.length} existing volumes to cleanup`);
+
+    // Delete all existing volumes
+    for (const volume of volumes) {
+      console.log(`[BOT-MANAGER] Deleting volume ${volume.id}`);
+      
+      try {
+        const deleteResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/volumes/${volume.id}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (deleteResponse.ok) {
+          console.log(`[BOT-MANAGER] Deleted volume ${volume.id}`);
+        } else {
+          console.log(`[BOT-MANAGER] Failed to delete volume ${volume.id}: ${deleteResponse.status}`);
+        }
+      } catch (error) {
+        console.log(`[BOT-MANAGER] Failed to delete volume ${volume.id}: ${error.message}`);
+      }
+    }
+
+    console.log(`[BOT-MANAGER] Volume cleanup completed for app ${appName}`);
+  } catch (error) {
+    console.error(`[BOT-MANAGER] Volume cleanup failed:`, error);
+    // Don't throw the error, just log it
+  }
 }
 
 async function deployBotToFly(appName: string, files: Record<string, string>, token: string): Promise<any> {
