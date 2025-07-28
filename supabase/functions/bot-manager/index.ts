@@ -21,7 +21,7 @@ serve(async (req) => {
   }
 
   try {
-    const { action, botId, userId, prompt, token, name, modificationPrompt, instruction } = await req.json();
+    const { action, botId, userId, prompt, token, name, modificationPrompt, instruction, machineId } = await req.json();
     
     console.log(`[BOT-MANAGER] === Starting ${action} for bot ${botId} ===`);
     console.log(`[BOT-MANAGER] Fly.io-Only Architecture: Supabase Storage + Fly.io Execution`);
@@ -53,7 +53,7 @@ serve(async (req) => {
       case 'health-check':
         return await performHealthCheck(flyioToken);
       case 'debug-volume':
-        return await debugVolumeContents(botId, requestData.machineId, flyioToken, flyioOrg);
+        return await debugVolumeContents(botId, machineId, flyioToken, flyioOrg);
       default:
         throw new Error(`Unknown action: ${action}`);
     }
