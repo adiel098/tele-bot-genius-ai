@@ -118,8 +118,41 @@ async function startBotInFlyio(botId: string, userId: string, token: string, org
     logs.push(`[BOT-MANAGER] Deployment completed successfully`);
     logs.push(`[BOT-MANAGER] Machine ID: ${deployResult.id}`);
     
-    // Wait for machine to be fully started
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // Wait for machine to be fully started and capture initial logs
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    
+    // Get initial logs and store them in database
+    try {
+      const initialLogsResponse = await getLogsFromFlyio(botId, token, org);
+      const initialLogsData = await initialLogsResponse.json();
+      
+      if (initialLogsData.success && initialLogsData.logs) {
+        const combinedLogs = [
+          `[DEPLOYMENT] Bot deployment completed at ${new Date().toISOString()}`,
+          `[DEPLOYMENT] Machine ID: ${deployResult.id}`,
+          `[DEPLOYMENT] App Name: ${appName}`,
+          ...initialLogsData.logs
+        ].join('\n');
+        
+        // Store initial logs in database
+        const { error: logUpdateError } = await supabase
+          .from('bots')
+          .update({ 
+            runtime_logs: combinedLogs,
+            runtime_status: initialLogsData.hasErrors ? 'error' : 'running',
+            container_id: deployResult.id
+          })
+          .eq('id', botId);
+        
+        if (logUpdateError) {
+          console.error(`[BOT-MANAGER] Failed to store initial logs:`, logUpdateError);
+        } else {
+          console.log(`[BOT-MANAGER] Initial logs stored successfully for bot ${botId}`);
+        }
+      }
+    } catch (logError) {
+      console.error(`[BOT-MANAGER] Failed to capture initial logs:`, logError);
+    }
     
     // Check machine status
     const statusResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${deployResult.id}`, {
@@ -249,8 +282,8 @@ async function getLogsFromFlyio(botId: string, token: string, org: string): Prom
       for (const machine of machines) {
         logs.push(`[BOT-MANAGER] Machine ${machine.id} state: ${machine.state || 'unknown'}`);
         
-        // Get machine logs
-        const logResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${machine.id}/logs`, {
+        // Get machine logs with more comprehensive history
+        const logResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${machine.id}/logs?format=json&since=1h`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
