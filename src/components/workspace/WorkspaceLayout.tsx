@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Shield, Activity, RefreshCw } from "lucide-react";
 import BotModalLogs from "./BotModalLogs";
+import BotDeploymentStatus from "./BotDeploymentStatus";
 import FilesPanel from "./FilesPanel";
 import ChatInterface from "./ChatInterface";
 import FileViewer from "./FileViewer";
@@ -58,6 +59,9 @@ const WorkspaceLayout = ({
   const [currentFiles, setCurrentFiles] = useState(latestFiles);
   const [healthStatus, setHealthStatus] = useState<'unknown' | 'healthy' | 'degraded' | 'error'>('unknown');
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+  const [deploymentLogs, setDeploymentLogs] = useState("");
+  const [isDeploying, setIsDeploying] = useState(false);
+  const [deploymentStatus, setDeploymentStatus] = useState<'deploying' | 'success' | 'error'>('deploying');
   
   const { user } = useAuth();
   const { toast } = useToast();
@@ -70,6 +74,25 @@ const WorkspaceLayout = ({
     console.log(`[WORKSPACE DEBUG] Enhanced Fly.io logs update: hasErrors=${hasErrorsDetected}, logsLength=${logs.length}`);
     setLogsErrorContent(logs);
     setLogsHasErrors(hasErrorsDetected);
+    
+    // Check if this is deployment-related logs
+    if (logs.includes('Creating machine') || 
+        logs.includes('Installing Python dependencies') || 
+        logs.includes('Creating bot files') || 
+        logs.includes('Starting bot')) {
+      setIsDeploying(true);
+      setDeploymentLogs(logs);
+    }
+    
+    // Check if deployment completed successfully
+    if (logs.includes('Successfully installed') && logs.includes('Starting bot')) {
+      setIsDeploying(false);
+    }
+    
+    // Check if deployment failed
+    if (hasErrorsDetected && (logs.includes('ERROR') || logs.includes('Traceback'))) {
+      setIsDeploying(false);
+    }
     
     if (hasErrorsDetected && activeTab === "files") {
       console.log(`[WORKSPACE DEBUG] Auto-switching to logs tab due to Fly.io errors`);
@@ -245,6 +268,11 @@ const WorkspaceLayout = ({
                   {filesCount}
                 </Badge>
               )}
+              {isDeploying && (
+                <Badge variant="default" className="ml-2 text-xs bg-blue-500">
+                  Deploying
+                </Badge>
+              )}
             </TabsTrigger>
             <TabsTrigger value="logs" className={`relative ${logsHasErrors ? "text-red-600" : ""}`}>
               Fly.io Logs
@@ -259,10 +287,20 @@ const WorkspaceLayout = ({
             </TabsTrigger>
           </TabsList>
           
-          <TabsContent value="files" className="flex-1 p-4">
-            <div className="mb-2 text-xs text-gray-500">
+          <TabsContent value="files" className="flex-1 p-4 space-y-4">
+            <div className="text-xs text-gray-500">
               📁 Enhanced files management with Supabase Storage v2
             </div>
+            
+            {/* Deployment Status Component */}
+            {(isDeploying || deploymentStatus !== 'deploying') && (
+              <BotDeploymentStatus
+                logs={deploymentLogs}
+                isDeploying={isDeploying}
+                onStatusChange={(status) => setDeploymentStatus(status)}
+              />
+            )}
+            
             <FilesPanel 
               files={displayFiles} 
               onFileSelect={onFileSelect}
