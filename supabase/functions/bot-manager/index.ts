@@ -666,9 +666,10 @@ async function deployBotToFly(appName: string, files: Record<string, string>, to
 set -e
 
 echo "Installing Python dependencies..."
-pip install python-telegram-bot python-dotenv requests
+pip install python-telegram-bot python-dotenv requests aiohttp
 
-echo "Creating bot files..."
+echo "Creating bot directory and files..."
+mkdir -p /app
 cd /app
 
 # Create main.py
