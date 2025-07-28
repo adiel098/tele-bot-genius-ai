@@ -72,8 +72,8 @@ const FilesPanel = ({ files, onFileSelect, botId, onFilesUpdate }: FilesPanelPro
         const successfulFiles = data.retrieval_results?.filter((r: any) => r.success) || [];
         
         toast({
-          title: "Files Updated! 📁✨",
-          description: `Loaded ${successfulFiles.length} files from enhanced Supabase Storage v2`,
+          title: "Files Loaded! 📁✨",
+          description: `Auto-loaded ${successfulFiles.length} files from enhanced Supabase Storage v2`,
         });
       } else {
         console.error('[FILES PANEL ENHANCED] Failed to fetch files:', data.error);
@@ -96,6 +96,12 @@ const FilesPanel = ({ files, onFileSelect, botId, onFilesUpdate }: FilesPanelPro
       setIsLoading(false);
     }
   };
+
+  // Auto-fetch files when component mounts or botId changes
+  useEffect(() => {
+    console.log(`[FILES DEBUG] Auto-fetching files for bot ${botId}`);
+    fetchFilesFromEnhancedSupabase();
+  }, [botId, user?.id]); // Dependencies: botId and user.id
 
   const downloadAllFiles = () => {
     console.log(`[FILES PANEL ENHANCED] Downloading all files as enhanced package`);
@@ -214,24 +220,36 @@ const FilesPanel = ({ files, onFileSelect, botId, onFilesUpdate }: FilesPanelPro
           {Object.keys(files).length === 0 ? (
             <div className="text-center text-gray-500 py-8">
               <FileText className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-              <p className="mb-2">No files available</p>
-              <p className="text-sm">Files are managed with Enhanced Supabase Storage v2</p>
-              <div className="mt-4 space-y-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={fetchFilesFromEnhancedSupabase}
-                  className="w-full"
-                  disabled={isLoading}
-                >
-                  <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-                  Fetch from Enhanced Storage
-                </Button>
-                <div className="text-xs text-gray-400 flex items-center justify-center space-x-2">
-                  <Shield className="w-3 h-3" />
-                  <span>Secured with RLS policies</span>
-                </div>
-              </div>
+              {isLoading ? (
+                <>
+                  <p className="mb-2">Loading files...</p>
+                  <p className="text-sm">Auto-fetching from Enhanced Supabase Storage v2</p>
+                  <div className="mt-4">
+                    <RefreshCw className="w-6 h-6 mx-auto animate-spin text-blue-500" />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="mb-2">No files found</p>
+                  <p className="text-sm">Files are auto-loaded from Enhanced Supabase Storage v2</p>
+                  <div className="mt-4 space-y-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={fetchFilesFromEnhancedSupabase}
+                      className="w-full"
+                      disabled={isLoading}
+                    >
+                      <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                      Refresh Storage
+                    </Button>
+                    <div className="text-xs text-gray-400 flex items-center justify-center space-x-2">
+                      <Shield className="w-3 h-3" />
+                      <span>Secured with RLS policies</span>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           ) : (
             Object.entries(files).map(([filename, content]) => (
