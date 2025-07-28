@@ -857,14 +857,31 @@ async function deployBotToFlyWithVolume(appName: string, files: Record<string, s
   console.log(`[BOT-MANAGER] Starting SIMPLIFIED volume-based deployment for ${appName}`);
   
   try {
-    // First, cleanup any existing machines for this app (but keep volumes for persistence)
-    console.log(`[BOT-MANAGER] Cleaning up existing machines only...`);
+    // Only cleanup machines, keep volumes for persistence across deployments
+    console.log(`[BOT-MANAGER] Cleaning up existing machines only (preserving volumes)...`);
     await cleanupExistingMachines(appName, token);
-    // Note: NOT cleaning up volumes - they should persist for redeployments
     
-    // Create a volume for bot files (use underscores and limit to 30 chars)
+    // Try to reuse existing volume first
     const volumeName = `bot_${appName.replace(/telegram-bot-/, '').replace(/-/g, '_')}_vol`.substring(0, 30);
-    console.log(`[BOT-MANAGER] Creating volume: ${volumeName}`);
+    let volume;
+    
+    // Check if volume already exists
+    const listResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/volumes`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (listResponse.ok) {
+      const volumes = await listResponse.json();
+      volume = volumes.find((v: any) => v.name === volumeName);
+      
+      if (volume) {
+        console.log(`[BOT-MANAGER] Reusing existing volume: ${volume.id}`);
+      }
+    }
+    
+    // Create new volume if none exists
+    if (!volume) {
+      console.log(`[BOT-MANAGER] Creating new volume: ${volumeName}`);
     
     const volumeConfig = {
       name: volumeName,
@@ -881,14 +898,15 @@ async function deployBotToFlyWithVolume(appName: string, files: Record<string, s
       body: JSON.stringify(volumeConfig)
     });
     
-    if (!volumeResponse.ok) {
-      const errorText = await volumeResponse.text();
-      console.error(`[BOT-MANAGER] Volume creation failed: ${errorText}`);
-      throw new Error(`Failed to create volume: ${errorText}`);
+      if (!volumeResponse.ok) {
+        const errorText = await volumeResponse.text();
+        console.error(`[BOT-MANAGER] Volume creation failed: ${errorText}`);
+        throw new Error(`Failed to create volume: ${errorText}`);
+      }
+      
+      volume = await volumeResponse.json();
+      console.log(`[BOT-MANAGER] Volume created: ${volume.id}`);
     }
-    
-    const volume = await volumeResponse.json();
-    console.log(`[BOT-MANAGER] Volume created: ${volume.id}`);
     
     // Create a temporary machine to upload files to the volume
     console.log(`[BOT-MANAGER] Creating file upload machine...`);

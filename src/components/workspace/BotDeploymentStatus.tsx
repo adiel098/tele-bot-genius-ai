@@ -58,20 +58,20 @@ const BotDeploymentStatus = ({ logs, isDeploying, onStatusChange }: BotDeploymen
     let hasError = false;
 
     // Parse logs to determine step status
-    if (logs.includes('Machine created:') || logs.includes('Creating machine')) {
-      newSteps[0].status = logs.includes('Machine created:') ? 'completed' : 'in-progress';
+    if (logs.includes('Bot machine created:') || logs.includes('Creating main bot machine')) {
+      newSteps[0].status = logs.includes('Bot machine created:') ? 'completed' : 'in-progress';
     }
 
-    if (logs.includes('Installing Python dependencies') || logs.includes('Successfully installed')) {
+    if (logs.includes('Installing Python Dependencies') || logs.includes('Successfully installed')) {
       newSteps[1].status = logs.includes('Successfully installed') ? 'completed' : 'in-progress';
     }
 
-    if (logs.includes('Creating bot files') || logs.includes('Files created successfully')) {
-      newSteps[2].status = logs.includes('Files created successfully') ? 'completed' : 'in-progress';
+    if (logs.includes('Volume upload completed successfully') || logs.includes('Writing files to volume')) {
+      newSteps[2].status = logs.includes('Volume upload completed successfully') ? 'completed' : 'in-progress';
     }
 
-    if (logs.includes('Starting bot') || logs.includes('INFO:')) {
-      newSteps[3].status = logs.includes('INFO:') ? 'completed' : 'in-progress';
+    if (logs.includes('Starting Bot from Volume') || logs.includes('polling for updates') || logs.includes('Application started')) {
+      newSteps[3].status = (logs.includes('polling for updates') || logs.includes('Application started')) ? 'completed' : 'in-progress';
     }
 
     // Check for errors
