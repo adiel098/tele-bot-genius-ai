@@ -52,6 +52,8 @@ serve(async (req) => {
         return await deleteBotFromFlyio(botId, flyioToken, flyioOrg);
       case 'health-check':
         return await performHealthCheck(flyioToken);
+      case 'debug-volume':
+        return await debugVolumeContents(botId, requestData.machineId, flyioToken, flyioOrg);
       default:
         throw new Error(`Unknown action: ${action}`);
     }
@@ -720,6 +722,90 @@ async function getFilesFromSupabaseStorage(botId: string, userId: string): Promi
         logs: [`[BOT-MANAGER] File retrieval failed: ${error.message}`]
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+}
+
+async function debugVolumeContents(botId: string, machineId: string, token: string, org: string): Promise<Response> {
+  console.log(`[BOT-MANAGER] Debugging volume contents for bot ${botId}, machine ${machineId}`);
+  
+  try {
+    const appName = `telegram-bot-${botId.substring(0, 8)}`;
+    
+    // Execute a command inside the machine to list volume contents
+    const debugScript = `#!/bin/bash
+echo "=== VOLUME DEBUG REPORT ==="
+echo "Current directory: $(pwd)"
+echo "Volume mount status:"
+df -h | grep /data || echo "No /data mount found"
+echo ""
+echo "Contents of /data:"
+ls -la /data/ || echo "Cannot access /data"
+echo ""
+echo "Contents of /data/bot:"
+ls -la /data/bot/ || echo "Cannot access /data/bot"
+echo ""
+echo "File details:"
+if [ -d "/data/bot" ]; then
+  cd /data/bot
+  for file in main.py .env requirements.txt; do
+    if [ -f "$file" ]; then
+      echo "$file: $(wc -c < "$file") bytes"
+      echo "First 3 lines of $file:"
+      head -n 3 "$file"
+      echo "---"
+    else
+      echo "$file: NOT FOUND"
+    fi
+  done
+else
+  echo "/data/bot directory does not exist"
+fi
+echo "=== END DEBUG REPORT ==="`;
+
+    const execResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${machineId}/exec`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        cmd: ['/bin/bash', '-c', debugScript],
+        timeout: 30
+      })
+    });
+
+    if (!execResponse.ok) {
+      const errorText = await execResponse.text();
+      throw new Error(`Failed to execute debug command: ${errorText}`);
+    }
+
+    const execResult = await execResponse.json();
+    console.log(`[BOT-MANAGER] Volume debug completed for ${botId}`);
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        botId,
+        machineId,
+        debug_output: execResult.stdout || '',
+        debug_error: execResult.stderr || '',
+        exit_code: execResult.exit_code
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+
+  } catch (error) {
+    console.error(`[BOT-MANAGER] Volume debug failed:`, error);
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: error.message
+      }),
+      { 
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      }
     );
   }
 }

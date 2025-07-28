@@ -57,31 +57,78 @@ async function deployBotToFlyWithVolume(appName: string, files: Record<string, s
 set -e
 echo "=== Single Machine: File Setup + Bot Execution ==="
 
+# DEBUG: Check initial state
+echo "🔍 DEBUG: Initial filesystem state"
+echo "Current directory: $(pwd)"
+echo "Volume mount: /data exists? $(test -d /data && echo 'YES' || echo 'NO')"
+echo "Volume writable? $(test -w /data && echo 'YES' || echo 'NO')"
+df -h | grep /data || echo "No /data mount found"
+
 # Create bot directory in volume
 mkdir -p /data/bot
 cd /data/bot
+
+echo "🔍 DEBUG: After creating /data/bot"
+echo "Current directory: $(pwd)"
+echo "Directory permissions: $(ls -ld /data/bot)"
 
 # File setup: Only create files if they don't exist (first run)
 if [ ! -f "main.py" ] || [ ! -f ".env" ] || [ ! -f "requirements.txt" ]; then
     echo "=== First run: Creating bot files in persistent volume ==="
     
+    echo "🔍 DEBUG: About to decode and write files"
+    echo "main.py base64 length: ${#mainPyBase64}"
+    echo ".env base64 length: ${#envBase64}"
+    echo "requirements.txt base64 length: ${#requirementsBase64}"
+    
     python3 -c "
 import base64
+import os
+
+print(f'🔍 DEBUG: Python working directory: {os.getcwd()}')
+print(f'🔍 DEBUG: /data/bot exists: {os.path.exists(\"/data/bot\")}')
+print(f'🔍 DEBUG: /data/bot writable: {os.access(\"/data/bot\", os.W_OK)}')
 
 # Create main.py
-with open('main.py', 'w', encoding='utf-8') as f:
-    f.write(base64.b64decode('${mainPyBase64}').decode('utf-8'))
-print('✅ main.py created and stored in volume')
+try:
+    with open('main.py', 'w', encoding='utf-8') as f:
+        decoded = base64.b64decode('${mainPyBase64}').decode('utf-8')
+        f.write(decoded)
+        f.flush()
+        os.fsync(f.fileno())
+    print(f'✅ main.py created ({os.path.getsize(\"main.py\")} bytes)')
+except Exception as e:
+    print(f'❌ Failed to create main.py: {e}')
 
 # Create .env
-with open('.env', 'w', encoding='utf-8') as f:
-    f.write(base64.b64decode('${envBase64}').decode('utf-8'))
-print('✅ .env created and stored in volume')
+try:
+    with open('.env', 'w', encoding='utf-8') as f:
+        decoded = base64.b64decode('${envBase64}').decode('utf-8')
+        f.write(decoded)
+        f.flush()
+        os.fsync(f.fileno())
+    print(f'✅ .env created ({os.path.getsize(\".env\")} bytes)')
+except Exception as e:
+    print(f'❌ Failed to create .env: {e}')
 
 # Create requirements.txt
-with open('requirements.txt', 'w', encoding='utf-8') as f:
-    f.write(base64.b64decode('${requirementsBase64}').decode('utf-8'))
-print('✅ requirements.txt created and stored in volume')
+try:
+    with open('requirements.txt', 'w', encoding='utf-8') as f:
+        decoded = base64.b64decode('${requirementsBase64}').decode('utf-8')
+        f.write(decoded)
+        f.flush()
+        os.fsync(f.fileno())
+    print(f'✅ requirements.txt created ({os.path.getsize(\"requirements.txt\")} bytes)')
+except Exception as e:
+    print(f'❌ Failed to create requirements.txt: {e}')
+
+# Final verification
+print(f'🔍 DEBUG: Files after creation:')
+for file in ['main.py', '.env', 'requirements.txt']:
+    if os.path.exists(file):
+        print(f'  {file}: {os.path.getsize(file)} bytes')
+    else:
+        print(f'  {file}: NOT FOUND')
 "
     echo "📁 Files created in persistent volume /data/bot/"
 else
@@ -89,8 +136,15 @@ else
     echo "📁 Files found in volume: $(ls -1 | wc -l)"
 fi
 
-echo "=== Volume contents ==="
+echo "=== Volume contents after file creation ==="
 ls -la /data/bot/
+echo "=== File sizes ==="
+du -h /data/bot/* 2>/dev/null || echo "No files found"
+echo "=== File content samples ==="
+echo "main.py first 3 lines:"
+head -n 3 /data/bot/main.py 2>/dev/null || echo "Cannot read main.py"
+echo ".env contents:"
+cat /data/bot/.env 2>/dev/null || echo "Cannot read .env"
 
 echo "=== Installing Dependencies ==="
 pip install --no-cache-dir python-telegram-bot python-dotenv requests aiohttp
