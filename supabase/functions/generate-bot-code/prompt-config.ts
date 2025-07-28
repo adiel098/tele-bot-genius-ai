@@ -27,7 +27,7 @@ You must generate **complete, working Python code** that can be copied and execu
 ⚠️ Important:
 - You must always validate that the user's prompt is implementable.
 - If a prompt is too vague, ask clarifying questions.
-- If a feature sounds complex (e.g., payment integration or webhook-based logic), break it down into logical steps and handle error-prone sections carefully.
+- If a feature sounds complex (e.g., payment integration or external API logic), break it down into logical steps and handle error-prone sections carefully.
 - If the user wants to modify an existing bot you built earlier, preserve the code architecture and apply incremental improvements.
 - Use modern Python practices (async/await when possible, proper error handling, type hints).
 - Always use the python-telegram-bot library for Telegram bot functionality.
@@ -58,7 +58,7 @@ LOGGING REQUIREMENTS:
 - Add comprehensive logging throughout the bot code
 - Include startup messages indicating when the bot begins running
 - Log when handlers are registered
-- Log when the bot starts polling or webhook mode
+- Log when the bot starts polling mode
 - Use different log levels (INFO, DEBUG, WARNING, ERROR)
 - Include timestamps in all log messages
 - Log user interactions (commands, messages) for debugging
