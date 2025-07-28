@@ -40,6 +40,8 @@ serve(async (req) => {
         return await restartBotInFlyio(request.user_id, request.bot_id);
       case 'get-logs':
         return await getLogsFromFlyio(request.bot_id);
+      case 'get-files':
+        return await getBotFilesFromStorage(request.bot_id, request.user_id);
       case 'modify-bot':
         return await modifyBot(request.user_id, request.bot_id, request.prompt);
       case 'fix-bot':
@@ -433,6 +435,35 @@ async function fixBot(userId: string, botId: string): Promise<Response> {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
         logs: [`[BOT-MANAGER] Bot fix failed for ${botId}: ${error}`]
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+}
+
+async function getBotFilesFromStorage(botId: string, userId: string): Promise<Response> {
+  console.log(`[BOT-MANAGER] === Starting get-files for bot ${botId} ===`);
+  console.log(`[BOT-MANAGER] User ID: ${userId}`);
+  
+  try {
+    const files = await getFilesFromSupabaseStorage(botId, userId);
+    
+    return new Response(
+      JSON.stringify({
+        success: true,
+        files: files,
+        architecture: 'Supabase Storage + Fly.io Execution'
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  } catch (error) {
+    console.error(`[BOT-MANAGER] Get files failed: ${error}`);
+    
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        files: {}
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
