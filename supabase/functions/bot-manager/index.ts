@@ -238,6 +238,9 @@ async function getLogsFromFlyio(botId: string, token: string, org: string): Prom
     
     let logs = [`[BOT-MANAGER] Retrieving logs for ${appName}`];
     let hasErrors = false;
+    let syntaxErrors: string[] = [];
+    let runtimeErrors: string[] = [];
+    let installErrors: string[] = [];
     
     if (response.ok) {
       const machines = await response.json();
@@ -260,7 +263,18 @@ async function getLogsFromFlyio(botId: string, token: string, org: string): Prom
             const logLines = logData.split('\n').filter(line => line.trim());
             logLines.forEach(line => {
               logs.push(`[${machine.id}] ${line}`);
-              if (line.includes('ERROR') || line.includes('error') || line.includes('Exception')) {
+              
+              // Categorize different types of errors
+              if (line.includes('SYNTAX_ERROR:')) {
+                hasErrors = true;
+                syntaxErrors.push(line.replace(/.*SYNTAX_ERROR:\s*/, ''));
+              } else if (line.includes('RUNTIME_ERROR:')) {
+                hasErrors = true;
+                runtimeErrors.push(line.replace(/.*RUNTIME_ERROR:\s*/, ''));
+              } else if (line.includes('ERROR: Failed to install')) {
+                hasErrors = true;
+                installErrors.push(line.replace(/.*ERROR:\s*/, ''));
+              } else if (line.includes('ERROR') || line.includes('error') || line.includes('Exception') || line.includes('Traceback')) {
                 hasErrors = true;
               }
             });
@@ -300,7 +314,13 @@ async function getLogsFromFlyio(botId: string, token: string, org: string): Prom
       JSON.stringify({
         success: true,
         logs,
-        hasErrors
+        hasErrors,
+        errorAnalysis: {
+          syntaxErrors,
+          runtimeErrors,
+          installErrors,
+          canAutoFix: syntaxErrors.length > 0 || runtimeErrors.length > 0
+        }
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -350,24 +370,164 @@ async function fixBot(botId: string, userId: string, token: string, org: string)
     const logsResponse = await getLogsFromFlyio(botId, token, org);
     const logsData = await logsResponse.json();
     
-    // This is a placeholder for AI-powered bot fixing
-    // In a full implementation, this would:
-    // 1. Analyze error logs
-    // 2. Use AI to fix the code issues
-    // 3. Update files in Supabase Storage
-    // 4. Redeploy to Fly.io
+    if (!logsData.errorAnalysis || !logsData.errorAnalysis.canAutoFix) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'No fixable errors detected in logs',
+          logs: logsData.logs
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // Get current bot files
+    const filesResponse = await getFilesFromSupabaseStorage(botId, userId);
+    const filesData = await filesResponse.json();
+    
+    if (!filesData.success) {
+      throw new Error('Failed to retrieve bot files for fixing');
+    }
+    
+    // Prepare error context for AI
+    const errorContext = {
+      syntaxErrors: logsData.errorAnalysis.syntaxErrors,
+      runtimeErrors: logsData.errorAnalysis.runtimeErrors,
+      installErrors: logsData.errorAnalysis.installErrors,
+      fullLogs: logsData.logs.filter(log => log.includes('ERROR') || log.includes('Exception') || log.includes('Traceback'))
+    };
+    
+    console.log(`[BOT-MANAGER] Calling AI to fix errors for bot ${botId}`);
+    
+    // Call OpenAI to fix the code
+    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+    if (!openaiApiKey) {
+      throw new Error('OpenAI API key not configured');
+    }
+    
+    const systemPrompt = `You are an expert Python developer specializing in fixing Telegram bot code. 
+    
+You will be given:
+1. Python bot code with errors
+2. Error logs and diagnostics
+3. The requirements.txt file
+
+Your task is to fix ALL errors in the code and ensure it works properly. Focus on:
+- Syntax errors (missing imports, incorrect indentation, syntax issues)
+- Runtime errors (undefined variables, incorrect API usage)
+- Dependency issues (missing or incorrect packages)
+
+CRITICAL REQUIREMENTS:
+1. ALWAYS use polling mode with application.run_polling() - NEVER use webhooks
+2. Use python-telegram-bot library v20+ syntax
+3. Include proper logging and error handling
+4. The bot must work in a containerized Python environment
+5. Return ONLY the fixed main.py content, nothing else
+
+Fix the code to eliminate all errors shown in the logs.`;
+
+    const userPrompt = `Please fix this Telegram bot code based on the error logs provided:
+
+CURRENT CODE:
+\`\`\`python
+${filesData.files['main.py']}
+\`\`\`
+
+REQUIREMENTS.TXT:
+\`\`\`
+${filesData.files['requirements.txt'] || 'python-telegram-bot>=20.0'}
+\`\`\`
+
+ERROR ANALYSIS:
+- Syntax Errors: ${errorContext.syntaxErrors.join(', ') || 'None'}
+- Runtime Errors: ${errorContext.runtimeErrors.join(', ') || 'None'}
+- Install Errors: ${errorContext.installErrors.join(', ') || 'None'}
+
+FULL ERROR LOGS:
+${errorContext.fullLogs.join('\n')}
+
+Please provide the fixed main.py code that resolves all these errors.`;
+    
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openaiApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4.1-2025-04-14',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.1,
+        max_tokens: 4000,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.status}`);
+    }
+
+    const aiResult = await response.json();
+    let fixedCode = aiResult.choices[0].message.content.trim();
+    
+    // Clean up the response (remove markdown if present)
+    fixedCode = fixedCode.replace(/```python\n/g, '').replace(/```\n/g, '').replace(/```/g, '');
+    
+    console.log(`[BOT-MANAGER] AI provided fixed code, updating storage...`);
+    
+    // Update the main.py file in storage
+    const filePath = `${filesData.path}/main.py`;
+    const { error: uploadError } = await supabase.storage
+      .from('bot-files')
+      .upload(filePath, new Blob([fixedCode], { type: 'text/plain' }), {
+        upsert: true
+      });
+    
+    if (uploadError) {
+      throw new Error(`Failed to update fixed code: ${uploadError.message}`);
+    }
+    
+    console.log(`[BOT-MANAGER] Fixed code uploaded, redeploying bot...`);
+    
+    // Redeploy the bot with fixed code
+    const redeployResult = await startBotInFlyio(botId, userId, token, org);
+    const redeployData = await redeployResult.json();
     
     return new Response(
       JSON.stringify({
-        success: false,
-        error: 'AI bot fixing feature coming soon',
-        logs: [`[BOT-MANAGER] Fix attempt for bot ${botId}`, ...logsData.logs]
+        success: true,
+        message: 'Bot fixed and redeployed successfully',
+        fixApplied: true,
+        errorsFixed: {
+          syntax: errorContext.syntaxErrors.length,
+          runtime: errorContext.runtimeErrors.length,
+          install: errorContext.installErrors.length
+        },
+        logs: [
+          `[BOT-MANAGER] AI successfully fixed ${errorContext.syntaxErrors.length + errorContext.runtimeErrors.length} errors`,
+          `[BOT-MANAGER] Code updated in storage`,
+          `[BOT-MANAGER] Bot redeployed`,
+          ...redeployData.logs || []
+        ]
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
+    
   } catch (error) {
     console.error(`[BOT-MANAGER] Fix attempt failed:`, error);
-    throw new Error(`Failed to fix bot: ${error.message}`);
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: `Failed to fix bot: ${error.message}`,
+        logs: [`[BOT-MANAGER] Fix attempt failed: ${error.message}`]
+      }),
+      { 
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      }
+    );
   }
 }
 
@@ -683,19 +843,67 @@ async function deployBotToFly(appName: string, files: Record<string, string>, to
     
     const setupScript = `#!/bin/bash
 set -e
-echo "Setting up bot environment..."
+echo "=== Bot Setup Started ==="
 mkdir -p /app
 cd /app
-echo "Installing Python dependencies..."
-pip install python-telegram-bot python-dotenv requests aiohttp
-echo "Creating bot files..."
-echo "${mainPyBase64}" | base64 -d > main.py
-echo "${envBase64}" | base64 -d > .env
-echo "${requirementsBase64}" | base64 -d > requirements.txt
-echo "Files created successfully:"
+
+echo "=== Installing Python Dependencies ==="
+pip install --no-cache-dir python-telegram-bot python-dotenv requests aiohttp || {
+    echo "ERROR: Failed to install base dependencies"
+    exit 1
+}
+
+echo "=== Creating Bot Files ==="
+echo "${mainPyBase64}" | base64 -d > main.py || {
+    echo "ERROR: Failed to create main.py"
+    exit 1
+}
+echo "${envBase64}" | base64 -d > .env || {
+    echo "ERROR: Failed to create .env"
+    exit 1
+}
+echo "${requirementsBase64}" | base64 -d > requirements.txt || {
+    echo "ERROR: Failed to create requirements.txt"
+    exit 1
+}
+
+echo "=== Installing Additional Requirements ==="
+if [ -s requirements.txt ]; then
+    pip install --no-cache-dir -r requirements.txt || {
+        echo "ERROR: Failed to install requirements from requirements.txt"
+        exit 1
+    }
+else
+    echo "No additional requirements found"
+fi
+
+echo "=== Validating Python Syntax ==="
+python -m py_compile main.py || {
+    echo "SYNTAX_ERROR: Python syntax validation failed in main.py"
+    python -c "
+import sys
+try:
+    with open('main.py', 'r') as f:
+        compile(f.read(), 'main.py', 'exec')
+    print('Syntax validation passed')
+except SyntaxError as e:
+    print(f'SYNTAX_ERROR: {e.msg} at line {e.lineno}')
+    sys.exit(1)
+except Exception as e:
+    print(f'SYNTAX_ERROR: {str(e)}')
+    sys.exit(1)
+"
+    exit 1
+}
+
+echo "=== Files Created Successfully ==="
 ls -la /app/
-echo "Starting bot..."
-python main.py`;
+
+echo "=== Starting Bot ==="
+python main.py || {
+    echo "RUNTIME_ERROR: Bot failed to start"
+    exit 1
+}`;
 
     const machineConfig = {
       config: {
@@ -713,7 +921,7 @@ python main.py`;
           memory_mb: 256
         },
         restart: {
-          policy: 'always'
+          policy: 'no'  // Don't auto-restart on failure to avoid error loops
         },
         auto_destroy: false
       },
