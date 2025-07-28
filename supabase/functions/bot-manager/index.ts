@@ -535,7 +535,7 @@ async function ensureStorageBucket(): Promise<void> {
 }
 
 async function createFlyApp(appName: string, org: string, token: string): Promise<void> {
-  console.log(`[BOT-MANAGER] Creating Fly.io app: ${appName} in org: ${org}`);
+  console.log(`[BOT-MANAGER] Creating Fly.io app: ${appName}`);
   
   // First check if app already exists
   const checkResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}`, {
@@ -550,6 +550,56 @@ async function createFlyApp(appName: string, org: string, token: string): Promis
     console.log(`[BOT-MANAGER] App ${appName} already exists`);
     return;
   }
+
+  // Get the user's personal organization ID first
+  console.log(`[BOT-MANAGER] Retrieving user organizations...`);
+  const orgsResponse = await fetch('https://api.fly.io/graphql', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      query: `
+        query {
+          viewer {
+            organizations(first: 10) {
+              nodes {
+                id
+                slug
+                name
+                type
+              }
+            }
+          }
+        }
+      `
+    })
+  });
+
+  if (!orgsResponse.ok) {
+    throw new Error(`Failed to get organizations: ${await orgsResponse.text()}`);
+  }
+
+  const orgsResult = await orgsResponse.json();
+  if (orgsResult.errors) {
+    throw new Error(`GraphQL error getting orgs: ${orgsResult.errors[0]?.message}`);
+  }
+
+  const organizations = orgsResult.data?.viewer?.organizations?.nodes || [];
+  console.log(`[BOT-MANAGER] Found ${organizations.length} organizations`);
+  
+  // Find personal organization or use the first available
+  let targetOrg = organizations.find((o: any) => o.type === 'PERSONAL' || o.slug === 'personal');
+  if (!targetOrg && organizations.length > 0) {
+    targetOrg = organizations[0];
+  }
+  
+  if (!targetOrg) {
+    throw new Error('No organizations found for this user');
+  }
+
+  console.log(`[BOT-MANAGER] Using organization: ${targetOrg.slug} (${targetOrg.id})`);
 
   // Use GraphQL API to create the app
   const response = await fetch('https://api.fly.io/graphql', {
@@ -567,6 +617,7 @@ async function createFlyApp(appName: string, org: string, token: string): Promis
               name
               organization {
                 id
+                slug
               }
             }
           }
@@ -575,7 +626,7 @@ async function createFlyApp(appName: string, org: string, token: string): Promis
       variables: {
         input: {
           name: appName,
-          organizationId: org
+          organizationId: targetOrg.id
         }
       }
     })
@@ -593,7 +644,7 @@ async function createFlyApp(appName: string, org: string, token: string): Promis
     throw new Error(`GraphQL error: ${result.errors[0]?.message || 'Unknown error'}`);
   }
 
-  console.log(`[BOT-MANAGER] App created successfully: ${appName}`);
+  console.log(`[BOT-MANAGER] App created successfully: ${appName} in org ${targetOrg.slug}`);
 }
 
 async function deployBotToFly(appName: string, files: Record<string, string>, token: string): Promise<any> {
