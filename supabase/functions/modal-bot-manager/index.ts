@@ -22,32 +22,41 @@ serve(async (req) => {
   }
 
   try {
-    const { action, botId, userId, prompt, token, name, modificationPrompt } = await req.json();
+    const { action, botId, userId, deploymentTarget = 'modal', prompt, token, name, modificationPrompt } = await req.json();
     
-    console.log(`[MODAL-MANAGER] === Starting ${action} for bot ${botId} ===`);
-    console.log(`[MODAL-MANAGER] Modal URL: ${MODAL_BASE_URL}`);
-
-    switch (action) {
-      case 'get-files':
-        return await getFilesFromSupabaseStorage(botId, userId);
+    console.log(`[BOT-MANAGER] === Starting ${action} for bot ${botId} on ${deploymentTarget} ===`);
+    console.log(`[BOT-MANAGER] Enhanced Hybrid Architecture: Supabase Storage + Multi-Platform Execution`);
+    
+    // Route to appropriate deployment target
+    if (deploymentTarget === 'flyio') {
+      return await routeToFlyio(action, botId, userId, { prompt, token, name, modificationPrompt });
+    } else {
+      // Default to Modal
+      console.log(`[BOT-MANAGER] Modal URL: ${MODAL_BASE_URL}`);
+      console.log(`[BOT-MANAGER] Modal Token Available: ${!!Deno.env.get('MODAL_TOKEN')}`);
       
-      case 'get-logs':
-        return await getLogsFromModal(botId, userId);
-      
-      case 'start-bot':
-        return await startBotInModal(botId, userId, prompt, token, name);
-      
-      case 'stop-bot':
-        return await stopBotInModal(botId);
-      
-      case 'modify-bot':
-        return await modifyBotHybrid(botId, userId, modificationPrompt);
-      
-      case 'health-check':
-        return await performHealthCheck();
-      
-      default:
-        throw new Error(`Unknown action: ${action}`);
+      switch (action) {
+        case 'get-files':
+          return await getFilesFromSupabaseStorage(botId, userId);
+        
+        case 'get-logs':
+          return await getLogsFromModal(botId, userId);
+        
+        case 'start-bot':
+          return await startBotInModal(botId, userId, prompt, token, name);
+        
+        case 'stop-bot':
+          return await stopBotInModal(botId);
+        
+        case 'modify-bot':
+          return await modifyBotHybrid(botId, userId, modificationPrompt);
+        
+        case 'health-check':
+          return await performHealthCheck();
+        
+        default:
+          throw new Error(`Unknown action: ${action}`);
+      }
     }
 
   } catch (error) {
@@ -424,6 +433,45 @@ async function modifyBotHybrid(botId: string, userId: string, modificationPrompt
     return new Response(JSON.stringify({
       success: false,
       error: error.message
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+}
+
+async function routeToFlyio(action: string, botId: string, userId: string, requestData: any): Promise<Response> {
+  console.log(`[BOT-MANAGER] Routing ${action} to Fly.io for bot ${botId}`);
+  
+  const flyioBaseUrl = 'https://efhwjkhqbbucvedgznba.supabase.co/functions/v1/flyio-bot-manager';
+  
+  try {
+    const response = await fetch(flyioBaseUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+      },
+      body: JSON.stringify({
+        action,
+        botId,
+        userId,
+        ...requestData
+      })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Fly.io service error: ${response.status} - ${errorText}`);
+    }
+    
+    return response;
+  } catch (error) {
+    console.error(`[BOT-MANAGER] Fly.io routing error:`, error);
+    return new Response(JSON.stringify({
+      success: false,
+      error: `Failed to route to Fly.io: ${error.message}`,
+      deployment_target: 'flyio'
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
