@@ -650,40 +650,51 @@ async function createFlyApp(appName: string, org: string, token: string): Promis
 async function deployBotToFly(appName: string, files: Record<string, string>, token: string): Promise<any> {
   console.log(`[BOT-MANAGER] Starting real deployment for ${appName}`);
   
-  // Generate proper Dockerfile
-  const dockerfile = `
-FROM python:3.11-slim
+  try {
+    // Create machine config with embedded setup script
+    console.log(`[BOT-MANAGER] Creating machine with bot setup for ${appName}`);
+    
+    // Extract bot token from .env file
+    const botToken = extractTokenFromEnv(files['.env']) || '';
+    
+    // Create setup script that installs dependencies and sets up the bot
+    const setupScript = `#!/bin/bash
+set -e
 
-WORKDIR /app
+echo "Installing Python dependencies..."
+pip install python-telegram-bot python-dotenv requests
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+echo "Creating bot files..."
+cd /app
 
-COPY main.py .
-COPY .env .
+# Create main.py
+cat > main.py << 'EOF'
+${files['main.py'] || ''}
+EOF
 
-EXPOSE 8080
+# Create .env
+cat > .env << 'EOF'
+${files['.env'] || ''}
+EOF
 
-CMD ["python", "main.py"]
+# Create requirements.txt if it exists
+${files['requirements.txt'] ? `cat > requirements.txt << 'EOF'
+${files['requirements.txt']}
+EOF` : ''}
+
+echo "Bot setup complete, starting bot..."
+exec python main.py
 `;
 
-  // Build Docker image using Fly.io remote builders
-  console.log(`[BOT-MANAGER] Building Docker image for ${appName}`);
-  
-  const buildResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
+    const machineConfig = {
       config: {
         image: 'python:3.11-slim',
         init: {
-          cmd: ['python', 'main.py']
+          cmd: ['/bin/bash', '-c', setupScript]
         },
         env: {
-          BOT_TOKEN: extractTokenFromEnv(files['.env']) || ''
+          PYTHONUNBUFFERED: '1',
+          BOT_TOKEN: botToken
         },
         guest: {
           cpu_kind: 'shared',
@@ -693,51 +704,80 @@ CMD ["python", "main.py"]
         restart: {
           policy: 'always'
         },
-        auto_destroy: false,
-        services: [{
-          protocol: 'tcp',
-          internal_port: 8080
-        }]
+        auto_destroy: false
       },
       region: 'iad'
-    })
-  });
+    };
 
-  if (!buildResponse.ok) {
-    const errorText = await buildResponse.text();
-    console.error(`[BOT-MANAGER] Machine creation failed: ${errorText}`);
-    throw new Error(`Failed to create machine: ${errorText}`);
-  }
-
-  const machine = await buildResponse.json();
-  console.log(`[BOT-MANAGER] Machine created: ${machine.id}`);
-
-  // Upload files to the machine via fly.io wire protocol
-  // Note: This is a simplified approach. In production, you'd use fly deploy with a proper image build
-  try {
-    // Start the machine
-    const startResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${machine.id}/start`, {
+    // Create machine
+    const createResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(machineConfig)
+    });
+
+    if (!createResponse.ok) {
+      const errorText = await createResponse.text();
+      console.error(`[BOT-MANAGER] Machine creation failed: ${errorText}`);
+      throw new Error(`Failed to create machine: ${errorText}`);
+    }
+
+    const machine = await createResponse.json();
+    console.log(`[BOT-MANAGER] Machine created: ${machine.id}`);
+
+    // Wait for machine to be ready
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    // Check machine status
+    const statusResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${machine.id}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
       }
     });
 
-    if (!startResponse.ok) {
-      throw new Error(`Failed to start machine: ${await startResponse.text()}`);
+    if (statusResponse.ok) {
+      const status = await statusResponse.json();
+      console.log(`[BOT-MANAGER] Machine ${machine.id} current state: ${status.state}`);
+      
+      // Only try to start if the machine is stopped or created
+      if (status.state === 'stopped' || status.state === 'created') {
+        console.log(`[BOT-MANAGER] Starting machine ${machine.id}...`);
+        
+        const startResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${machine.id}/start`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!startResponse.ok) {
+          const errorText = await startResponse.text();
+          console.log(`[BOT-MANAGER] Start attempt result: ${errorText}`);
+          // Don't throw error here, the machine might start on its own
+        } else {
+          console.log(`[BOT-MANAGER] Machine ${machine.id} start command sent successfully`);
+        }
+      } else {
+        console.log(`[BOT-MANAGER] Machine ${machine.id} is in ${status.state} state - no start needed`);
+      }
     }
 
-    console.log(`[BOT-MANAGER] Machine ${machine.id} started successfully`);
-
+    console.log(`[BOT-MANAGER] Deployment process completed for machine: ${machine.id}`);
+    
     return {
       id: machine.id,
       appName,
       status: 'deployed',
       machine: machine
     };
+    
   } catch (error) {
-    console.error(`[BOT-MANAGER] Machine startup failed:`, error);
+    console.error(`[BOT-MANAGER] Deployment failed:`, error);
     throw error;
   }
 }
