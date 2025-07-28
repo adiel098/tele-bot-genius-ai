@@ -447,7 +447,17 @@ async function getFilesFromSupabaseStorage(botId: string, userId: string): Promi
       JSON.stringify({
         success: true,
         files,
-        path: foundPath
+        path: foundPath,
+        storage_method: 'Enhanced Supabase Storage v2',
+        architecture: 'Hybrid Supabase + Fly.io',
+        bucket_status: 'active',
+        bucket_name: 'bot-files',
+        file_count: Object.keys(files).length,
+        retrieval_results: requiredFiles.map(fileName => ({
+          filename: fileName,
+          success: !!files[fileName],
+          size: files[fileName]?.length || 0
+        }))
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
