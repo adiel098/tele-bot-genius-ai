@@ -1058,6 +1058,31 @@ echo "Total files: $(ls -1 /data/bot/ | wc -l)"
       console.log(`[BOT-MANAGER] Could not retrieve upload logs:`, logError);
     }
     
+    // CRITICAL: Destroy upload machine to release volume claim
+    console.log(`[BOT-MANAGER] Destroying upload machine to release volume...`);
+    try {
+      const destroyResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${uploadMachine.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (destroyResponse.ok) {
+        console.log(`[BOT-MANAGER] ✅ Upload machine destroyed successfully`);
+      } else {
+        const errorText = await destroyResponse.text();
+        console.log(`[BOT-MANAGER] ⚠️ Failed to destroy upload machine: ${errorText}`);
+      }
+      
+      // Wait for machine to be fully destroyed
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+    } catch (destroyError) {
+      console.error(`[BOT-MANAGER] Error destroying upload machine:`, destroyError);
+    }
+    
     // Create the main bot machine that uses the volume
     console.log(`[BOT-MANAGER] Creating main bot machine with volume...`);
     
