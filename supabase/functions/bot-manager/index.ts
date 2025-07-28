@@ -1089,12 +1089,6 @@ echo "SUCCESS: All files written to volume"
         console.log(`[BOT-MANAGER] Upload machine likely completed and destroyed: ${error.message}`);
         break;
       }
-        }
-      }
-      
-      if (i === 11) {
-        console.log(`[BOT-MANAGER] Upload taking longer than expected, proceeding...`);
-      }
     }
     
     // Get upload machine logs to verify success
