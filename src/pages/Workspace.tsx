@@ -104,30 +104,82 @@ const Workspace = () => {
 
     fetchBot();
 
-    // Set up real-time subscription for bot updates
-    const channel = supabase
-      .channel('bot-updates')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'bots',
-          filter: `id=eq.${botId}`
-        },
-        (payload) => {
-          if (payload.new) {
-            setBot(prevBot => ({ ...prevBot, ...payload.new } as Bot));
-            if (payload.new.conversation_history && isMessageArray(payload.new.conversation_history)) {
-              setMessages(payload.new.conversation_history);
+    // Set up real-time subscription for bot updates with improved error handling
+    let channel: any = null;
+    
+    const setupRealtimeSubscription = () => {
+      try {
+        channel = supabase
+          .channel('bot-updates', {
+            config: {
+              broadcast: { self: false },
+              presence: { key: `user-${user.id}` }
             }
+          })
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'bots',
+              filter: `id=eq.${botId}`
+            },
+            (payload) => {
+              console.log('[WORKSPACE] Realtime update received:', payload);
+              if (payload.new) {
+                setBot(prevBot => ({ ...prevBot, ...payload.new } as Bot));
+                if (payload.new.conversation_history && isMessageArray(payload.new.conversation_history)) {
+                  setMessages(payload.new.conversation_history);
+                }
+              }
+            }
+          )
+          .subscribe((status) => {
+            console.log('[WORKSPACE] Realtime subscription status:', status);
+            if (status === 'CHANNEL_ERROR') {
+              console.log('[WORKSPACE] Realtime connection error, retrying in 5 seconds...');
+              setTimeout(() => {
+                if (channel) {
+                  supabase.removeChannel(channel);
+                }
+                setupRealtimeSubscription();
+              }, 5000);
+            }
+          });
+      } catch (error) {
+        console.error('[WORKSPACE] Failed to setup realtime subscription:', error);
+        // Fallback to polling if realtime fails
+        console.log('[WORKSPACE] Falling back to polling mode...');
+        const pollInterval = setInterval(async () => {
+          try {
+            const { data } = await supabase
+              .from('bots')
+              .select('*')
+              .eq('id', botId)
+              .eq('user_id', user.id)
+              .single();
+            
+            if (data) {
+              setBot(data);
+              if (data.conversation_history && isMessageArray(data.conversation_history)) {
+                setMessages(data.conversation_history);
+              }
+            }
+          } catch (pollError) {
+            console.error('[WORKSPACE] Polling error:', pollError);
           }
-        }
-      )
-      .subscribe();
+        }, 5000);
+        
+        return () => clearInterval(pollInterval);
+      }
+    };
+
+    setupRealtimeSubscription();
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
     };
   }, [user, botId, navigate, toast]);
 
