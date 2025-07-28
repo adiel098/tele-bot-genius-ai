@@ -893,53 +893,76 @@ async function deployBotToFlyWithVolume(appName: string, files: Record<string, s
     // Create a temporary machine to upload files to the volume
     console.log(`[BOT-MANAGER] Creating file upload machine...`);
     
-    // Prepare files with proper escaping for shell
-    const escapedFiles = Object.entries(files).map(([filename, content]) => {
-      // Escape content for safe shell handling
-      const escapedContent = content
-        .replace(/\\/g, '\\\\')
-        .replace(/"/g, '\\"')
-        .replace(/`/g, '\\`')
-        .replace(/\$/g, '\\$');
-      
-      return { filename, content: escapedContent };
+    // Create a simpler, more reliable file upload approach
+    console.log(`[BOT-MANAGER] Uploading files to volume using direct approach...`);
+    
+    // Create individual file write commands to avoid escaping issues
+    const fileCommands = Object.entries(files).map(([filename, content]) => {
+      // Use Python to write files safely, avoiding shell escaping issues
+      const pythonScript = `
+import os
+import base64
+import sys
+
+# Create bot directory
+os.makedirs('/data/bot', exist_ok=True)
+os.chdir('/data/bot')
+
+# File content (base64 encoded to avoid escaping issues)
+file_content = '''${Buffer.from(content, 'utf8').toString('base64')}'''
+
+# Decode and write file
+try:
+    with open('${filename}', 'w', encoding='utf-8') as f:
+        import base64
+        decoded_content = base64.b64decode(file_content).decode('utf-8')
+        f.write(decoded_content)
+    print(f"✅ Successfully wrote ${filename}")
+    print(f"📏 File size: {len(decoded_content)} characters")
+except Exception as e:
+    print(f"❌ Error writing ${filename}: {e}")
+    sys.exit(1)
+`;
+      return pythonScript;
     });
     
-    // Create script to write files to volume
-    const fileUploadScript = `#!/bin/bash
+    // Create the upload script that writes all files
+    const uploadScript = `#!/bin/bash
 set -e
 echo "=== Volume File Upload Started ==="
 
-# Create bot directory in volume
+# Install Python if needed (Alpine comes with Python)
+which python3 || apk add --no-cache python3
+
+# Create bot directory
 mkdir -p /data/bot
 cd /data/bot
 
-echo "=== Writing Bot Files to Volume ==="
-${escapedFiles.map(({ filename, content }) => `
-echo "Writing ${filename}..."
-cat > "${filename}" << 'BOTFILE_EOF'
-${content}
-BOTFILE_EOF
-echo "${filename} written successfully"
+echo "=== Writing files to volume ==="
+${fileCommands.map((pythonScript, index) => `
+echo "Writing file ${index + 1}/${fileCommands.length}..."
+python3 -c "${pythonScript.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"
 `).join('')}
 
-echo "=== Files written to volume successfully ==="
+echo "=== Verifying files in volume ==="
 ls -la /data/bot/
 echo "=== File contents verification ==="
-${escapedFiles.map(({ filename }) => `
-echo "--- ${filename} ---"
-head -10 "/data/bot/${filename}"
-echo "--- End ${filename} ---"
-`).join('')}
+for file in *.py *.txt *.env; do
+  if [ -f "$file" ]; then
+    echo "--- $file (first 5 lines) ---"
+    head -5 "$file" || echo "Could not read $file"
+  fi
+done
 
-echo "=== Volume setup completed ==="
+echo "=== Volume upload completed successfully ==="
+echo "Total files: $(ls -1 /data/bot/ | wc -l)"
 `;
 
     const uploadMachineConfig = {
       config: {
-        image: 'alpine:latest',
+        image: 'python:3.11-alpine',  // Use Python Alpine for better file handling
         init: {
-          cmd: ['/bin/sh', '-c', fileUploadScript]
+          cmd: ['/bin/sh', '-c', uploadScript]
         },
         mounts: [
           {
@@ -955,7 +978,7 @@ echo "=== Volume setup completed ==="
         restart: {
           policy: 'no'
         },
-        auto_destroy: true  // Auto-destroy after completion
+        auto_destroy: false  // Keep for debugging
       },
       region: 'iad'
     };
@@ -978,9 +1001,58 @@ echo "=== Volume setup completed ==="
     const uploadMachine = await uploadMachineResponse.json();
     console.log(`[BOT-MANAGER] Upload machine created: ${uploadMachine.id}`);
     
-    // Wait for upload to complete
+    // Wait longer for upload to complete and verify
     console.log(`[BOT-MANAGER] Waiting for file upload to complete...`);
-    await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds for upload
+    
+    // Wait and check upload progress
+    for (let i = 0; i < 12; i++) { // Check for 2 minutes
+      await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds each iteration
+      
+      // Check upload machine status
+      const statusResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${uploadMachine.id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (statusResponse.ok) {
+        const machineStatus = await statusResponse.json();
+        console.log(`[BOT-MANAGER] Upload machine status: ${machineStatus.state}`);
+        
+        if (machineStatus.state === 'stopped') {
+          console.log(`[BOT-MANAGER] Upload machine completed`);
+          break;
+        }
+      }
+      
+      if (i === 11) {
+        console.log(`[BOT-MANAGER] Upload taking longer than expected, proceeding...`);
+      }
+    }
+    
+    // Get upload machine logs to verify success
+    try {
+      const logResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${uploadMachine.id}/logs`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (logResponse.ok) {
+        const logs = await logResponse.text();
+        console.log(`[BOT-MANAGER] Upload logs:`, logs);
+        
+        if (logs.includes('Volume upload completed successfully')) {
+          console.log(`[BOT-MANAGER] ✅ Files uploaded successfully to volume`);
+        } else {
+          console.log(`[BOT-MANAGER] ⚠️ Upload may have failed, check logs`);
+        }
+      }
+    } catch (logError) {
+      console.log(`[BOT-MANAGER] Could not retrieve upload logs:`, logError);
+    }
     
     // Create the main bot machine that uses the volume
     console.log(`[BOT-MANAGER] Creating main bot machine with volume...`);
