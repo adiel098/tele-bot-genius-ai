@@ -668,12 +668,16 @@ async function deployBotToFly(appName: string, files: Record<string, string>, to
     // Create machine config with embedded setup script
     console.log(`[BOT-MANAGER] Creating machine with bot setup for ${appName}`);
     
-    // Extract bot token from .env file
+    // Extract bot token from .env file and convert webhook code to polling
     const botToken = extractTokenFromEnv(files['.env']) || '';
+    
+    // Convert webhook code to polling mode
+    const convertedMainPy = convertWebhookToPolling(files['main.py'] || '');
+    console.log(`[BOT-MANAGER] Bot code converted from webhook to polling mode`);
     
     // Create setup script that installs dependencies and sets up the bot
     // Use base64 encoding to avoid heredoc issues
-    const mainPyBase64 = btoa(files['main.py'] || '');
+    const mainPyBase64 = btoa(convertedMainPy);
     const envBase64 = btoa(files['.env'] || '');
     const requirementsBase64 = btoa(files['requirements.txt'] || '');
     
@@ -886,6 +890,106 @@ async function cleanupExistingMachines(appName: string, token: string): Promise<
     console.error(`[BOT-MANAGER] Machine cleanup failed:`, error);
     // Don't throw the error, just log it - we still want to proceed with deployment
   }
+}
+
+function convertWebhookToPolling(pythonCode: string): string {
+  console.log(`[BOT-MANAGER] Converting webhook code to polling mode`);
+  
+  // Replace webhook-related imports and functions
+  let convertedCode = pythonCode
+    // Remove webhook-related imports
+    .replace(/from\s+flask\s+import.*?\n/g, '')
+    .replace(/import\s+flask.*?\n/g, '')
+    .replace(/from\s+aiohttp\s+import.*?\n/g, '')
+    .replace(/import\s+aiohttp.*?\n/g, '')
+    
+    // Replace webhook setup with polling
+    .replace(/application\.updater\.start_webhook\([^)]*\)/g, 'application.run_polling()')
+    .replace(/await\s+application\.updater\.start_webhook\([^)]*\)/g, 'application.run_polling()')
+    .replace(/application\.bot\.set_webhook\([^)]*\)/g, '# Webhook removed - using polling instead')
+    .replace(/await\s+application\.bot\.set_webhook\([^)]*\)/g, '# Webhook removed - using polling instead')
+    
+    // Remove webhook URL setup
+    .replace(/webhook_url\s*=.*?\n/g, '# Webhook URL removed - using polling\n')
+    .replace(/url_path\s*=.*?\n/g, '# URL path removed - using polling\n')
+    
+    // Replace main function calls that use webhooks
+    .replace(/asyncio\.run\(main\(\)\)/g, 'main()')
+    
+    // Replace the main function if it contains webhook logic
+    .replace(
+      /async def main\(\)[^}]*?set_webhook.*?$/gm,
+      `def main() -> None:
+    logger.info('========== BOT STARTUP ==========')
+    token = os.getenv('BOT_TOKEN')
+    if not token:
+        logger.error('BOT_TOKEN not found in environment variables')
+        return
+        
+    logger.info('Bot token loaded successfully')
+    logger.info('Creating Telegram Application...')
+    application = Application.builder().token(token).build()
+    
+    logger.info('Registering handlers...')
+    # Handlers will be added here by the original code
+    
+    logger.info('Starting bot polling...')
+    logger.info('🤖 Bot is now running and ready to receive messages!')
+    application.run_polling()`
+    )
+    
+    // Ensure the main function uses polling instead of async webhook setup
+    .replace(
+      /def main\(\)[^}]*?start_webhook.*?$/gm,
+      `def main() -> None:
+    logger.info('========== BOT STARTUP ==========')
+    token = os.getenv('BOT_TOKEN')
+    if not token:
+        logger.error('BOT_TOKEN not found in environment variables')
+        return
+        
+    logger.info('Bot token loaded successfully')
+    logger.info('Creating Telegram Application...')
+    application = Application.builder().token(token).build()
+    
+    logger.info('Starting bot polling...')
+    logger.info('🤖 Bot is now running and ready to receive messages!')
+    application.run_polling()`
+    );
+  
+  // Ensure the code ends with polling instead of webhook
+  if (!convertedCode.includes('application.run_polling()')) {
+    // If no main function found, add a basic polling setup
+    if (!convertedCode.includes('def main')) {
+      convertedCode += `
+
+def main() -> None:
+    logger.info('========== BOT STARTUP ==========')
+    token = os.getenv('BOT_TOKEN')
+    if not token:
+        logger.error('BOT_TOKEN not found in environment variables')
+        return
+        
+    logger.info('Bot token loaded successfully')
+    logger.info('Creating Telegram Application...')
+    
+    logger.info('Starting bot polling...')
+    logger.info('🤖 Bot is now running and ready to receive messages!')
+    application.run_polling()
+
+if __name__ == '__main__':
+    main()`;
+    }
+  }
+  
+  // Remove any remaining webhook references
+  convertedCode = convertedCode
+    .replace(/# Set the webhook.*?\n/g, '# Using polling mode instead\n')
+    .replace(/webhook/gi, 'polling')
+    .replace(/# Using polling mode instead/g, '# Using polling mode instead');
+  
+  console.log(`[BOT-MANAGER] Code conversion completed`);
+  return convertedCode;
 }
 
 function extractTokenFromEnv(envContent: string): string | null {
