@@ -854,13 +854,13 @@ async function createFlyApp(appName: string, org: string, token: string): Promis
 }
 
 async function deployBotToFlyWithVolume(appName: string, files: Record<string, string>, token: string): Promise<any> {
-  console.log(`[BOT-MANAGER] Starting volume-based deployment for ${appName}`);
+  console.log(`[BOT-MANAGER] Starting SIMPLIFIED volume-based deployment for ${appName}`);
   
   try {
-    // First, cleanup any existing machines and volumes for this app
-    console.log(`[BOT-MANAGER] Cleaning up existing resources...`);
+    // First, cleanup any existing machines for this app (but keep volumes for persistence)
+    console.log(`[BOT-MANAGER] Cleaning up existing machines only...`);
     await cleanupExistingMachines(appName, token);
-    await cleanupExistingVolumes(appName, token);
+    // Note: NOT cleaning up volumes - they should persist for redeployments
     
     // Create a volume for bot files (use underscores and limit to 30 chars)
     const volumeName = `bot_${appName.replace(/telegram-bot-/, '').replace(/-/g, '_')}_vol`.substring(0, 30);
