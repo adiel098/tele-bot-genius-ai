@@ -101,25 +101,6 @@ const ExistingBots = () => {
     try {
       console.log('Deleting bot:', botId);
       
-      // First, delete the Fly.io app
-      try {
-        const { error: flyError } = await supabase.functions.invoke('bot-manager', {
-          body: { 
-            action: 'delete-bot',
-            botId: botId
-          }
-        });
-
-        if (flyError) {
-          console.warn('Warning: Failed to delete Fly.io app:', flyError);
-          // Continue with database deletion even if Fly.io deletion fails
-        }
-      } catch (flyError) {
-        console.warn('Warning: Failed to delete Fly.io app:', flyError);
-        // Continue with database deletion even if Fly.io deletion fails
-      }
-      
-      // Delete from database
       const { error } = await supabase
         .from('bots')
         .delete()

@@ -64,8 +64,6 @@ export type Database = {
           conversation_history: Json | null
           created_at: string
           files_stored: boolean | null
-          fly_app_name: string | null
-          fly_machine_id: string | null
           id: string
           last_restart: string | null
           name: string
@@ -81,8 +79,6 @@ export type Database = {
           conversation_history?: Json | null
           created_at?: string
           files_stored?: boolean | null
-          fly_app_name?: string | null
-          fly_machine_id?: string | null
           id?: string
           last_restart?: string | null
           name: string
@@ -98,8 +94,6 @@ export type Database = {
           conversation_history?: Json | null
           created_at?: string
           files_stored?: boolean | null
-          fly_app_name?: string | null
-          fly_machine_id?: string | null
           id?: string
           last_restart?: string | null
           name?: string

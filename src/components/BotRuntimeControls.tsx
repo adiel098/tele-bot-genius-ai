@@ -159,57 +159,6 @@ export function BotRuntimeControls({ bot, onUpdate }: BotRuntimeControlsProps) {
     }
   };
 
-  const debugVolume = async () => {
-    setIsLoading(true);
-    try {
-      console.log(`Debugging volume contents for bot ${bot.id}`);
-      
-      // First get bot's machine ID from logs
-      const { data: logsResult, error: logsError } = await supabase.functions.invoke('bot-manager', {
-        body: {
-          action: 'get-logs',
-          botId: bot.id,
-          userId: bot.user_id
-        }
-      });
-
-      if (logsError) throw logsError;
-
-      // Extract machine ID from logs (this is a simplified approach)
-      const machineId = logsResult.machineId || 'unknown';
-      
-      const { data: result, error } = await supabase.functions.invoke('bot-manager', {
-        body: {
-          action: 'debug-volume',
-          botId: bot.id,
-          machineId: machineId,
-          userId: bot.user_id
-        }
-      });
-
-      if (error) throw error;
-
-      if (result.success) {
-        console.log('Volume debug output:', result.debug_output);
-        toast({
-          title: "🔍 Volume Debug Complete",
-          description: "Check browser console for detailed volume contents.",
-        });
-      } else {
-        throw new Error(result.error || 'Failed to debug volume');
-      }
-    } catch (error: any) {
-      console.error('Error debugging volume:', error);
-      toast({
-        title: "Error",
-        description: error.message || 'Failed to debug volume',
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   return (
     <div className="flex space-x-4">
       <button
@@ -239,14 +188,6 @@ export function BotRuntimeControls({ bot, onUpdate }: BotRuntimeControlsProps) {
         className="btn btn-accent"
       >
         Fix with AI
-      </button>
-      <button
-        onClick={debugVolume}
-        disabled={isLoading}
-        className="btn btn-info"
-        title="Debug Volume Contents"
-      >
-        🔍 Debug Volume
       </button>
     </div>
   );

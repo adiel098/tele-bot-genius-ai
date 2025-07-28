@@ -113,11 +113,9 @@ CODE RULES:
 13. Always include Dockerfile for containerized deployment
 14. Add comprehensive logging throughout the application
 15. CRITICAL: Never use placeholder tokens - always use the real token provided
-16. CRITICAL: ABSOLUTELY NO WEBHOOK REFERENCES - not in code, not in comments, not anywhere
-17. CRITICAL: Never mention webhooks, set_webhook, run_webhook, or any webhook-related concepts
-18. CRITICAL: Do not include ANY comments about webhooks or webhook URLs - completely forbidden
-19. CRITICAL: Use application.run_polling() for bot execution - this is the only correct approach
-20. CRITICAL: Comments should only mention polling mode, never webhooks
+16. CRITICAL: ALWAYS use polling mode only - NEVER use webhooks or set_webhook()
+17. CRITICAL: Use application.run_polling() for bot execution - this is the correct approach for containerized bots
+18. CRITICAL: Never mix webhooks and polling - use polling only for reliable containerized deployment
 
 EXAMPLE PYTHON-TELEGRAM-BOT CODE STRUCTURE WITH LOGGING:
 \`\`\`python

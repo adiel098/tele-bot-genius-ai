@@ -160,66 +160,21 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
   const refreshLogs = async () => {
     setIsRefreshing(true);
     try {
-      // Call the bot-manager function to get fresh logs from Fly.io machines
-      console.log(`[LOGS] Fetching real-time logs from bot-manager for bot ${botId}`);
-      
-      const { data, error } = await supabase.functions.invoke('bot-manager', {
+      // Call the runtime function to get fresh logs from Docker
+      const { data, error } = await supabase.functions.invoke('manage-bot-runtime', {
         body: {
-          action: 'get-logs',
-          botId: botId,
-          userId: 'system' // We'll get this from context if needed
+          action: 'logs',
+          botId
         }
       });
 
-      if (error) {
-        console.error('[LOGS] Error from bot-manager:', error);
-        throw new Error(`Bot manager error: ${error.message}`);
-      }
+      if (error) throw error;
 
-      if (data.success && data.logs) {
-        // Format the logs from bot-manager
-        const formattedLogs = data.logs.join('\n');
-        
-        // Update the bot's logs in the database so other components can see them
-        const { error: updateError } = await supabase
-          .from('bots')
-          .update({ 
-            runtime_logs: formattedLogs,
-            runtime_status: data.hasErrors ? 'error' : 'running'
-          })
-          .eq('id', botId);
-
-        if (updateError) {
-          console.error('[LOGS] Error updating bot logs:', updateError);
-        }
-
-        // Update local state immediately
-        setLogs(formattedLogs);
-        const filtered = applyFilters(formattedLogs);
-        setFilteredLogs(filtered);
-        
-        const lineCount = formattedLogs.split('\n').filter(line => line.trim()).length;
-        setLogCount(lineCount);
-        
-        const hasErrorsInLogs = data.hasErrors || checkForErrors(formattedLogs);
-        setHasErrors(hasErrorsInLogs);
-        
-        if (hasErrorsInLogs && data.errorAnalysis) {
-          const errorInfo = [
-            ...data.errorAnalysis.syntaxErrors || [],
-            ...data.errorAnalysis.runtimeErrors || [],
-            ...data.errorAnalysis.installErrors || []
-          ].join('\n');
-          setErrorDetails(errorInfo);
-        }
-        
-        if (onLogsUpdate) {
-          onLogsUpdate(formattedLogs, hasErrorsInLogs);
-        }
-        
+      if (data.success) {
+        await fetchLogs(); // Refresh the logs from database
         toast({
-          title: "📋 Logs refreshed from machine!",
-          description: `Got ${lineCount} log lines from Fly.io`,
+          title: "Logs refreshed! 📋",
+          description: "Latest container logs loaded",
         });
         
         // Scroll to bottom after refresh
@@ -228,19 +183,12 @@ const BotRuntimeLogs = ({ botId, onLogsUpdate, onFixByAI }: BotRuntimeLogsProps)
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
           }
         }, 100);
-      } else {
-        console.log('[LOGS] No new logs available from bot-manager');
-        toast({
-          title: "No new logs",
-          description: "Bot manager didn't return any logs",
-          variant: "default",
-        });
       }
     } catch (error) {
-      console.error('Error refreshing logs from bot-manager:', error);
+      console.error('Error refreshing logs:', error);
       toast({
         title: "Error",
-        description: `Unable to refresh logs: ${error.message}`,
+        description: "Unable to refresh logs",
         variant: "destructive",
       });
     } finally {
