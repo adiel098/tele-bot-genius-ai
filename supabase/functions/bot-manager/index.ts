@@ -862,8 +862,8 @@ async function deployBotToFlyWithVolume(appName: string, files: Record<string, s
     await cleanupExistingMachines(appName, token);
     await cleanupExistingVolumes(appName, token);
     
-    // Create a volume for bot files
-    const volumeName = `${appName}-files`;
+    // Create a volume for bot files (use underscores and limit to 30 chars)
+    const volumeName = `bot_${appName.replace(/telegram-bot-/, '').replace(/-/g, '_')}_vol`.substring(0, 30);
     console.log(`[BOT-MANAGER] Creating volume: ${volumeName}`);
     
     const volumeConfig = {
