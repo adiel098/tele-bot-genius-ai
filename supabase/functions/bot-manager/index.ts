@@ -959,7 +959,7 @@ async function deployBotToFlyWithVolume(appName: string, files: Record<string, s
       
       volume = await volumeResponse.json();
       console.log(`[BOT-MANAGER] Volume created: ${volume.id}`);
-    }
+    } // Close the if (!volume) block
     
     // Create a robust file upload approach using here documents
     console.log(`[BOT-MANAGER] Writing files to volume using here-doc approach...`);
