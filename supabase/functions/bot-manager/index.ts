@@ -651,6 +651,10 @@ async function deployBotToFly(appName: string, files: Record<string, string>, to
   console.log(`[BOT-MANAGER] Starting real deployment for ${appName}`);
   
   try {
+    // First, cleanup any existing machines for this app
+    console.log(`[BOT-MANAGER] Checking for existing machines in app ${appName}`);
+    await cleanupExistingMachines(appName, token);
+    
     // Create machine config with embedded setup script
     console.log(`[BOT-MANAGER] Creating machine with bot setup for ${appName}`);
     
@@ -805,6 +809,80 @@ primary_region = "iad"
     port = 443
     handlers = ["tls", "http"]
 `;
+}
+
+async function cleanupExistingMachines(appName: string, token: string): Promise<void> {
+  console.log(`[BOT-MANAGER] Cleaning up existing machines for app ${appName}`);
+  
+  try {
+    // Get all machines for this app
+    const machinesResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!machinesResponse.ok) {
+      if (machinesResponse.status === 404) {
+        console.log(`[BOT-MANAGER] App ${appName} not found, no cleanup needed`);
+        return;
+      }
+      throw new Error(`Failed to list machines: ${machinesResponse.status}`);
+    }
+
+    const machines = await machinesResponse.json();
+    console.log(`[BOT-MANAGER] Found ${machines.length} existing machines to cleanup`);
+
+    // Stop and destroy all existing machines
+    for (const machine of machines) {
+      console.log(`[BOT-MANAGER] Cleaning up machine ${machine.id} (state: ${machine.state})`);
+      
+      // Stop the machine first if it's running
+      if (machine.state === 'started' || machine.state === 'starting') {
+        try {
+          await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${machine.id}/stop`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          console.log(`[BOT-MANAGER] Stopped machine ${machine.id}`);
+          
+          // Wait for machine to stop
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } catch (error) {
+          console.log(`[BOT-MANAGER] Failed to stop machine ${machine.id}: ${error.message}`);
+        }
+      }
+
+      // Destroy the machine
+      try {
+        const destroyResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${machine.id}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (destroyResponse.ok) {
+          console.log(`[BOT-MANAGER] Destroyed machine ${machine.id}`);
+        } else {
+          console.log(`[BOT-MANAGER] Failed to destroy machine ${machine.id}: ${destroyResponse.status}`);
+        }
+      } catch (error) {
+        console.log(`[BOT-MANAGER] Failed to destroy machine ${machine.id}: ${error.message}`);
+      }
+    }
+
+    console.log(`[BOT-MANAGER] Machine cleanup completed for app ${appName}`);
+  } catch (error) {
+    console.error(`[BOT-MANAGER] Machine cleanup failed:`, error);
+    // Don't throw the error, just log it - we still want to proceed with deployment
+  }
 }
 
 function extractTokenFromEnv(envContent: string): string | null {
