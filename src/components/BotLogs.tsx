@@ -17,9 +17,9 @@ export function BotLogs({ bot }: BotLogsProps) {
 
   const fetchLogs = async () => {
     try {
-      console.log(`Fetching logs for bot ${bot.id} from Modal`);
+      console.log(`Fetching logs for bot ${bot.id} from Fly.io`);
       
-      const { data: result, error } = await supabase.functions.invoke('modal-bot-manager', {
+      const { data: result, error } = await supabase.functions.invoke('bot-manager', {
         body: {
           action: 'get-logs',
           botId: bot.id,
@@ -29,7 +29,7 @@ export function BotLogs({ bot }: BotLogsProps) {
 
       if (error) {
         console.error('Error fetching logs:', error);
-        setLogs(['[ERROR] Failed to fetch logs from Modal: ' + error.message]);
+        setLogs(['[ERROR] Failed to fetch logs from Fly.io: ' + error.message]);
         return;
       }
 
@@ -37,11 +37,11 @@ export function BotLogs({ bot }: BotLogsProps) {
         setLogs(result.logs);
       } else {
         const fallbackLogs = [
-          `[${new Date().toISOString()}] ========== MODAL BOT LOGS ==========`,
+          `[${new Date().toISOString()}] ========== FLY.IO BOT LOGS ==========`,
           `[${new Date().toISOString()}] Bot ID: ${bot.id}`,
           `[${new Date().toISOString()}] Status: ${bot.runtime_status}`,
-          `[${new Date().toISOString()}] Platform: Modal.com Serverless`,
-          `[${new Date().toISOString()}] Runtime: Modal Function`,
+          `[${new Date().toISOString()}] Platform: Fly.io Edge Deployment`,
+          `[${new Date().toISOString()}] Runtime: Docker Container`,
           bot.runtime_logs || '[INFO] No logs available yet'
         ];
         setLogs(fallbackLogs);

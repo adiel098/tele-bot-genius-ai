@@ -33,7 +33,7 @@ const FilesPanel = ({ files, onFileSelect, botId, onFilesUpdate }: FilesPanelPro
     try {
       console.log(`[FILES PANEL ENHANCED] Fetching files from enhanced Supabase Storage for bot ${botId}`);
       
-      const { data, error } = await supabase.functions.invoke('modal-bot-manager', {
+      const { data, error } = await supabase.functions.invoke('bot-manager', {
         body: {
           action: 'get-files',
           botId: botId,

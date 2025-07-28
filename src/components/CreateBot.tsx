@@ -52,8 +52,8 @@ export function CreateBot() {
 
       if (createError) throw createError;
 
-      // Then call Modal through the edge function with proper authentication
-      const { data: result, error } = await supabase.functions.invoke('modal-bot-manager', {
+      // Then call Fly.io through the edge function with proper authentication
+      const { data: result, error } = await supabase.functions.invoke('bot-manager', {
         body: {
           action: 'create-bot',
           botId: botRecord.id,
@@ -69,7 +69,7 @@ export function CreateBot() {
       if (result.success) {
         toast({
           title: "🎉 Bot Created Successfully!",
-          description: "Your bot has been generated and deployed via Modal.",
+          description: "Your bot has been generated and deployed via Fly.io.",
         });
 
         // Navigate to dashboard or bot workspace

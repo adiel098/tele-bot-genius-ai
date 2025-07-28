@@ -21,38 +21,45 @@ serve(async (req) => {
   }
 
   try {
-    const { action, botId, userId, ...requestData } = await req.json();
+    const { action, botId, userId, prompt, token, name, modificationPrompt, instruction } = await req.json();
     
-    console.log(`[FLYIO-MANAGER] === Starting ${action} for bot ${botId} ===`);
-    console.log(`[FLYIO-MANAGER] Enhanced Hybrid Architecture: Supabase Storage + Fly.io Execution`);
+    console.log(`[BOT-MANAGER] === Starting ${action} for bot ${botId} ===`);
+    console.log(`[BOT-MANAGER] Fly.io-Only Architecture: Supabase Storage + Fly.io Execution`);
     
     const flyioToken = Deno.env.get('FLYIO_API_TOKEN');
     const flyioOrg = Deno.env.get('FLYIO_ORG') || 'personal';
     
-    console.log(`[FLYIO-MANAGER] Fly.io Token Available: ${!!flyioToken}`);
-    console.log(`[FLYIO-MANAGER] Fly.io Organization: ${flyioOrg}`);
+    console.log(`[BOT-MANAGER] Fly.io Token Available: ${!!flyioToken}`);
+    console.log(`[BOT-MANAGER] Fly.io Organization: ${flyioOrg}`);
 
     switch (action) {
+      case 'create-bot':
       case 'start-bot':
-        return await startBotInFlyio(botId, userId, flyioToken, flyioOrg);
+        return await startBotInFlyio(botId, userId, flyioToken, flyioOrg, prompt, token, name);
       case 'stop-bot':
         return await stopBotInFlyio(botId, flyioToken, flyioOrg);
+      case 'restart-bot':
+        return await restartBotInFlyio(botId, userId, flyioToken, flyioOrg);
       case 'get-logs':
         return await getLogsFromFlyio(botId, flyioToken, flyioOrg);
       case 'get-files':
         return await getFilesFromSupabaseStorage(botId, userId);
+      case 'modify-bot':
+        return await modifyBot(botId, userId, modificationPrompt || instruction, flyioToken, flyioOrg);
+      case 'fix-bot':
+        return await fixBot(botId, userId, flyioToken, flyioOrg);
       case 'health-check':
         return await performHealthCheck(flyioToken);
       default:
         throw new Error(`Unknown action: ${action}`);
     }
   } catch (error) {
-    console.error('[FLYIO-MANAGER] Error:', error);
+    console.error('[BOT-MANAGER] Error:', error);
     return new Response(
       JSON.stringify({ 
         success: false, 
         error: error.message,
-        logs: [`[FLYIO-MANAGER] Error: ${error.message}`]
+        logs: [`[BOT-MANAGER] Error: ${error.message}`]
       }),
       { 
         status: 500, 
@@ -62,8 +69,8 @@ serve(async (req) => {
   }
 });
 
-async function startBotInFlyio(botId: string, userId: string, token: string, org: string): Promise<Response> {
-  console.log(`[FLYIO-MANAGER] Starting bot deployment for ${botId}`);
+async function startBotInFlyio(botId: string, userId: string, token: string, org: string, prompt?: string, botToken?: string, name?: string): Promise<Response> {
+  console.log(`[BOT-MANAGER] Starting bot deployment for ${botId}`);
   
   if (!token) {
     throw new Error('Fly.io API token not configured');
@@ -77,16 +84,16 @@ async function startBotInFlyio(botId: string, userId: string, token: string, org
     throw new Error('Failed to retrieve bot files from storage');
   }
 
-  const { main_py, requirements_txt, env_file } = filesData.files;
-  const botToken = extractTokenFromEnv(env_file);
+  const { 'main.py': mainPy, 'requirements.txt': requirementsTxt, '.env': envFile } = filesData.files;
+  const extractedToken = extractTokenFromEnv(envFile) || botToken;
   
-  if (!botToken) {
+  if (!extractedToken) {
     throw new Error('Bot token not found in environment file');
   }
 
   // Create Fly.io app configuration
   const appName = `telegram-bot-${botId.slice(0, 8)}`;
-  const flyConfig = generateFlyConfig(appName, botToken);
+  const flyConfig = generateFlyConfig(appName, extractedToken);
   
   try {
     // Create Fly.io app
@@ -94,13 +101,13 @@ async function startBotInFlyio(botId: string, userId: string, token: string, org
     
     // Deploy the bot
     const deployResult = await deployBotToFly(appName, {
-      main_py,
-      requirements_txt,
-      env_file,
-      fly_toml: flyConfig
+      'main.py': mainPy,
+      'requirements.txt': requirementsTxt,
+      '.env': envFile,
+      'fly.toml': flyConfig
     }, token);
     
-    console.log(`[FLYIO-MANAGER] Bot deployment successful for ${botId}`);
+    console.log(`[BOT-MANAGER] Bot deployment successful for ${botId}`);
     
     return new Response(
       JSON.stringify({
@@ -108,21 +115,21 @@ async function startBotInFlyio(botId: string, userId: string, token: string, org
         appName,
         deploymentId: deployResult.id,
         logs: [
-          `[FLYIO-MANAGER] App created: ${appName}`,
-          `[FLYIO-MANAGER] Deployment successful: ${deployResult.id}`,
-          `[FLYIO-MANAGER] Bot is starting up...`
+          `[BOT-MANAGER] App created: ${appName}`,
+          `[BOT-MANAGER] Deployment successful: ${deployResult.id}`,
+          `[BOT-MANAGER] Bot is starting up...`
         ]
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error(`[FLYIO-MANAGER] Deployment failed:`, error);
+    console.error(`[BOT-MANAGER] Deployment failed:`, error);
     throw new Error(`Fly.io deployment failed: ${error.message}`);
   }
 }
 
 async function stopBotInFlyio(botId: string, token: string, org: string): Promise<Response> {
-  console.log(`[FLYIO-MANAGER] Stopping bot ${botId}`);
+  console.log(`[BOT-MANAGER] Stopping bot ${botId}`);
   
   const appName = `telegram-bot-${botId.slice(0, 8)}`;
   
@@ -153,18 +160,31 @@ async function stopBotInFlyio(botId: string, token: string, org: string): Promis
     return new Response(
       JSON.stringify({
         success: true,
-        logs: [`[FLYIO-MANAGER] Bot ${botId} stopped successfully`]
+        logs: [`[BOT-MANAGER] Bot ${botId} stopped successfully`]
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error(`[FLYIO-MANAGER] Stop failed:`, error);
+    console.error(`[BOT-MANAGER] Stop failed:`, error);
     throw new Error(`Failed to stop bot: ${error.message}`);
   }
 }
 
+async function restartBotInFlyio(botId: string, userId: string, token: string, org: string): Promise<Response> {
+  console.log(`[BOT-MANAGER] Restarting bot ${botId}`);
+  
+  // Stop the bot first
+  await stopBotInFlyio(botId, token, org);
+  
+  // Wait a moment for graceful shutdown
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  
+  // Start the bot again
+  return await startBotInFlyio(botId, userId, token, org);
+}
+
 async function getLogsFromFlyio(botId: string, token: string, org: string): Promise<Response> {
-  console.log(`[FLYIO-MANAGER] Getting logs for bot ${botId}`);
+  console.log(`[BOT-MANAGER] Getting logs for bot ${botId}`);
   
   const appName = `telegram-bot-${botId.slice(0, 8)}`;
   
@@ -177,7 +197,7 @@ async function getLogsFromFlyio(botId: string, token: string, org: string): Prom
       }
     });
     
-    let logs = [`[FLYIO-MANAGER] Retrieving logs for ${appName}`];
+    let logs = [`[BOT-MANAGER] Retrieving logs for ${appName}`];
     
     if (response.ok) {
       const machines = await response.json();
@@ -196,7 +216,7 @@ async function getLogsFromFlyio(botId: string, token: string, org: string): Prom
         }
       }
     } else {
-      logs.push(`[FLYIO-MANAGER] App not found or no access: ${appName}`);
+      logs.push(`[BOT-MANAGER] App not found or no access: ${appName}`);
     }
     
     return new Response(
@@ -207,20 +227,74 @@ async function getLogsFromFlyio(botId: string, token: string, org: string): Prom
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error(`[FLYIO-MANAGER] Log retrieval failed:`, error);
+    console.error(`[BOT-MANAGER] Log retrieval failed:`, error);
     return new Response(
       JSON.stringify({
         success: false,
-        logs: [`[FLYIO-MANAGER] Failed to get logs: ${error.message}`]
+        logs: [`[BOT-MANAGER] Failed to get logs: ${error.message}`]
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 }
 
+async function modifyBot(botId: string, userId: string, instruction: string, token: string, org: string): Promise<Response> {
+  console.log(`[BOT-MANAGER] Modifying bot ${botId} with instruction: ${instruction}`);
+  
+  try {
+    // This is a placeholder for AI-powered bot modification
+    // In a full implementation, this would:
+    // 1. Get current bot files
+    // 2. Use AI to modify the code based on instruction
+    // 3. Save updated files to Supabase Storage
+    // 4. Redeploy to Fly.io
+    
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: 'Bot modification feature coming soon',
+        logs: [`[BOT-MANAGER] Modification requested: ${instruction}`]
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  } catch (error) {
+    console.error(`[BOT-MANAGER] Modification failed:`, error);
+    throw new Error(`Failed to modify bot: ${error.message}`);
+  }
+}
+
+async function fixBot(botId: string, userId: string, token: string, org: string): Promise<Response> {
+  console.log(`[BOT-MANAGER] Attempting to fix bot ${botId}`);
+  
+  try {
+    // Get current logs to diagnose issues
+    const logsResponse = await getLogsFromFlyio(botId, token, org);
+    const logsData = await logsResponse.json();
+    
+    // This is a placeholder for AI-powered bot fixing
+    // In a full implementation, this would:
+    // 1. Analyze error logs
+    // 2. Use AI to fix the code issues
+    // 3. Update files in Supabase Storage
+    // 4. Redeploy to Fly.io
+    
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: 'AI bot fixing feature coming soon',
+        logs: [`[BOT-MANAGER] Fix attempt for bot ${botId}`, ...logsData.logs]
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  } catch (error) {
+    console.error(`[BOT-MANAGER] Fix attempt failed:`, error);
+    throw new Error(`Failed to fix bot: ${error.message}`);
+  }
+}
+
 async function getFilesFromSupabaseStorage(botId: string, userId: string): Promise<Response> {
-  console.log(`[FLYIO-MANAGER] Getting files from Supabase Storage for bot ${botId}`);
-  console.log(`[FLYIO-MANAGER] User ID: ${userId}`);
+  console.log(`[BOT-MANAGER] Getting files from Supabase Storage for bot ${botId}`);
+  console.log(`[BOT-MANAGER] User ID: ${userId}`);
   
   await ensureStorageBucket();
   
@@ -228,11 +302,11 @@ async function getFilesFromSupabaseStorage(botId: string, userId: string): Promi
   const files: Record<string, string> = {};
   
   try {
-    console.log(`[FLYIO-MANAGER] Exploring storage structure...`);
+    console.log(`[BOT-MANAGER] Exploring storage structure...`);
     
     // List all buckets for debugging
     const { data: buckets } = await supabase.storage.listBuckets();
-    console.log(`[FLYIO-MANAGER] Available buckets: ${buckets?.map(b => b.name).join(', ')}`);
+    console.log(`[BOT-MANAGER] Available buckets: ${buckets?.map(b => b.name).join(', ')}`);
     
     // Try different path structures
     const possiblePaths = [
@@ -245,12 +319,12 @@ async function getFilesFromSupabaseStorage(botId: string, userId: string): Promi
     let allFiles: any[] = [];
     
     for (const path of possiblePaths) {
-      console.log(`[FLYIO-MANAGER] Trying path: ${path}`);
+      console.log(`[BOT-MANAGER] Trying path: ${path}`);
       const { data: pathFiles, error } = await supabase.storage.from('bot-files').list(path);
       
       if (!error && pathFiles && pathFiles.length > 0) {
         const fileNames = pathFiles.map(f => f.name);
-        console.log(`[FLYIO-MANAGER] Files found in ${path}: ${fileNames.join(', ')}`);
+        console.log(`[BOT-MANAGER] Files found in ${path}: ${fileNames.join(', ')}`);
         
         if (fileNames.some(name => requiredFiles.includes(name))) {
           foundPath = path;
@@ -264,13 +338,13 @@ async function getFilesFromSupabaseStorage(botId: string, userId: string): Promi
       throw new Error(`No bot files found for bot ${botId}`);
     }
     
-    console.log(`[FLYIO-MANAGER] Using path: ${foundPath}`);
-    console.log(`[FLYIO-MANAGER] Available files: ${allFiles.map(f => f.name).join(', ')}`);
+    console.log(`[BOT-MANAGER] Using path: ${foundPath}`);
+    console.log(`[BOT-MANAGER] Available files: ${allFiles.map(f => f.name).join(', ')}`);
     
     // Download each required file
     for (const fileName of requiredFiles) {
       const filePath = `${foundPath}/${fileName}`;
-      console.log(`[FLYIO-MANAGER] Downloading: ${filePath}`);
+      console.log(`[BOT-MANAGER] Downloading: ${filePath}`);
       
       const { data, error } = await supabase.storage
         .from('bot-files')
@@ -278,17 +352,17 @@ async function getFilesFromSupabaseStorage(botId: string, userId: string): Promi
       
       if (!error && data) {
         const content = await data.text();
-        files[fileName.replace('.', '_')] = content;
-        console.log(`[FLYIO-MANAGER] Successfully retrieved ${fileName}: ${content.length} characters`);
+        files[fileName] = content;
+        console.log(`[BOT-MANAGER] Successfully retrieved ${fileName}: ${content.length} characters`);
       } else {
-        console.log(`[FLYIO-MANAGER] Failed to retrieve ${fileName}: ${error?.message || 'Unknown error'}`);
+        console.log(`[BOT-MANAGER] Failed to retrieve ${fileName}: ${error?.message || 'Unknown error'}`);
         if (fileName === 'main.py' || fileName === 'requirements.txt') {
           throw new Error(`Required file ${fileName} not found`);
         }
       }
     }
     
-    console.log(`[FLYIO-MANAGER] Retrieved ${Object.keys(files).length}/${requiredFiles.length} files`);
+    console.log(`[BOT-MANAGER] Retrieved ${Object.keys(files).length}/${requiredFiles.length} files`);
     
     return new Response(
       JSON.stringify({
@@ -300,12 +374,12 @@ async function getFilesFromSupabaseStorage(botId: string, userId: string): Promi
     );
     
   } catch (error) {
-    console.error(`[FLYIO-MANAGER] Error retrieving files:`, error);
+    console.error(`[BOT-MANAGER] Error retrieving files:`, error);
     return new Response(
       JSON.stringify({
         success: false,
         error: error.message,
-        logs: [`[FLYIO-MANAGER] File retrieval failed: ${error.message}`]
+        logs: [`[BOT-MANAGER] File retrieval failed: ${error.message}`]
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -313,7 +387,7 @@ async function getFilesFromSupabaseStorage(botId: string, userId: string): Promi
 }
 
 async function performHealthCheck(token?: string): Promise<Response> {
-  console.log('[FLYIO-MANAGER] Performing health check');
+  console.log('[BOT-MANAGER] Performing health check');
   
   const health = {
     supabase_storage: 'unknown',
@@ -351,9 +425,9 @@ async function performHealthCheck(token?: string): Promise<Response> {
       success: true,
       health,
       logs: [
-        `[FLYIO-MANAGER] Health Check Complete`,
-        `[FLYIO-MANAGER] Supabase Storage: ${health.supabase_storage}`,
-        `[FLYIO-MANAGER] Fly.io API: ${health.flyio_api}`
+        `[BOT-MANAGER] Health Check Complete`,
+        `[BOT-MANAGER] Supabase Storage: ${health.supabase_storage}`,
+        `[BOT-MANAGER] Fly.io API: ${health.flyio_api}`
       ]
     }),
     { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -361,12 +435,12 @@ async function performHealthCheck(token?: string): Promise<Response> {
 }
 
 async function ensureStorageBucket(): Promise<void> {
-  console.log('[FLYIO-MANAGER] Ensuring bot-files bucket exists');
+  console.log('[BOT-MANAGER] Ensuring bot-files bucket exists');
   
   const { data, error } = await supabase.storage.getBucket('bot-files');
   
   if (error && error.message.includes('not found')) {
-    console.log('[FLYIO-MANAGER] Creating bot-files bucket');
+    console.log('[BOT-MANAGER] Creating bot-files bucket');
     const { error: createError } = await supabase.storage.createBucket('bot-files', {
       public: false
     });
@@ -378,7 +452,7 @@ async function ensureStorageBucket(): Promise<void> {
     throw new Error(`Storage bucket error: ${error.message}`);
   }
   
-  console.log('[FLYIO-MANAGER] Storage bucket verified');
+  console.log('[BOT-MANAGER] Storage bucket verified');
 }
 
 async function createFlyApp(appName: string, org: string, token: string): Promise<void> {

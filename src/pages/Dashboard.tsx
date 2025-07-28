@@ -73,9 +73,9 @@ const Dashboard = () => {
 
   const stopBotExecution = async (botId: string) => {
     try {
-      console.log(`Stopping bot ${botId} via Modal`);
+      console.log(`Stopping bot ${botId} via Fly.io`);
       
-      const { data, error } = await supabase.functions.invoke('modal-bot-manager', {
+      const { data, error } = await supabase.functions.invoke('bot-manager', {
         body: {
           action: 'stop-bot',
           botId,
@@ -89,7 +89,7 @@ const Dashboard = () => {
       }
 
       if (data.success) {
-        console.log(`Bot ${botId} execution stopped successfully via Modal`);
+        console.log(`Bot ${botId} execution stopped successfully via Fly.io`);
         return true;
       } else {
         console.error('Failed to stop bot execution:', data.error);
@@ -103,9 +103,9 @@ const Dashboard = () => {
 
   const deleteBotFiles = async (botId: string, userId: string) => {
     try {
-      // Since files are stored in Modal volume, we don't need to delete them separately
-      // Modal handles cleanup when the bot is deleted from database
-      console.log(`Modal will handle file cleanup for bot ${botId}`);
+      // Since files are stored in Supabase Storage, we don't need to delete them separately
+      // Fly.io handles cleanup when the bot is deleted from database
+      console.log(`Fly.io will handle file cleanup for bot ${botId}`);
       return true;
     } catch (error) {
       console.error('Error in deleteBotFiles:', error);
@@ -126,7 +126,7 @@ const Dashboard = () => {
       // Step 1: Stop the bot execution if it's running
       const bot = bots.find(b => b.id === botId);
       if (bot && (bot.runtime_status === 'running' || bot.runtime_status === 'starting')) {
-        console.log(`Stopping bot execution for ${botId} via Modal...`);
+        console.log(`Stopping bot execution for ${botId} via Fly.io...`);
         const stopSuccess = await stopBotExecution(botId);
         
         if (!stopSuccess) {
@@ -170,7 +170,7 @@ const Dashboard = () => {
         setBots(prev => prev.filter(bot => bot.id !== botId));
         toast({
           title: "Bot deleted successfully! 🗑️",
-          description: `${botName} and all its files have been removed from Modal`,
+          description: `${botName} and all its files have been removed from Fly.io`,
         });
       }
     } catch (error) {
@@ -210,7 +210,7 @@ const Dashboard = () => {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">TeleBot AI Dashboard</h1>
-          <p className="text-gray-600">Manage and monitor your Modal-powered bots</p>
+          <p className="text-gray-600">Manage and monitor your Fly.io-powered bots</p>
         </div>
 
         {bots.length === 0 ? (

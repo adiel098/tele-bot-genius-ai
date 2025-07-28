@@ -31,9 +31,9 @@ export function ModifyBot({ bot, onUpdate }: ModifyBotProps) {
     setError('');
 
     try {
-      console.log(`Modifying bot ${bot.id} via Modal`);
+      console.log(`Modifying bot ${bot.id} via Fly.io`);
       
-      const { data: result, error } = await supabase.functions.invoke('modal-bot-manager', {
+      const { data: result, error } = await supabase.functions.invoke('bot-manager', {
         body: {
           action: 'modify-bot',
           botId: bot.id,
@@ -47,7 +47,7 @@ export function ModifyBot({ bot, onUpdate }: ModifyBotProps) {
       if (result.success) {
         toast({
           title: "🎉 Bot Modified Successfully!",
-          description: "Your bot has been updated and redeployed via Modal with the new functionality.",
+          description: "Your bot has been updated and redeployed via Fly.io with the new functionality.",
         });
 
         setModificationPrompt('');

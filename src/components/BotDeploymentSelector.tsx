@@ -8,8 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 
 interface BotDeploymentSelectorProps {
-  selectedType: 'kubernetes' | 'local' | 'flyio' | 'modal';
-  onTypeChange: (type: 'kubernetes' | 'local' | 'flyio' | 'modal') => void;
+  selectedType: 'flyio';
+  onTypeChange: (type: 'flyio') => void;
 }
 
 const BotDeploymentSelector = ({ selectedType, onTypeChange }: BotDeploymentSelectorProps) => {
@@ -26,14 +26,14 @@ const BotDeploymentSelector = ({ selectedType, onTypeChange }: BotDeploymentSele
             
 
             {/* Fly.io Option */}
-            <div className="flex items-center space-x-2 p-4 border rounded-lg hover:bg-gray-50">
+            <div className="flex items-center space-x-2 p-4 border-2 border-primary rounded-lg bg-primary/5">
               <RadioGroupItem value="flyio" id="flyio" />
               <Label htmlFor="flyio" className="flex-1 cursor-pointer">
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="font-semibold flex items-center">
-                      🚁 Fly.io
-                      <Badge variant="default" className="ml-2">Recommended</Badge>
+                      🚁 Fly.io Production Deployment
+                      <Badge variant="default" className="ml-2">Only Option</Badge>
                     </div>
                     <div className="text-sm text-gray-600 mt-1">
                       Global edge deployment with 24/7 uptime, perfect for production Telegram bots
@@ -49,83 +49,14 @@ const BotDeploymentSelector = ({ selectedType, onTypeChange }: BotDeploymentSele
               </Label>
             </div>
 
-            {/* Modal Option */}
-            <div className="flex items-center space-x-2 p-4 border rounded-lg hover:bg-gray-50">
-              <RadioGroupItem value="modal" id="modal" />
-              <Label htmlFor="modal" className="flex-1 cursor-pointer">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-semibold flex items-center">
-                      ⚡ Modal
-                      <Badge variant="secondary" className="ml-2">Serverless</Badge>
-                    </div>
-                    <div className="text-sm text-gray-600 mt-1">
-                      Serverless Python execution with automatic scaling and GPU support
-                    </div>
-                    <div className="text-xs text-blue-600 mt-1 font-medium">
-                      💰 Pay-per-use • GPU available • Cold starts
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-2 text-xs text-gray-500">
-                  ✅ Serverless • ✅ GPU support • ✅ Auto-scaling • ✅ Python-native • ⚠️ Cold starts
-                </div>
-              </Label>
-            </div>
-
-            {/* Kubernetes Option */}
-            <div className="flex items-center space-x-2 p-4 border rounded-lg hover:bg-gray-50">
-              <RadioGroupItem value="kubernetes" id="kubernetes" />
-              <Label htmlFor="kubernetes" className="flex-1 cursor-pointer">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-semibold flex items-center">
-                      ☸️ Kubernetes Cluster
-                      <Badge variant="secondary" className="ml-2">Enterprise</Badge>
-                    </div>
-                    <div className="text-sm text-gray-600 mt-1">
-                      Full containerization with auto-scaling, health checks, and production-ready deployment
-                    </div>
-                    <div className="text-xs text-orange-600 mt-1 font-medium">
-                      💰 Higher cost • Complex setup • Maximum control
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-2 text-xs text-gray-500">
-                  ✅ Auto-scaling • ✅ Health checks • ✅ Container registry • ✅ Load balancing • ✅ Resource limits
-                </div>
-              </Label>
-            </div>
-
-            {/* Local Development Option */}
-            <div className="flex items-center space-x-2 p-4 border rounded-lg hover:bg-gray-50">
-              <RadioGroupItem value="local" id="local" />
-              <Label htmlFor="local" className="flex-1 cursor-pointer">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-semibold flex items-center">
-                      🏠 Local Development
-                      <Badge variant="outline" className="ml-2">Development</Badge>
-                    </div>
-                    <div className="text-sm text-gray-600 mt-1">
-                      Local Docker containers for development and testing purposes
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-2 text-xs text-gray-500">
-                  ✅ Quick testing • ✅ Local execution • ✅ Development logs • ✅ Fast iteration
-                </div>
-              </Label>
-            </div>
-
           </div>
         </RadioGroup>
 
         <Separator className="my-4" />
         
         <div className="text-sm text-gray-600">
-          <strong>Recommendation:</strong> Use <strong>Fly.io</strong> for 24/7 production bots with global reach, 
-          <strong>Modal</strong> for serverless/GPU workloads, or <strong>Local Development</strong> for testing.
+          <strong>Fly.io</strong> provides 24/7 production deployment with global edge locations, 
+          automatic scaling, and cost-effective pricing with pay-per-use billing.
         </div>
       </CardContent>
     </Card>

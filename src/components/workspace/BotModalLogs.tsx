@@ -39,9 +39,9 @@ const BotModalLogs = ({ botId, onLogsUpdate, onFixByAI }: BotModalLogsProps) => 
     
     setIsLoading(true);
     try {
-      console.log(`[MODAL LOGS ENHANCED] Fetching enhanced Modal logs for bot ${botId}`);
+      console.log(`[BOT LOGS ENHANCED] Fetching enhanced Fly.io logs for bot ${botId}`);
       
-      const { data, error } = await supabase.functions.invoke('modal-bot-manager', {
+      const { data, error } = await supabase.functions.invoke('bot-manager', {
         body: {
           action: 'get-logs',
           botId: botId,

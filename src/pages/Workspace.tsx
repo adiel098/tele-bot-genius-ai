@@ -135,7 +135,7 @@ const Workspace = () => {
     if (!content || !bot || isGenerating || !session) return;
 
     console.log(`[WORKSPACE HYBRID] === Starting message send for bot ${bot.id} ===`);
-    console.log(`[WORKSPACE HYBRID] Hybrid Architecture: Supabase Storage + Modal Execution`);
+    console.log(`[WORKSPACE HYBRID] Hybrid Architecture: Supabase Storage + Fly.io Execution`);
 
     const userMessage: Message = {
       role: 'user',
@@ -150,9 +150,9 @@ const Workspace = () => {
     const startTime = Date.now();
 
     try {
-      console.log(`[WORKSPACE HYBRID] Invoking modal-bot-manager with modify-bot action`);
+      console.log(`[WORKSPACE HYBRID] Invoking bot-manager with modify-bot action`);
 
-      const { data, error } = await supabase.functions.invoke('modal-bot-manager', {
+      const { data, error } = await supabase.functions.invoke('bot-manager', {
         body: {
           action: 'modify-bot',
           botId: bot.id,
@@ -179,7 +179,7 @@ const Workspace = () => {
         
         toast({
           title: "Bot Updated! 🎉",
-          description: data.message || "Your bot has been updated with hybrid Supabase + Modal architecture",
+          description: data.message || "Your bot has been updated with hybrid Supabase + Fly.io architecture",
         });
         setBotError(null);
         
@@ -221,9 +221,9 @@ const Workspace = () => {
     const startTime = Date.now();
     
     try {
-      console.log('[WORKSPACE HYBRID] Invoking modal-bot-manager with fix-bot action');
+      console.log('[WORKSPACE HYBRID] Invoking bot-manager with fix-bot action');
       
-      const { data, error } = await supabase.functions.invoke('modal-bot-manager', {
+      const { data, error } = await supabase.functions.invoke('bot-manager', {
         body: {
           action: 'fix-bot',
           botId: bot.id,
@@ -245,7 +245,7 @@ const Workspace = () => {
         
         toast({
           title: "🛠️ Bot Fixed by AI!",
-          description: "Your bot has been automatically fixed using Supabase + Modal hybrid architecture",
+          description: "Your bot has been automatically fixed using Supabase + Fly.io hybrid architecture",
         });
         setBotError(null);
         
@@ -254,19 +254,19 @@ const Workspace = () => {
           role: 'assistant',
           content: `🛠️ **Bot Fixed Automatically with Hybrid Architecture!**
 
-I analyzed the error logs and applied fixes using our Supabase + Modal hybrid system:
+I analyzed the error logs and applied fixes using our Supabase + Fly.io hybrid system:
 
 **Architecture Used:**
 ✅ Files stored and managed in Supabase Storage
-✅ Bot execution optimized in Modal containers
-✅ Real-time logs from Modal execution environment
+✅ Bot execution optimized in Fly.io containers
+✅ Real-time logs from Fly.io execution environment
 
 **Error Fixed:**
 \`\`\`
 ${errorLogs.slice(0, 200)}...
 \`\`\`
 
-Your bot is now running with the corrected code in Modal's optimized environment.`,
+Your bot is now running with the corrected code in Fly.io's optimized environment.`,
           timestamp: new Date().toISOString(),
           files: data.files
         };
@@ -299,7 +299,7 @@ Your bot is now running with the corrected code in Modal's optimized environment
     console.log(`[WORKSPACE HYBRID] === Starting bot retry with hybrid architecture ===`);
     
     try {
-      const { data, error } = await supabase.functions.invoke('modal-bot-manager', {
+      const { data, error } = await supabase.functions.invoke('bot-manager', {
         body: {
           action: 'start-bot',
           botId: bot.id,
@@ -321,7 +321,7 @@ Your bot is now running with the corrected code in Modal's optimized environment
         setBotError(null);
         toast({
           title: "Bot Restart Initiated! 🔄",
-          description: "Your bot is being restarted with Supabase + Modal hybrid architecture",
+          description: "Your bot is being restarted with Supabase + Fly.io hybrid architecture",
         });
         console.log(`[WORKSPACE HYBRID] Bot restart successful`);
       } else {
@@ -362,7 +362,7 @@ Your bot is now running with the corrected code in Modal's optimized environment
             <span className="text-white text-2xl">🤖</span>
           </div>
           <p className="text-gray-600">Loading hybrid workspace...</p>
-          <p className="text-sm text-gray-500 mt-2">Supabase Storage + Modal Execution</p>
+          <p className="text-sm text-gray-500 mt-2">Supabase Storage + Fly.io Execution</p>
         </div>
       </div>
     );

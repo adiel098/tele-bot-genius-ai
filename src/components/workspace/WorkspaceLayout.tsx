@@ -95,7 +95,7 @@ const WorkspaceLayout = ({
     try {
       console.log('[WORKSPACE ENHANCED] Performing enhanced health check');
       
-      const { data, error } = await supabase.functions.invoke('modal-bot-manager', {
+      const { data, error } = await supabase.functions.invoke('bot-manager', {
         body: {
           action: 'health-check',
           botId: botId,

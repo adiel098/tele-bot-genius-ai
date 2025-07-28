@@ -18,9 +18,9 @@ export function BotRuntimeControls({ bot, onUpdate }: BotRuntimeControlsProps) {
   const startBot = async () => {
     setIsLoading(true);
     try {
-      console.log(`Starting bot ${bot.id} via Modal`);
+      console.log(`Starting bot ${bot.id} via Fly.io`);
       
-      const { data: result, error } = await supabase.functions.invoke('modal-bot-manager', {
+      const { data: result, error } = await supabase.functions.invoke('bot-manager', {
         body: {
           action: 'start-bot',
           botId: bot.id,
@@ -33,7 +33,7 @@ export function BotRuntimeControls({ bot, onUpdate }: BotRuntimeControlsProps) {
       if (result.success) {
         toast({
           title: "✅ Bot Started",
-          description: "Your bot is now running via Modal and ready to receive messages!",
+          description: "Your bot is now running via Fly.io and ready to receive messages!",
         });
         onUpdate();
       } else {
@@ -54,9 +54,9 @@ export function BotRuntimeControls({ bot, onUpdate }: BotRuntimeControlsProps) {
   const stopBot = async () => {
     setIsLoading(true);
     try {
-      console.log(`Stopping bot ${bot.id} via Modal`);
+      console.log(`Stopping bot ${bot.id} via Fly.io`);
       
-      const { data: result, error } = await supabase.functions.invoke('modal-bot-manager', {
+      const { data: result, error } = await supabase.functions.invoke('bot-manager', {
         body: {
           action: 'stop-bot',
           botId: bot.id,
@@ -90,9 +90,9 @@ export function BotRuntimeControls({ bot, onUpdate }: BotRuntimeControlsProps) {
   const restartBot = async () => {
     setIsLoading(true);
     try {
-      console.log(`Restarting bot ${bot.id} via Modal`);
+      console.log(`Restarting bot ${bot.id} via Fly.io`);
       
-      const { data: result, error } = await supabase.functions.invoke('modal-bot-manager', {
+      const { data: result, error } = await supabase.functions.invoke('bot-manager', {
         body: {
           action: 'restart-bot',
           botId: bot.id,
@@ -105,7 +105,7 @@ export function BotRuntimeControls({ bot, onUpdate }: BotRuntimeControlsProps) {
       if (result.success) {
         toast({
           title: "🔄 Bot Restarted",
-          description: "Your bot has been restarted with the latest code via Modal.",
+          description: "Your bot has been restarted with the latest code via Fly.io.",
         });
         onUpdate();
       } else {
@@ -126,9 +126,9 @@ export function BotRuntimeControls({ bot, onUpdate }: BotRuntimeControlsProps) {
   const fixBot = async () => {
     setIsLoading(true);
     try {
-      console.log(`Fixing bot ${bot.id} via Modal AI`);
+      console.log(`Fixing bot ${bot.id} via Fly.io AI`);
       
-      const { data: result, error } = await supabase.functions.invoke('modal-bot-manager', {
+      const { data: result, error } = await supabase.functions.invoke('bot-manager', {
         body: {
           action: 'fix-bot',
           botId: bot.id,
@@ -141,7 +141,7 @@ export function BotRuntimeControls({ bot, onUpdate }: BotRuntimeControlsProps) {
       if (result.success) {
         toast({
           title: "🛠️ Bot Fixed",
-          description: "AI has analyzed and fixed your bot's issues via Modal.",
+          description: "AI has analyzed and fixed your bot's issues via Fly.io.",
         });
         onUpdate();
       } else {
