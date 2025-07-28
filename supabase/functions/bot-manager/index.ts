@@ -672,34 +672,26 @@ async function deployBotToFly(appName: string, files: Record<string, string>, to
     const botToken = extractTokenFromEnv(files['.env']) || '';
     
     // Create setup script that installs dependencies and sets up the bot
+    // Use base64 encoding to avoid heredoc issues
+    const mainPyBase64 = btoa(files['main.py'] || '');
+    const envBase64 = btoa(files['.env'] || '');
+    const requirementsBase64 = btoa(files['requirements.txt'] || '');
+    
     const setupScript = `#!/bin/bash
 set -e
-
-echo "Installing Python dependencies..."
-pip install python-telegram-bot python-dotenv requests aiohttp
-
-echo "Creating bot directory and files..."
+echo "Setting up bot environment..."
 mkdir -p /app
 cd /app
-
-# Create main.py
-cat > main.py << 'EOF'
-${files['main.py'] || ''}
-EOF
-
-# Create .env
-cat > .env << 'EOF'
-${files['.env'] || ''}
-EOF
-
-# Create requirements.txt if it exists
-${files['requirements.txt'] ? `cat > requirements.txt << 'EOF'
-${files['requirements.txt']}
-EOF` : ''}
-
-echo "Bot setup complete, starting bot..."
-exec python main.py
-`;
+echo "Installing Python dependencies..."
+pip install python-telegram-bot python-dotenv requests aiohttp
+echo "Creating bot files..."
+echo "${mainPyBase64}" | base64 -d > main.py
+echo "${envBase64}" | base64 -d > .env
+echo "${requirementsBase64}" | base64 -d > requirements.txt
+echo "Files created successfully:"
+ls -la /app/
+echo "Starting bot..."
+python main.py`;
 
     const machineConfig = {
       config: {
