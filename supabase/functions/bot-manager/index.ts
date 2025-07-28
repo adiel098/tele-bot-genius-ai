@@ -869,10 +869,16 @@ async function deployBotToFly(appName: string, files: Record<string, string>, to
     console.log(`[BOT-MANAGER] Bot code converted from webhook to polling mode`);
     
     // Create setup script that installs dependencies and sets up the bot
-    // Use base64 encoding to avoid heredoc issues
-    const mainPyBase64 = btoa(convertedMainPy);
-    const envBase64 = btoa(files['.env'] || '');
-    const requirementsBase64 = btoa(files['requirements.txt'] || '');
+    // Use proper UTF-8 to base64 encoding to handle Unicode characters
+    const encoder = new TextEncoder();
+    const mainPyBytes = encoder.encode(convertedMainPy);
+    const envBytes = encoder.encode(files['.env'] || '');
+    const requirementsBytes = encoder.encode(files['requirements.txt'] || '');
+    
+    // Convert to base64 using proper UTF-8 encoding
+    const mainPyBase64 = btoa(String.fromCharCode(...mainPyBytes));
+    const envBase64 = btoa(String.fromCharCode(...envBytes));
+    const requirementsBase64 = btoa(String.fromCharCode(...requirementsBytes));
     
     const setupScript = `#!/bin/bash
 set -e
