@@ -7,6 +7,29 @@ async function deployBotToFlyWithVolume(appName: string, files: Record<string, s
     console.log(`[BOT-MANAGER] Cleaning up existing machines only...`);
     await cleanupExistingMachines(appName, token);
     
+    // Wait for app to be fully available before creating volume
+    console.log(`[BOT-MANAGER] Waiting for app ${appName} to be ready...`);
+    await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds
+    
+    // Verify app exists before creating volume
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      console.log(`[BOT-MANAGER] Verifying app availability (attempt ${attempt}/3)`);
+      
+      const appCheckResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (appCheckResponse.ok) {
+        console.log(`[BOT-MANAGER] App ${appName} confirmed available`);
+        break;
+      } else if (attempt === 3) {
+        throw new Error(`App ${appName} not available after 3 attempts`);
+      } else {
+        console.log(`[BOT-MANAGER] App not ready yet, waiting 2 seconds...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+    
     // Create or reuse volume
     const volumeName = `bot_${appName.replace(/telegram-bot-/, '').replace(/-/g, '_')}_vol`.substring(0, 30);
     console.log(`[BOT-MANAGER] Creating/checking volume: ${volumeName}`);
