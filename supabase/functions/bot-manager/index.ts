@@ -1111,64 +1111,73 @@ function convertWebhookToPolling(pythonCode: string): string {
     .replace(/from\s+aiohttp\s+import.*?\n/g, '')
     .replace(/import\s+aiohttp.*?\n/g, '')
     
+    // Remove all webhook-related comments - this is key!
+    .replace(/.*webhook.*$/gmi, '# Using polling mode for containerized deployment')
+    .replace(/.*set.*webhook.*URL.*$/gmi, '# Bot configured for polling mode')
+    .replace(/.*replace.*webhook.*$/gmi, '# Polling mode configured automatically')
+    .replace(/.*production.*environment.*$/gmi, '# Production-ready polling configuration')
+    
     // Replace webhook setup with polling
     .replace(/application\.updater\.start_webhook\([^)]*\)/g, 'application.run_polling()')
     .replace(/await\s+application\.updater\.start_webhook\([^)]*\)/g, 'application.run_polling()')
-    .replace(/application\.bot\.set_webhook\([^)]*\)/g, '# Webhook removed - using polling instead')
-    .replace(/await\s+application\.bot\.set_webhook\([^)]*\)/g, '# Webhook removed - using polling instead')
+    .replace(/application\.bot\.set_webhook\([^)]*\)/g, '# Using polling instead of webhooks')
+    .replace(/await\s+application\.bot\.set_webhook\([^)]*\)/g, '# Using polling instead of webhooks')
+    .replace(/application\.run_webhook\([^)]*\)/g, 'application.run_polling()')
+    .replace(/await\s+application\.run_webhook\([^)]*\)/g, 'application.run_polling()')
     
     // Remove webhook URL setup
-    .replace(/webhook_url\s*=.*?\n/g, '# Webhook URL removed - using polling\n')
-    .replace(/url_path\s*=.*?\n/g, '# URL path removed - using polling\n')
+    .replace(/webhook_url\s*=.*?\n/g, '# Polling mode - no URL needed\n')
+    .replace(/url_path\s*=.*?\n/g, '# Polling mode - no path needed\n')
     
-    // Replace main function calls that use webhooks
+    // Replace any async main functions that use webhooks
+    .replace(/async def main\(\)[^}]*?start_webhook.*?$/gm, `def main() -> None:
+    logger.info('========== BOT STARTUP ==========')
+    token = os.getenv('BOT_TOKEN')
+    if not token:
+        logger.error('BOT_TOKEN not found in environment variables')
+        return
+        
+    logger.info('Bot token loaded successfully')
+    logger.info('Creating Telegram Application...')
+    application = Application.builder().token(token).build()
+    
+    logger.info('Starting bot in polling mode...')
+    logger.info('🤖 Bot is now running and ready to receive messages!')
+    application.run_polling()`)
+    
+    // Fix async main that might call polling incorrectly
+    .replace(/async def main\(\).*?application\.run_polling\(\)/gms, 
+             `def main() -> None:
+    logger.info('========== BOT STARTUP ==========')
+    token = os.getenv('BOT_TOKEN')
+    if not token:
+        logger.error('BOT_TOKEN not found in environment variables')
+        return
+        
+    logger.info('Bot token loaded successfully')
+    logger.info('Creating Telegram Application...')
+    application = Application.builder().token(token).build()
+    
+    logger.info('Starting bot in polling mode...')
+    logger.info('🤖 Bot is now running and ready to receive messages!')
+    application.run_polling()`)
+    
+    // Replace asyncio.run(main()) with main() since we're not using async
     .replace(/asyncio\.run\(main\(\)\)/g, 'main()')
     
-    // Replace the main function if it contains webhook logic
-    .replace(
-      /async def main\(\)[^}]*?set_webhook.*?$/gm,
-      `def main() -> None:
-    logger.info('========== BOT STARTUP ==========')
-    token = os.getenv('BOT_TOKEN')
-    if not token:
-        logger.error('BOT_TOKEN not found in environment variables')
-        return
-        
-    logger.info('Bot token loaded successfully')
-    logger.info('Creating Telegram Application...')
-    application = Application.builder().token(token).build()
+    // Fix any remaining async/await patterns that shouldn't be there
+    .replace(/await\s+application\.start_polling\(\)/g, 'application.run_polling()')
+    .replace(/await\s+application\.initialize\(\)/g, '# Application automatically initializes with run_polling()')
     
-    logger.info('Registering handlers...')
-    # Handlers will be added here by the original code
+    // Clean up any duplicate polling calls
+    .replace(/(application\.run_polling\(\)\s*){2,}/g, 'application.run_polling()')
     
-    logger.info('Starting bot polling...')
-    logger.info('🤖 Bot is now running and ready to receive messages!')
-    application.run_polling()`
-    )
+    // Remove any port or listen configurations
+    .replace(/listen\s*=\s*['"][^'"]*['"]/g, '')
+    .replace(/port\s*=\s*\d+/g, '')
     
-    // Ensure the main function uses polling instead of async webhook setup
-    .replace(
-      /def main\(\)[^}]*?start_webhook.*?$/gm,
-      `def main() -> None:
-    logger.info('========== BOT STARTUP ==========')
-    token = os.getenv('BOT_TOKEN')
-    if not token:
-        logger.error('BOT_TOKEN not found in environment variables')
-        return
-        
-    logger.info('Bot token loaded successfully')
-    logger.info('Creating Telegram Application...')
-    application = Application.builder().token(token).build()
-    
-    logger.info('Starting bot polling...')
-    logger.info('🤖 Bot is now running and ready to receive messages!')
-    application.run_polling()`
-    );
-  
-  // Ensure the code ends with polling instead of webhook
-  if (!convertedCode.includes('application.run_polling()')) {
-    // If no main function found, add a basic polling setup
-    if (!convertedCode.includes('def main')) {
+    // Add proper main function if missing
+    if (!convertedCode.includes('def main') && !convertedCode.includes('application.run_polling')) {
       convertedCode += `
 
 def main() -> None:
@@ -1180,23 +1189,24 @@ def main() -> None:
         
     logger.info('Bot token loaded successfully')
     logger.info('Creating Telegram Application...')
+    application = Application.builder().token(token).build()
     
-    logger.info('Starting bot polling...')
+    logger.info('Starting bot in polling mode...')
     logger.info('🤖 Bot is now running and ready to receive messages!')
     application.run_polling()
 
 if __name__ == '__main__':
     main()`;
     }
-  }
+    
+    // Final cleanup - remove any remaining webhook references
+    convertedCode = convertedCode
+      .replace(/webhook/gi, 'polling')
+      .replace(/# Using polling mode for containerized deployment/g, '# Using polling mode for containerized deployment')
+      .replace(/# Bot configured for polling mode/g, '# Bot configured for polling mode')
+      .replace(/# Polling mode configured automatically/g, '# Polling mode configured automatically');
   
-  // Remove any remaining webhook references
-  convertedCode = convertedCode
-    .replace(/# Set the webhook.*?\n/g, '# Using polling mode instead\n')
-    .replace(/webhook/gi, 'polling')
-    .replace(/# Using polling mode instead/g, '# Using polling mode instead');
-  
-  console.log(`[BOT-MANAGER] Code conversion completed`);
+  console.log(`[BOT-MANAGER] Code conversion completed - all webhook references removed`);
   return convertedCode;
 }
 
