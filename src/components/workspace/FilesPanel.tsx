@@ -22,16 +22,17 @@ const FilesPanel = ({ files, onFileSelect, botId, onFilesUpdate }: FilesPanelPro
   const { user } = useAuth();
   const { toast } = useToast();
 
-  console.log(`[FILES PANEL ENHANCED] Rendering enhanced files panel for bot ${botId}`);
-  console.log(`[FILES PANEL ENHANCED] Enhanced Hybrid Architecture: Supabase Storage v2`);
-  console.log(`[FILES PANEL ENHANCED] Current files:`, Object.keys(files));
+  console.log(`[FILES DEBUG] Rendering enhanced files panel for bot ${botId}`);
+  console.log(`[FILES DEBUG] Enhanced Hybrid Architecture: Supabase Storage + Fly.io v2`);
+  console.log(`[FILES DEBUG] Current files:`, Object.keys(files));
 
   const fetchFilesFromEnhancedSupabase = async () => {
     if (!user) return;
     
     setIsLoading(true);
     try {
-      console.log(`[FILES PANEL ENHANCED] Fetching files from enhanced Supabase Storage for bot ${botId}`);
+      console.log(`[FILES DEBUG] Fetching files from enhanced Supabase Storage for bot ${botId}`);
+      console.log(`[FILES DEBUG] User ID: ${user.id}`);
       
       const { data, error } = await supabase.functions.invoke('bot-manager', {
         body: {
@@ -41,8 +42,11 @@ const FilesPanel = ({ files, onFileSelect, botId, onFilesUpdate }: FilesPanelPro
         }
       });
 
+      console.log('[FILES DEBUG] Raw response:', data);
+      console.log('[FILES DEBUG] Error:', error);
+
       if (error) {
-        console.error('[FILES PANEL ENHANCED] Error fetching files from enhanced Supabase:', error);
+        console.error('[FILES DEBUG] Supabase function error:', error);
         setStorageStatus('error');
         toast({
           title: "Storage Error ⚠️",

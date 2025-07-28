@@ -62,29 +62,29 @@ const WorkspaceLayout = ({
   const { user } = useAuth();
   const { toast } = useToast();
 
-  console.log(`[WORKSPACE ENHANCED] Rendering enhanced hybrid workspace for bot ${botId}`);
-  console.log(`[WORKSPACE ENHANCED] Architecture: Enhanced Supabase Storage + Modal Execution`);
-  console.log(`[WORKSPACE ENHANCED] Latest files count: ${Object.keys(latestFiles).length}`);
+  console.log(`[WORKSPACE DEBUG] Rendering enhanced hybrid workspace for bot ${botId}`);
+  console.log(`[WORKSPACE DEBUG] Architecture: Enhanced Supabase Storage + Fly.io Execution`);
+  console.log(`[WORKSPACE DEBUG] Latest files count: ${Object.keys(latestFiles).length}`);
 
   const handleLogsUpdate = useCallback((logs: string, hasErrorsDetected: boolean) => {
-    console.log(`[WORKSPACE ENHANCED] Enhanced Modal logs update: hasErrors=${hasErrorsDetected}, logsLength=${logs.length}`);
+    console.log(`[WORKSPACE DEBUG] Enhanced Fly.io logs update: hasErrors=${hasErrorsDetected}, logsLength=${logs.length}`);
     setLogsErrorContent(logs);
     setLogsHasErrors(hasErrorsDetected);
     
     if (hasErrorsDetected && activeTab === "files") {
-      console.log(`[WORKSPACE ENHANCED] Auto-switching to logs tab due to Modal errors`);
+      console.log(`[WORKSPACE DEBUG] Auto-switching to logs tab due to Fly.io errors`);
       setActiveTab("logs");
     }
   }, [activeTab]);
 
   const handleLogsFixByAI = useCallback(async (errorLogs: string) => {
-    console.log(`[WORKSPACE ENHANCED] Fix by AI requested for enhanced Modal error logs: ${errorLogs.length} characters`);
+    console.log(`[WORKSPACE DEBUG] Fix by AI requested for enhanced Fly.io error logs: ${errorLogs.length} characters`);
     await onFixByAI(errorLogs);
   }, [onFixByAI]);
 
   const handleFilesUpdate = useCallback((files: Record<string, string>) => {
-    console.log(`[WORKSPACE ENHANCED] Enhanced Supabase files update: ${Object.keys(files).length} files`);
-    console.log(`[WORKSPACE ENHANCED] Files: ${Object.keys(files).join(', ')}`);
+    console.log(`[WORKSPACE DEBUG] Enhanced Supabase files update: ${Object.keys(files).length} files`);
+    console.log(`[WORKSPACE DEBUG] Files: ${Object.keys(files).join(', ')}`);
     setCurrentFiles(files);
   }, []);
 
@@ -93,7 +93,7 @@ const WorkspaceLayout = ({
     
     setIsCheckingHealth(true);
     try {
-      console.log('[WORKSPACE ENHANCED] Performing enhanced health check');
+      console.log('[WORKSPACE DEBUG] Performing enhanced health check');
       
       const { data, error } = await supabase.functions.invoke('bot-manager', {
         body: {
@@ -171,9 +171,9 @@ const WorkspaceLayout = ({
     }
   };
 
-  console.log(`[WORKSPACE ENHANCED] Display files count: ${filesCount}`);
-  console.log(`[WORKSPACE ENHANCED] Combined errors: ${combinedHasErrors}`);
-  console.log(`[WORKSPACE ENHANCED] Health status: ${healthStatus}`);
+  console.log(`[WORKSPACE DEBUG] Display files count: ${filesCount}`);
+  console.log(`[WORKSPACE DEBUG] Combined errors: ${combinedHasErrors}`);
+  console.log(`[WORKSPACE DEBUG] Health status: ${healthStatus}`);
 
   return (
     <div className="flex h-[calc(100vh-73px)]">
@@ -226,7 +226,7 @@ const WorkspaceLayout = ({
                 📁 Supabase Storage
               </span>
               <span className="text-gray-600">
-                🚀 Modal Execution
+                🚁 Fly.io Execution
               </span>
             </div>
             <div className={`flex items-center space-x-1 ${getHealthStatusColor()}`}>
@@ -247,7 +247,7 @@ const WorkspaceLayout = ({
               )}
             </TabsTrigger>
             <TabsTrigger value="logs" className={`relative ${logsHasErrors ? "text-red-600" : ""}`}>
-              Modal Logs
+              Fly.io Logs
               {logsHasErrors && (
                 <Badge variant="destructive" className="ml-2 text-xs">
                   Errors
@@ -273,7 +273,7 @@ const WorkspaceLayout = ({
           
           <TabsContent value="logs" className="flex-1 p-4">
             <div className="mb-2 text-xs text-gray-500">
-              🚀 Enhanced live execution logs from Modal runtime
+              🚁 Enhanced live execution logs from Fly.io runtime
             </div>
             <BotModalLogs 
               botId={botId} 
