@@ -483,8 +483,10 @@ async function getFilesFromSupabaseStorage(botId: string, userId: string): Promi
   
   // Try different path patterns
   const possiblePaths = [
+    `bots/${userId}/${botId}`,
     botId,
-    `bots/${userId}/${botId}`
+    `${userId}/${botId}`,
+    `users/${userId}/bots/${botId}`
   ];
   
   for (const path of possiblePaths) {
