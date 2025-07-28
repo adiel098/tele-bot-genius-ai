@@ -12,7 +12,8 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 const FLYIO_API_BASE = 'https://api.machines.dev/v1';
-const REQUEST_TIMEOUT = 60000; // 60 seconds for Fly.io deployments
+const FLYIO_TOKEN = Deno.env.get('FLYIO_API_TOKEN');
+const FLYIO_ORG = Deno.env.get('FLYIO_ORG') || 'personal';
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -21,232 +22,179 @@ serve(async (req) => {
   }
 
   try {
-    const { action, botId, userId, prompt, token, name, modificationPrompt, instruction, machineId } = await req.json();
+    const request = await req.json();
     
-    console.log(`[BOT-MANAGER] === Starting ${action} for bot ${botId} ===`);
+    console.log(`[BOT-MANAGER] === Starting ${request.action} for bot ${request.bot_id} ===`);
+    console.log(`[BOT-MANAGER] Fly.io Token Available: ${!!FLYIO_TOKEN}`);
+    console.log(`[BOT-MANAGER] Fly.io Organization: ${FLYIO_ORG}`);
     console.log(`[BOT-MANAGER] Fly.io-Only Architecture: Supabase Storage + Fly.io Execution`);
-    
-    const flyioToken = Deno.env.get('FLYIO_API_TOKEN');
-    const flyioOrg = Deno.env.get('FLYIO_ORG') || 'personal';
-    
-    console.log(`[BOT-MANAGER] Fly.io Token Available: ${!!flyioToken}`);
-    console.log(`[BOT-MANAGER] Fly.io Organization: ${flyioOrg}`);
 
-    switch (action) {
-      case 'create-bot':
+    switch (request.action) {
       case 'start-bot':
-        return await startBotInFlyio(botId, userId, flyioToken, flyioOrg, prompt, token, name);
+        return await startBotInFlyio(request.user_id, request.bot_id);
       case 'stop-bot':
-        return await stopBotInFlyio(botId, flyioToken, flyioOrg);
-      case 'restart-bot':
-        return await restartBotInFlyio(botId, userId, flyioToken, flyioOrg);
-      case 'get-logs':
-        return await getLogsFromFlyio(botId, flyioToken, flyioOrg);
-      case 'get-files':
-        return await getFilesFromSupabaseStorage(botId, userId);
-      case 'modify-bot':
-        return await modifyBot(botId, userId, modificationPrompt || instruction, flyioToken, flyioOrg);
-      case 'fix-bot':
-        return await fixBot(botId, userId, flyioToken, flyioOrg);
+        return await stopBotInFlyio(request.bot_id);
       case 'delete-bot':
-        return await deleteBotFromFlyio(botId, flyioToken, flyioOrg);
+        return await deleteBotFromFlyio(request.bot_id);
+      case 'restart-bot':
+        return await restartBotInFlyio(request.user_id, request.bot_id);
+      case 'get-logs':
+        return await getLogsFromFlyio(request.bot_id);
+      case 'modify-bot':
+        return await modifyBot(request.user_id, request.bot_id, request.prompt);
+      case 'fix-bot':
+        return await fixBot(request.user_id, request.bot_id);
       case 'health-check':
-        return await performHealthCheck(flyioToken);
-      case 'debug-volume':
-        return await debugVolumeContents(botId, machineId, flyioToken, flyioOrg);
+        return await performHealthCheck();
       default:
-        throw new Error(`Unknown action: ${action}`);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            error: `Unknown action: ${request.action}` 
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
     }
   } catch (error) {
-    console.error('[BOT-MANAGER] Error:', error);
+    console.error('[BOT-MANAGER] Request error:', error);
+    
     return new Response(
-      JSON.stringify({ 
-        success: false, 
-        error: error.message,
-        logs: [`[BOT-MANAGER] Error: ${error.message}`]
+      JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
       }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
 
-async function startBotInFlyio(botId: string, userId: string, token: string, org: string, prompt?: string, botToken?: string, name?: string): Promise<Response> {
+async function startBotInFlyio(userId: string, botId: string): Promise<Response> {
   console.log(`[BOT-MANAGER] Starting bot deployment for ${botId}`);
+  console.log(`[BOT-MANAGER] User ID: ${userId}`);
   
-  if (!token) {
-    throw new Error('Fly.io API token not configured');
-  }
-
-  const logs: string[] = [`[BOT-MANAGER] Deployment initiated for bot ${botId}`];
-
   try {
-    // First, get bot files from Supabase Storage
-    logs.push(`[BOT-MANAGER] Retrieving bot files from Supabase Storage`);
-    const filesResponse = await getFilesFromSupabaseStorage(botId, userId);
-    const filesData = await filesResponse.json();
+    // Ensure storage bucket exists
+    await ensureStorageBucket();
     
-    if (!filesData.success) {
-      throw new Error('Failed to retrieve bot files from storage');
-    }
-
-    const { 'main.py': mainPy, 'requirements.txt': requirementsTxt, '.env': envFile } = filesData.files;
-    const extractedToken = extractTokenFromEnv(envFile) || botToken;
+    // Get bot files from Supabase Storage
+    console.log(`[BOT-MANAGER] Getting files from Supabase Storage for bot ${botId}`);
+    const files = await getFilesFromSupabaseStorage(botId, userId);
     
-    if (!extractedToken) {
-      throw new Error('Bot token not found in environment file');
+    if (!files['main.py'] || !files['.env'] || !files['requirements.txt']) {
+      throw new Error('Required bot files missing from storage');
     }
-
-    logs.push(`[BOT-MANAGER] Bot files retrieved successfully`);
-    logs.push(`[BOT-MANAGER] Files: ${Object.keys(filesData.files).join(', ')}`);
-
-    // Create Fly.io app configuration
-    const appName = `telegram-bot-${botId.slice(0, 8)}`;
-    logs.push(`[BOT-MANAGER] App name: ${appName}`);
+    
+    // Generate app name
+    const appName = `telegram-bot-${botId.substring(0, 8)}`;
+    
+    // Get or create organization
+    const orgs = await getUserOrganizations(FLYIO_TOKEN);
+    const org = orgs.length > 0 ? orgs[0] : FLYIO_ORG;
+    console.log(`[BOT-MANAGER] Using organization: ${org.name} (${org.slug})`);
     
     // Create Fly.io app
-    logs.push(`[BOT-MANAGER] Creating Fly.io app...`);
-    await createFlyApp(appName, org, token);
-    logs.push(`[BOT-MANAGER] App created successfully`);
+    await createFlyApp(appName, org.slug, FLYIO_TOKEN);
     
-    // Deploy the bot using volume-based storage
-    logs.push(`[BOT-MANAGER] Creating volume and deploying bot...`);
+    // Convert webhook code to polling
+    console.log(`[BOT-MANAGER] Converting webhook code to polling mode`);
+    files['main.py'] = convertWebhookToPolling(files['main.py']);
+    console.log(`[BOT-MANAGER] Code conversion completed - all webhook references removed`);
     
-    // Pre-deployment validation
-    logs.push(`[BOT-MANAGER] Validating bot files before deployment...`);
-    if (!mainPy || mainPy.length < 50) {
-      throw new Error('Invalid main.py file: too short or empty');
+    // Deploy bot directly to machine
+    const deployment = await deployBotToFly(appName, files, FLYIO_TOKEN);
+    
+    console.log(`[BOT-MANAGER] Bot deployment completed for machine: ${deployment.machineId}`);
+    
+    // Update bot status to running
+    const { error: updateError } = await supabase
+      .from('bots')
+      .update({ 
+        runtime_status: 'running',
+        fly_app_name: appName,
+        fly_machine_id: deployment.machineId
+      })
+      .eq('id', botId);
+    
+    if (updateError) {
+      console.error(`[BOT-MANAGER] Error updating bot status: ${updateError.message}`);
     }
-    if (!envFile || !envFile.includes('BOT_TOKEN')) {
-      throw new Error('Invalid .env file: missing BOT_TOKEN');
-    }
-    logs.push(`[BOT-MANAGER] File validation passed`);
     
-    // Convert webhook code to polling mode
-    const convertedMainPy = convertWebhookToPolling(mainPy);
-    logs.push(`[BOT-MANAGER] Code converted from webhook to polling mode`);
-    
-    const deployResult = await deployBotToFlyWithVolume(appName, {
-      'main.py': convertedMainPy,
-      'requirements.txt': requirementsTxt,
-      '.env': envFile
-    }, token);
-    
-    logs.push(`[BOT-MANAGER] Deployment completed successfully`);
-    logs.push(`[BOT-MANAGER] Machine ID: ${deployResult.id}`);
-    
-    // Wait for machine to be fully started and capture initial logs
-    await new Promise(resolve => setTimeout(resolve, 5000));
-    
-    // Get initial logs and store them in database
-    try {
-      const initialLogsResponse = await getLogsFromFlyio(botId, token, org);
-      const initialLogsData = await initialLogsResponse.json();
-      
-      if (initialLogsData.success && initialLogsData.logs) {
-        const combinedLogs = [
-          `[DEPLOYMENT] Bot deployment completed at ${new Date().toISOString()}`,
-          `[DEPLOYMENT] Machine ID: ${deployResult.id}`,
-          `[DEPLOYMENT] App Name: ${appName}`,
-          ...initialLogsData.logs
-        ].join('\n');
-        
-        // Store initial logs in database
-        const { error: logUpdateError } = await supabase
-          .from('bots')
-          .update({ 
-            runtime_logs: combinedLogs,
-            runtime_status: initialLogsData.hasErrors ? 'error' : 'running',
-            container_id: deployResult.id
-          })
-          .eq('id', botId);
-        
-        if (logUpdateError) {
-          console.error(`[BOT-MANAGER] Failed to store initial logs:`, logUpdateError);
-        } else {
-          console.log(`[BOT-MANAGER] Initial logs stored successfully for bot ${botId}`);
-        }
+    // Get initial logs and store them
+    setTimeout(async () => {
+      try {
+        console.log(`[BOT-MANAGER] Getting logs for bot ${botId}`);
+        const logsResponse = await getLogsFromFlyio(botId);
+        console.log(`[BOT-MANAGER] Initial logs stored successfully for bot ${botId}`);
+      } catch (error) {
+        console.error(`[BOT-MANAGER] Failed to get initial logs: ${error}`);
       }
-    } catch (logError) {
-      console.error(`[BOT-MANAGER] Failed to capture initial logs:`, logError);
-    }
-    
-    // Check machine status
-    const statusResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${deployResult.id}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    let machineStatus = 'unknown';
-    if (statusResponse.ok) {
-      const machineData = await statusResponse.json();
-      machineStatus = machineData.state || 'unknown';
-      logs.push(`[BOT-MANAGER] Machine status: ${machineStatus}`);
-    }
+    }, 5000);
     
     console.log(`[BOT-MANAGER] Bot deployment successful for ${botId}`);
     
     return new Response(
       JSON.stringify({
         success: true,
+        botId,
         appName,
-        deploymentId: deployResult.id,
-        machineId: deployResult.id,
-        status: machineStatus,
-        logs
+        machineId: deployment.machineId,
+        status: 'running',
+        logs: [`[BOT-MANAGER] Bot ${botId} started successfully`]
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
+
   } catch (error) {
-    console.error(`[BOT-MANAGER] Deployment failed:`, error);
-    logs.push(`[BOT-MANAGER] Deployment failed: ${error.message}`);
+    console.error(`[BOT-MANAGER] Bot deployment failed: ${error}`);
+    
+    // Update bot status to error
+    await supabase
+      .from('bots')
+      .update({ runtime_status: 'error' })
+      .eq('id', botId);
     
     return new Response(
       JSON.stringify({
         success: false,
-        error: error.message,
-        logs
+        error: error instanceof Error ? error.message : 'Unknown error',
+        logs: [`[BOT-MANAGER] Bot deployment failed for ${botId}: ${error}`]
       }),
-      { 
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 }
 
-async function stopBotInFlyio(botId: string, token: string, org: string): Promise<Response> {
-  console.log(`[BOT-MANAGER] Stopping bot ${botId}`);
-  
-  const appName = `telegram-bot-${botId.slice(0, 8)}`;
+async function stopBotInFlyio(botId: string): Promise<Response> {
+  console.log(`[BOT-MANAGER] === Starting stop-bot for bot ${botId} ===`);
   
   try {
-    const response = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    if (response.ok) {
-      const machines = await response.json();
-      
-      // Stop all machines for this app
-      for (const machine of machines) {
-        await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${machine.id}/stop`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-      }
+    // Get bot info from database
+    const { data: bot, error: botError } = await supabase
+      .from('bots')
+      .select('fly_app_name')
+      .eq('id', botId)
+      .single();
+
+    if (botError || !bot) {
+      throw new Error(`Bot not found: ${botError?.message || 'Unknown error'}`);
     }
+
+    const appName = bot.fly_app_name || `telegram-bot-${botId.substring(0, 8)}`;
+    
+    // Stop all machines for the app
+    await cleanupExistingMachines(appName, FLYIO_TOKEN);
+    
+    // Update bot status to stopped
+    const { error: updateError } = await supabase
+      .from('bots')
+      .update({ runtime_status: 'stopped' })
+      .eq('id', botId);
+
+    if (updateError) {
+      console.error(`[BOT-MANAGER] Error updating bot status: ${updateError.message}`);
+    }
+
+    console.log(`[BOT-MANAGER] Bot stopped successfully for ${botId}`);
     
     return new Response(
       JSON.stringify({
@@ -255,608 +203,322 @@ async function stopBotInFlyio(botId: string, token: string, org: string): Promis
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
+
   } catch (error) {
-    console.error(`[BOT-MANAGER] Stop failed:`, error);
-    throw new Error(`Failed to stop bot: ${error.message}`);
+    console.error(`[BOT-MANAGER] Bot stop failed: ${error}`);
+    
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        logs: [`[BOT-MANAGER] Bot stop failed for ${botId}: ${error}`]
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   }
 }
 
-async function deleteBotFromFlyio(botId: string, token: string, org: string): Promise<Response> {
-  console.log(`[BOT-MANAGER] Deleting bot ${botId} and its Fly.io app`);
-  
-  const appName = `telegram-bot-${botId.slice(0, 8)}`;
+async function deleteBotFromFlyio(botId: string): Promise<Response> {
+  console.log(`[BOT-MANAGER] === Starting delete-bot for bot ${botId} ===`);
   
   try {
-    // First cleanup all machines
-    await cleanupExistingMachines(appName, token);
+    // Get bot info from database
+    const { data: bot, error: botError } = await supabase
+      .from('bots')
+      .select('fly_app_name')
+      .eq('id', botId)
+      .single();
+
+    if (botError || !bot) {
+      throw new Error(`Bot not found: ${botError?.message || 'Unknown error'}`);
+    }
+
+    const appName = bot.fly_app_name || `telegram-bot-${botId.substring(0, 8)}`;
     
-    // Then cleanup all volumes  
-    await cleanupExistingVolumes(appName, token);
+    // Clean up machines only (no volumes to clean)
+    await cleanupExistingMachines(appName, FLYIO_TOKEN);
     
-    // Finally, delete the entire app
-    console.log(`[BOT-MANAGER] Deleting Fly.io app: ${appName}`);
+    // Delete the Fly.io app
     const deleteResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}`, {
       method: 'DELETE',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        'Authorization': `Bearer ${FLYIO_TOKEN}`,
         'Content-Type': 'application/json'
       }
     });
-    
-    if (deleteResponse.ok) {
-      console.log(`[BOT-MANAGER] Fly.io app ${appName} deleted successfully`);
-    } else {
-      const errorText = await deleteResponse.text();
-      console.log(`[BOT-MANAGER] Failed to delete app ${appName}: ${errorText}`);
+
+    if (!deleteResponse.ok && deleteResponse.status !== 404) {
+      console.log(`[BOT-MANAGER] Warning: Failed to delete app ${appName}, but continuing...`);
     }
+
+    // Update bot status in database
+    const { error: updateError } = await supabase
+      .from('bots')
+      .update({ 
+        runtime_status: 'stopped',
+        fly_app_name: null,
+        fly_machine_id: null
+      })
+      .eq('id', botId);
+
+    if (updateError) {
+      console.error(`[BOT-MANAGER] Error updating bot status: ${updateError.message}`);
+    }
+
+    console.log(`[BOT-MANAGER] Bot deletion completed for ${botId}`);
     
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         success: true,
-        message: `Bot ${botId} and Fly.io app deleted successfully`
+        logs: [`[BOT-MANAGER] Bot ${botId} deleted successfully`]
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
+
   } catch (error) {
-    console.error(`[BOT-MANAGER] Delete failed:`, error);
+    console.error(`[BOT-MANAGER] Bot deletion failed: ${error}`);
+    
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         success: false,
-        error: `Failed to delete bot: ${error.message}`
+        error: error instanceof Error ? error.message : 'Unknown error',
+        logs: [`[BOT-MANAGER] Bot deletion failed for ${botId}: ${error}`]
       }),
-      { 
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 }
 
-async function restartBotInFlyio(botId: string, userId: string, token: string, org: string): Promise<Response> {
-  console.log(`[BOT-MANAGER] Restarting bot ${botId}`);
+async function restartBotInFlyio(userId: string, botId: string): Promise<Response> {
+  console.log(`[BOT-MANAGER] === Starting restart-bot for bot ${botId} ===`);
   
-  // Stop the bot first
-  await stopBotInFlyio(botId, token, org);
-  
-  // Wait a moment for graceful shutdown
-  await new Promise(resolve => setTimeout(resolve, 2000));
-  
-  // Start the bot again
-  return await startBotInFlyio(botId, userId, token, org);
+  try {
+    // Stop the bot first
+    await stopBotInFlyio(botId);
+    
+    // Wait a moment for cleanup
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Start the bot again
+    return await startBotInFlyio(userId, botId);
+
+  } catch (error) {
+    console.error(`[BOT-MANAGER] Bot restart failed: ${error}`);
+    
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        logs: [`[BOT-MANAGER] Bot restart failed for ${botId}: ${error}`]
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
 }
 
-async function getLogsFromFlyio(botId: string, token: string, org: string): Promise<Response> {
+async function getLogsFromFlyio(botId: string): Promise<Response> {
+  console.log(`[BOT-MANAGER] === Starting get-logs for bot ${botId} ===`);
   console.log(`[BOT-MANAGER] Getting logs for bot ${botId}`);
   
-  const appName = `telegram-bot-${botId.slice(0, 8)}`;
-  
   try {
-    const response = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines`, {
+    // Get bot info from database
+    const { data: bot, error: botError } = await supabase
+      .from('bots')
+      .select('fly_app_name, fly_machine_id')
+      .eq('id', botId)
+      .single();
+
+    if (botError || !bot) {
+      throw new Error(`Bot not found: ${botError?.message || 'Unknown error'}`);
+    }
+
+    const appName = bot.fly_app_name || `telegram-bot-${botId.substring(0, 8)}`;
+    const machineId = bot.fly_machine_id;
+    
+    if (!machineId) {
+      throw new Error('Machine ID not found for bot');
+    }
+
+    // Get logs from Fly.io
+    const logsResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${machineId}/logs`, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        'Authorization': `Bearer ${FLYIO_TOKEN}`,
         'Content-Type': 'application/json'
       }
     });
-    
-    let logs = [`[BOT-MANAGER] Retrieving logs for ${appName}`];
-    let hasErrors = false;
-    let syntaxErrors: string[] = [];
-    let runtimeErrors: string[] = [];
-    let installErrors: string[] = [];
-    
-    if (response.ok) {
-      const machines = await response.json();
-      logs.push(`[BOT-MANAGER] Found ${machines.length} machine(s)`);
-      
-      for (const machine of machines) {
-        logs.push(`[BOT-MANAGER] Machine ${machine.id} state: ${machine.state || 'unknown'}`);
-        
-        // Get machine logs with more comprehensive history
-        const logResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${machine.id}/logs?format=json&since=1h`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        if (logResponse.ok) {
-          const logData = await logResponse.text();
-          if (logData) {
-            const logLines = logData.split('\n').filter(line => line.trim());
-            logLines.forEach(line => {
-              logs.push(`[${machine.id}] ${line}`);
-              
-              // Categorize different types of errors
-              if (line.includes('SYNTAX_ERROR:')) {
-                hasErrors = true;
-                syntaxErrors.push(line.replace(/.*SYNTAX_ERROR:\s*/, ''));
-              } else if (line.includes('RUNTIME_ERROR:')) {
-                hasErrors = true;
-                runtimeErrors.push(line.replace(/.*RUNTIME_ERROR:\s*/, ''));
-              } else if (line.includes('ERROR: Failed to install')) {
-                hasErrors = true;
-                installErrors.push(line.replace(/.*ERROR:\s*/, ''));
-              } else if (line.includes('ERROR') || line.includes('error') || line.includes('Exception') || line.includes('Traceback')) {
-                hasErrors = true;
-              }
-            });
-          } else {
-            logs.push(`[${machine.id}] No logs available yet`);
-          }
-        } else {
-          logs.push(`[${machine.id}] Failed to retrieve logs: ${logResponse.status}`);
-        }
-        
-        // Get machine events for additional debugging
-        const eventsResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${machine.id}/events`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        if (eventsResponse.ok) {
-          const events = await eventsResponse.json();
-          if (events && events.length > 0) {
-            logs.push(`[${machine.id}] Recent events:`);
-            events.slice(-5).forEach((event: any) => {
-              logs.push(`[${machine.id}] ${event.timestamp}: ${event.type} - ${event.status || 'no status'}`);
-            });
-          }
-        }
-      }
-    } else if (response.status === 404) {
-      logs.push(`[BOT-MANAGER] App not found: ${appName} (this may be normal if bot was never deployed)`);
-    } else {
-      logs.push(`[BOT-MANAGER] API error: ${response.status} - ${await response.text()}`);
-      hasErrors = true;
+
+    if (!logsResponse.ok) {
+      const errorText = await logsResponse.text();
+      throw new Error(`Failed to get logs: ${errorText}`);
     }
+
+    const logs = await logsResponse.text();
     
+    // Store logs in Supabase
+    const { error: storeError } = await supabase
+      .from('bot_logs')
+      .upsert({
+        bot_id: botId,
+        logs: logs,
+        updated_at: new Date().toISOString()
+      });
+
+    if (storeError) {
+      console.error(`[BOT-MANAGER] Error storing logs: ${storeError.message}`);
+    }
+
+    // Check for errors in logs
+    const hasErrors = logs.toLowerCase().includes('error') || 
+                     logs.toLowerCase().includes('exception') ||
+                     logs.toLowerCase().includes('failed');
+
     return new Response(
       JSON.stringify({
         success: true,
-        logs,
+        logs: logs,
         hasErrors,
-        errorAnalysis: {
-          syntaxErrors,
-          runtimeErrors,
-          installErrors,
-          canAutoFix: syntaxErrors.length > 0 || runtimeErrors.length > 0
-        }
+        machineId,
+        appName
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
-  } catch (error) {
-    console.error(`[BOT-MANAGER] Log retrieval failed:`, error);
-    return new Response(
-      JSON.stringify({
-        success: false,
-        logs: [`[BOT-MANAGER] Failed to get logs: ${error.message}`],
-        hasErrors: true
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-  }
-}
 
-async function modifyBot(botId: string, userId: string, instruction: string, token: string, org: string): Promise<Response> {
-  console.log(`[BOT-MANAGER] Modifying bot ${botId} with instruction: ${instruction}`);
-  
-  try {
-    // This is a placeholder for AI-powered bot modification
-    // In a full implementation, this would:
-    // 1. Get current bot files
-    // 2. Use AI to modify the code based on instruction
-    // 3. Save updated files to Supabase Storage
-    // 4. Redeploy to Fly.io
+  } catch (error) {
+    console.error(`[BOT-MANAGER] Get logs failed: ${error}`);
     
     return new Response(
       JSON.stringify({
         success: false,
-        error: 'Bot modification feature coming soon',
-        logs: [`[BOT-MANAGER] Modification requested: ${instruction}`]
+        error: error instanceof Error ? error.message : 'Unknown error',
+        logs: [`[BOT-MANAGER] Get logs failed for ${botId}: ${error}`]
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
-  } catch (error) {
-    console.error(`[BOT-MANAGER] Modification failed:`, error);
-    throw new Error(`Failed to modify bot: ${error.message}`);
   }
 }
 
-async function fixBot(botId: string, userId: string, token: string, org: string): Promise<Response> {
-  console.log(`[BOT-MANAGER] Attempting to fix bot ${botId}`);
+async function modifyBot(userId: string, botId: string, prompt: string): Promise<Response> {
+  // Placeholder for future implementation
+  return new Response(
+    JSON.stringify({
+      success: false,
+      error: 'Bot modification not yet implemented',
+      logs: [`[BOT-MANAGER] Bot modification not yet implemented for ${botId}`]
+    }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
+}
+
+async function fixBot(userId: string, botId: string): Promise<Response> {
+  console.log(`[BOT-MANAGER] === Starting fix-bot for bot ${botId} ===`);
   
   try {
-    // Get current logs to diagnose issues
-    const logsResponse = await getLogsFromFlyio(botId, token, org);
+    // Get current logs to understand the error
+    const logsResponse = await getLogsFromFlyio(botId);
     const logsData = await logsResponse.json();
     
-    if (!logsData.errorAnalysis || !logsData.errorAnalysis.canAutoFix) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'No fixable errors detected in logs',
-          logs: logsData.logs
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    if (!logsData.success) {
+      throw new Error('Could not retrieve bot logs for analysis');
     }
     
-    // Get current bot files
-    const filesResponse = await getFilesFromSupabaseStorage(botId, userId);
-    const filesData = await filesResponse.json();
+    // For now, just restart the bot as a basic fix
+    return await restartBotInFlyio(userId, botId);
+
+  } catch (error) {
+    console.error(`[BOT-MANAGER] Bot fix failed: ${error}`);
     
-    if (!filesData.success) {
-      throw new Error('Failed to retrieve bot files for fixing');
-    }
-    
-    // Prepare error context for AI
-    const errorContext = {
-      syntaxErrors: logsData.errorAnalysis.syntaxErrors,
-      runtimeErrors: logsData.errorAnalysis.runtimeErrors,
-      installErrors: logsData.errorAnalysis.installErrors,
-      fullLogs: logsData.logs.filter(log => log.includes('ERROR') || log.includes('Exception') || log.includes('Traceback'))
-    };
-    
-    console.log(`[BOT-MANAGER] Calling AI to fix errors for bot ${botId}`);
-    
-    // Call OpenAI to fix the code
-    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
-    if (!openaiApiKey) {
-      throw new Error('OpenAI API key not configured');
-    }
-    
-    const systemPrompt = `You are an expert Python developer specializing in fixing Telegram bot code. 
-    
-You will be given:
-1. Python bot code with errors
-2. Error logs and diagnostics
-3. The requirements.txt file
-
-Your task is to fix ALL errors in the code and ensure it works properly. Focus on:
-- Syntax errors (missing imports, incorrect indentation, syntax issues)
-- Runtime errors (undefined variables, incorrect API usage)
-- Dependency issues (missing or incorrect packages)
-
-CRITICAL REQUIREMENTS:
-1. ALWAYS use polling mode with application.run_polling() - NEVER use webhooks
-2. Use python-telegram-bot library v20+ syntax
-3. Include proper logging and error handling
-4. The bot must work in a containerized Python environment
-5. Return ONLY the fixed main.py content, nothing else
-
-Fix the code to eliminate all errors shown in the logs.`;
-
-    const userPrompt = `Please fix this Telegram bot code based on the error logs provided:
-
-CURRENT CODE:
-\`\`\`python
-${filesData.files['main.py']}
-\`\`\`
-
-REQUIREMENTS.TXT:
-\`\`\`
-${filesData.files['requirements.txt'] || 'python-telegram-bot>=20.0'}
-\`\`\`
-
-ERROR ANALYSIS:
-- Syntax Errors: ${errorContext.syntaxErrors.join(', ') || 'None'}
-- Runtime Errors: ${errorContext.runtimeErrors.join(', ') || 'None'}
-- Install Errors: ${errorContext.installErrors.join(', ') || 'None'}
-
-FULL ERROR LOGS:
-${errorContext.fullLogs.join('\n')}
-
-Please provide the fixed main.py code that resolves all these errors.`;
-    
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openaiApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4.1-2025-04-14',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        temperature: 0.1,
-        max_tokens: 4000,
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        logs: [`[BOT-MANAGER] Bot fix failed for ${botId}: ${error}`]
       }),
-    });
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+}
 
-    if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status}`);
-    }
-
-    const aiResult = await response.json();
-    let fixedCode = aiResult.choices[0].message.content.trim();
+async function getFilesFromSupabaseStorage(botId: string, userId: string): Promise<Record<string, string>> {
+  console.log(`[BOT-MANAGER] Exploring storage structure...`);
+  
+  // List all buckets
+  const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
+  if (bucketsError) {
+    throw new Error(`Failed to list buckets: ${bucketsError.message}`);
+  }
+  
+  console.log(`[BOT-MANAGER] Available buckets: ${buckets.map(b => b.name).join(', ')}`);
+  
+  // Try different path patterns
+  const possiblePaths = [
+    botId,
+    `bots/${userId}/${botId}`
+  ];
+  
+  for (const path of possiblePaths) {
+    console.log(`[BOT-MANAGER] Trying path: ${path}`);
     
-    // Clean up the response (remove markdown if present)
-    fixedCode = fixedCode.replace(/```python\n/g, '').replace(/```\n/g, '').replace(/```/g, '');
-    
-    console.log(`[BOT-MANAGER] AI provided fixed code, updating storage...`);
-    
-    // Update the main.py file in storage
-    const filePath = `${filesData.path}/main.py`;
-    const { error: uploadError } = await supabase.storage
+    const { data: files, error: listError } = await supabase.storage
       .from('bot-files')
-      .upload(filePath, new Blob([fixedCode], { type: 'text/plain' }), {
-        upsert: true
-      });
+      .list(path);
     
-    if (uploadError) {
-      throw new Error(`Failed to update fixed code: ${uploadError.message}`);
-    }
-    
-    console.log(`[BOT-MANAGER] Fixed code uploaded, redeploying bot...`);
-    
-    // Redeploy the bot with fixed code
-    const redeployResult = await startBotInFlyio(botId, userId, token, org);
-    const redeployData = await redeployResult.json();
-    
-    return new Response(
-      JSON.stringify({
-        success: true,
-        message: 'Bot fixed and redeployed successfully',
-        fixApplied: true,
-        errorsFixed: {
-          syntax: errorContext.syntaxErrors.length,
-          runtime: errorContext.runtimeErrors.length,
-          install: errorContext.installErrors.length
-        },
-        logs: [
-          `[BOT-MANAGER] AI successfully fixed ${errorContext.syntaxErrors.length + errorContext.runtimeErrors.length} errors`,
-          `[BOT-MANAGER] Code updated in storage`,
-          `[BOT-MANAGER] Bot redeployed`,
-          ...redeployData.logs || []
-        ]
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-    
-  } catch (error) {
-    console.error(`[BOT-MANAGER] Fix attempt failed:`, error);
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: `Failed to fix bot: ${error.message}`,
-        logs: [`[BOT-MANAGER] Fix attempt failed: ${error.message}`]
-      }),
-      { 
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
-    );
-  }
-}
-
-async function getFilesFromSupabaseStorage(botId: string, userId: string): Promise<Response> {
-  console.log(`[BOT-MANAGER] Getting files from Supabase Storage for bot ${botId}`);
-  console.log(`[BOT-MANAGER] User ID: ${userId}`);
-  
-  await ensureStorageBucket();
-  
-  const requiredFiles = ['main.py', 'requirements.txt', '.env', 'metadata.json'];
-  const files: Record<string, string> = {};
-  
-  try {
-    console.log(`[BOT-MANAGER] Exploring storage structure...`);
-    
-    // List all buckets for debugging
-    const { data: buckets } = await supabase.storage.listBuckets();
-    console.log(`[BOT-MANAGER] Available buckets: ${buckets?.map(b => b.name).join(', ')}`);
-    
-    // Try different path structures
-    const possiblePaths = [
-      botId,
-      `bots/${userId}/${botId}`,
-      `${userId}/${botId}`
-    ];
-    
-    let foundPath = null;
-    let allFiles: any[] = [];
-    
-    for (const path of possiblePaths) {
-      console.log(`[BOT-MANAGER] Trying path: ${path}`);
-      const { data: pathFiles, error } = await supabase.storage.from('bot-files').list(path);
+    if (!listError && files && files.length > 0) {
+      console.log(`[BOT-MANAGER] Files found in ${path}: ${files.map(f => f.name).join(', ')}`);
+      console.log(`[BOT-MANAGER] Using path: ${path}`);
+      console.log(`[BOT-MANAGER] Available files: ${files.map(f => f.name).join(', ')}`);
       
-      if (!error && pathFiles && pathFiles.length > 0) {
-        const fileNames = pathFiles.map(f => f.name);
-        console.log(`[BOT-MANAGER] Files found in ${path}: ${fileNames.join(', ')}`);
-        
-        if (fileNames.some(name => requiredFiles.includes(name))) {
-          foundPath = path;
-          allFiles = pathFiles;
-          break;
+      const result: Record<string, string> = {};
+      const requiredFiles = ['main.py', '.env', 'requirements.txt', 'metadata.json'];
+      
+      for (const fileName of requiredFiles) {
+        if (files.some(f => f.name === fileName)) {
+          console.log(`[BOT-MANAGER] Downloading: ${path}/${fileName}`);
+          
+          const { data, error } = await supabase.storage
+            .from('bot-files')
+            .download(`${path}/${fileName}`);
+          
+          if (error) {
+            console.error(`[BOT-MANAGER] Error downloading ${fileName}: ${error.message}`);
+            continue;
+          }
+          
+          const content = await data.text();
+          result[fileName] = content;
+          console.log(`[BOT-MANAGER] Successfully retrieved ${fileName}: ${content.length} characters`);
         }
       }
-    }
-    
-    if (!foundPath) {
-      throw new Error(`No bot files found for bot ${botId}`);
-    }
-    
-    console.log(`[BOT-MANAGER] Using path: ${foundPath}`);
-    console.log(`[BOT-MANAGER] Available files: ${allFiles.map(f => f.name).join(', ')}`);
-    
-    // Download each required file
-    for (const fileName of requiredFiles) {
-      const filePath = `${foundPath}/${fileName}`;
-      console.log(`[BOT-MANAGER] Downloading: ${filePath}`);
       
-      const { data, error } = await supabase.storage
-        .from('bot-files')
-        .download(filePath);
-      
-      if (!error && data) {
-        const content = await data.text();
-        files[fileName] = content;
-        console.log(`[BOT-MANAGER] Successfully retrieved ${fileName}: ${content.length} characters`);
-      } else {
-        console.log(`[BOT-MANAGER] Failed to retrieve ${fileName}: ${error?.message || 'Unknown error'}`);
-        if (fileName === 'main.py' || fileName === 'requirements.txt') {
-          throw new Error(`Required file ${fileName} not found`);
-        }
-      }
+      console.log(`[BOT-MANAGER] Retrieved ${Object.keys(result).length}/${requiredFiles.length} files`);
+      return result;
     }
-    
-    console.log(`[BOT-MANAGER] Retrieved ${Object.keys(files).length}/${requiredFiles.length} files`);
-    
-    return new Response(
-      JSON.stringify({
-        success: true,
-        files,
-        path: foundPath,
-        storage_method: 'Enhanced Supabase Storage v2',
-        architecture: 'Hybrid Supabase + Fly.io',
-        bucket_status: 'active',
-        bucket_name: 'bot-files',
-        file_count: Object.keys(files).length,
-        retrieval_results: requiredFiles.map(fileName => ({
-          filename: fileName,
-          success: !!files[fileName],
-          size: files[fileName]?.length || 0
-        }))
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-    
-  } catch (error) {
-    console.error(`[BOT-MANAGER] Error retrieving files:`, error);
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: error.message,
-        logs: [`[BOT-MANAGER] File retrieval failed: ${error.message}`]
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
   }
+  
+  throw new Error(`No bot files found for bot ${botId}`);
 }
 
-async function debugVolumeContents(botId: string, machineId: string, token: string, org: string): Promise<Response> {
-  console.log(`[BOT-MANAGER] Debugging volume contents for bot ${botId}, machine ${machineId}`);
-  
-  try {
-    const appName = `telegram-bot-${botId.substring(0, 8)}`;
-    
-    // Enhanced debug command with better error handling and comprehensive checks
-    const debugCommand = `
-echo "=== VOLUME DEBUG REPORT FOR ${appName} ===";
-echo "Timestamp: $(date)";
-echo "Machine ID: ${machineId}";
-echo "";
-echo "1. VOLUME MOUNT STATUS:";
-mountpoint -q /data && echo "✅ /data is mounted" || echo "❌ /data not mounted";
-df -h | grep /data || echo "❌ No /data volume found";
-echo "";
-echo "2. DIRECTORY STRUCTURE:";
-ls -la /data/ 2>/dev/null || echo "❌ Cannot access /data";
-echo "";
-echo "3. BOT DIRECTORY:";
-if [ -d "/data/bot" ]; then
-  echo "✅ /data/bot exists";
-  ls -la /data/bot/;
-  echo "File count: $(ls -1 /data/bot | wc -l)";
-else
-  echo "❌ /data/bot does not exist";
-fi;
-echo "";
-echo "4. FILE VERIFICATION:";
-cd /data/bot 2>/dev/null || { echo "❌ Cannot cd to /data/bot"; exit 1; };
-for file in main.py .env requirements.txt; do
-  if [ -f "$file" ]; then
-    size=$(wc -c < "$file");
-    echo "✅ $file: $size bytes";
-    if [ "$file" = "main.py" ]; then
-      echo "   First line: $(head -n 1 "$file" 2>/dev/null)";
-    fi;
-  else
-    echo "❌ $file: NOT FOUND";
-  fi;
-done;
-echo "";
-echo "5. SYSTEM STATUS:";
-echo "Current directory: $(pwd)";
-echo "Disk usage: $(df -h /data | tail -1)";
-echo "Process count: $(ps aux | wc -l)";
-echo "=== END DEBUG REPORT ===";
-`;
-
-    const execResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${machineId}/exec`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        cmd: debugCommand.trim(),
-        timeout: 30
-      })
-    });
-
-    if (!execResponse.ok) {
-      const errorText = await execResponse.text();
-      throw new Error(`Failed to execute debug command: ${errorText}`);
-    }
-
-    const execResult = await execResponse.json();
-    console.log(`[BOT-MANAGER] Volume debug completed for ${botId}`);
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        botId,
-        machineId,
-        debug_output: execResult.stdout || '',
-        debug_error: execResult.stderr || '',
-        exit_code: execResult.exit_code
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-
-  } catch (error) {
-    console.error(`[BOT-MANAGER] Volume debug failed:`, error);
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: error.message
-      }),
-      { 
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
-    );
-  }
-}
-
-async function performHealthCheck(token?: string): Promise<Response> {
-  console.log('[BOT-MANAGER] Performing health check');
-  
+async function performHealthCheck(): Promise<Response> {
   const health = {
     supabase_storage: 'unknown',
-    flyio_api: 'unknown',
-    timestamp: new Date().toISOString()
+    flyio_api: 'unknown'
   };
   
   // Check Supabase Storage
   try {
-    const { data } = await supabase.storage.listBuckets();
-    health.supabase_storage = data ? 'healthy' : 'error';
+    const { data, error } = await supabase.storage.listBuckets();
+    health.supabase_storage = error ? 'error' : 'healthy';
   } catch (error) {
     health.supabase_storage = 'error';
   }
   
   // Check Fly.io API
-  if (token) {
+  if (FLYIO_TOKEN) {
     try {
       const response = await fetch(`${FLYIO_API_BASE}/apps`, {
+        method: 'GET',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${FLYIO_TOKEN}`,
           'Content-Type': 'application/json'
         }
       });
@@ -920,731 +582,112 @@ async function createFlyApp(appName: string, org: string, token: string): Promis
     return;
   }
 
-  // Get the user's personal organization ID first
-  console.log(`[BOT-MANAGER] Retrieving user organizations...`);
-  const orgsResponse = await fetch('https://api.fly.io/graphql', {
+  // Create new app
+  const createResponse = await fetch(`${FLYIO_API_BASE}/apps`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      query: `
-        query {
-          viewer {
-            organizations(first: 10) {
-              nodes {
-                id
-                slug
-                name
-                type
-              }
-            }
-          }
-        }
-      `
+      app_name: appName,
+      org_slug: org
     })
   });
 
-  if (!orgsResponse.ok) {
-    throw new Error(`Failed to get organizations: ${await orgsResponse.text()}`);
-  }
-
-  const orgsResult = await orgsResponse.json();
-  if (orgsResult.errors) {
-    throw new Error(`GraphQL error getting orgs: ${orgsResult.errors[0]?.message}`);
-  }
-
-  const organizations = orgsResult.data?.viewer?.organizations?.nodes || [];
-  console.log(`[BOT-MANAGER] Found ${organizations.length} organizations`);
-  
-  // Find personal organization or use the first available
-  let targetOrg = organizations.find((o: any) => o.type === 'PERSONAL' || o.slug === 'personal');
-  if (!targetOrg && organizations.length > 0) {
-    targetOrg = organizations[0];
-  }
-  
-  if (!targetOrg) {
-    throw new Error('No organizations found for this user');
-  }
-
-  console.log(`[BOT-MANAGER] Using organization: ${targetOrg.slug} (${targetOrg.id})`);
-
-  // Use GraphQL API to create the app
-  const response = await fetch('https://api.fly.io/graphql', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      query: `
-        mutation CreateApp($input: CreateAppInput!) {
-          createApp(input: $input) {
-            app {
-              id
-              name
-              organization {
-                id
-                slug
-              }
-            }
-          }
-        }
-      `,
-      variables: {
-        input: {
-          name: appName,
-          organizationId: targetOrg.id
-        }
-      }
-    })
-  });
-  
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`[BOT-MANAGER] App creation failed: ${errorText}`);
+  if (!createResponse.ok) {
+    const errorText = await createResponse.text();
     throw new Error(`Failed to create Fly.io app: ${errorText}`);
   }
 
-  const result = await response.json();
-  if (result.errors) {
-    console.error(`[BOT-MANAGER] GraphQL errors:`, result.errors);
-    throw new Error(`GraphQL error: ${result.errors[0]?.message || 'Unknown error'}`);
-  }
-
-  console.log(`[BOT-MANAGER] App created successfully: ${appName} in org ${targetOrg.slug}`);
-}
-
-async function deployBotToFlyWithVolume(appName: string, files: Record<string, string>, token: string): Promise<any> {
-  console.log(`[BOT-MANAGER] Starting SIMPLIFIED volume-based deployment for ${appName}`);
-  
-  try {
-    // Only cleanup machines, keep volumes for persistence across deployments
-    console.log(`[BOT-MANAGER] Cleaning up existing machines only (preserving volumes)...`);
-    await cleanupExistingMachines(appName, token);
-    
-    // Try to reuse existing volume first
-    const volumeName = `bot_${appName.replace(/telegram-bot-/, '').replace(/-/g, '_')}_vol`.substring(0, 30);
-    let volume;
-    
-    // Check if volume already exists
-    const listResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/volumes`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    
-    if (listResponse.ok) {
-      const volumes = await listResponse.json();
-      volume = volumes.find((v: any) => v.name === volumeName);
-      
-      if (volume) {
-        console.log(`[BOT-MANAGER] Reusing existing volume: ${volume.id}`);
-      }
-    }
-    
-    // Create new volume if none exists
-    if (!volume) {
-      console.log(`[BOT-MANAGER] Creating new volume: ${volumeName}`);
-    
-    const volumeConfig = {
-      name: volumeName,
-      size_gb: 1,
-      region: 'iad'
-    };
-    
-    const volumeResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/volumes`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(volumeConfig)
-    });
-    
-      if (!volumeResponse.ok) {
-        const errorText = await volumeResponse.text();
-        console.error(`[BOT-MANAGER] Volume creation failed: ${errorText}`);
-        throw new Error(`Failed to create volume: ${errorText}`);
-      }
-      
-      volume = await volumeResponse.json();
-      console.log(`[BOT-MANAGER] Volume created: ${volume.id}`);
-    } // Close the if (!volume) block
-    
-    // Create a robust file upload approach using here documents
-    console.log(`[BOT-MANAGER] Writing files to volume using here-doc approach...`);
-    
-    // Create individual file write commands using here documents (more reliable)
-    const fileWriteCommands = Object.entries(files).map(([filename, content]) => {
-      // Use a unique delimiter for each file
-      const delimiter = `EOF_${filename.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
-      
-      return `echo "Writing ${filename}..."
-cat > "/data/bot/${filename}" << '${delimiter}'
-${content}
-${delimiter}
-echo "✅ Successfully wrote ${filename} ($(wc -c < "/data/bot/${filename}") bytes)"
-ls -la "/data/bot/${filename}"`;
-    }).join('\n\n');
-
-    const uploadScript = `#!/bin/bash
-set -euo pipefail  # Strict error handling
-echo "=== Volume File Upload Started ==="
-
-# Create bot directory with proper permissions
-mkdir -p /data/bot
-chmod 755 /data/bot
-cd /data/bot
-
-echo "=== Available disk space ==="
-df -h /data
-
-echo "=== Writing files to volume ==="
-${fileWriteCommands}
-
-echo "=== Final verification ==="
-echo "Files in /data/bot/:"
-ls -la /data/bot/
-echo ""
-echo "Total files: $(ls -1 /data/bot/ | wc -l)"
-echo "Total size: $(du -sh /data/bot 2>/dev/null | cut -f1 || echo 'unknown')"
-echo ""
-
-echo "=== File content samples ==="
-for file in /data/bot/*; do
-  if [ -f "$file" ]; then
-    echo "--- $(basename "$file") ($(wc -c < "$file") bytes) ---"
-    head -3 "$file" 2>/dev/null || echo "Could not read $file"
-    echo ""
-  fi
-done
-
-echo "=== Volume upload completed successfully ==="
-echo "SUCCESS: All files written to volume"
-`;
-
-    const uploadMachineConfig = {
-      config: {
-        image: 'alpine:latest',  // Use simple Alpine for better bash support
-        init: {
-          cmd: ['/bin/sh', '-c', uploadScript]
-        },
-        mounts: [
-          {
-            volume: volume.id,
-            path: '/data'
-          }
-        ],
-        guest: {
-          cpu_kind: 'shared',
-          cpus: 1,
-          memory_mb: 256
-        },
-        restart: {
-          policy: 'no'
-        },
-        auto_destroy: true  // Auto-destroy after completion
-      },
-      region: 'iad'
-    };
-
-    const uploadMachineResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(uploadMachineConfig)
-    });
-
-    if (!uploadMachineResponse.ok) {
-      const errorText = await uploadMachineResponse.text();
-      console.error(`[BOT-MANAGER] Upload machine creation failed: ${errorText}`);
-      throw new Error(`Failed to create upload machine: ${errorText}`);
-    }
-
-    const uploadMachine = await uploadMachineResponse.json();
-    console.log(`[BOT-MANAGER] Upload machine created: ${uploadMachine.id}`);
-    
-    // Wait for upload to complete
-    console.log(`[BOT-MANAGER] Waiting for file upload to complete...`);
-    
-    // Wait for upload machine to finish (it will auto-destroy)
-    for (let i = 0; i < 30; i++) { // Check for 5 minutes
-      await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds each iteration
-      
-      // Check upload machine status
-      try {
-        const statusResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${uploadMachine.id}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        if (statusResponse.ok) {
-          const machineStatus = await statusResponse.json();
-          console.log(`[BOT-MANAGER] Upload machine status: ${machineStatus.state}`);
-          
-          if (machineStatus.state === 'stopped' || machineStatus.state === 'destroyed') {
-            console.log(`[BOT-MANAGER] Upload machine completed`);
-            break;
-          }
-        } else if (statusResponse.status === 404) {
-          // Machine was auto-destroyed, which means it completed
-          console.log(`[BOT-MANAGER] Upload machine auto-destroyed (upload completed)`);
-          break;
-        }
-      } catch (error) {
-        console.log(`[BOT-MANAGER] Upload machine likely completed and destroyed: ${error.message}`);
-        break;
-      }
-    }
-    
-    // Get upload machine logs to verify success
-    try {
-      const logResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${uploadMachine.id}/logs`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (logResponse.ok) {
-        const logs = await logResponse.text();
-        console.log(`[BOT-MANAGER] Upload logs:`, logs);
-        
-        if (logs.includes('Volume upload completed successfully')) {
-          console.log(`[BOT-MANAGER] ✅ Files uploaded successfully to volume`);
-        } else {
-          console.log(`[BOT-MANAGER] ⚠️ Upload may have failed, check logs`);
-        }
-      }
-    } catch (logError) {
-      console.log(`[BOT-MANAGER] Could not retrieve upload logs:`, logError);
-    }
-    
-    // CRITICAL: Destroy upload machine to release volume claim
-    console.log(`[BOT-MANAGER] Destroying upload machine to release volume...`);
-    try {
-      const destroyResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${uploadMachine.id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (destroyResponse.ok) {
-        console.log(`[BOT-MANAGER] ✅ Upload machine destroyed successfully`);
-      } else {
-        const errorText = await destroyResponse.text();
-        console.log(`[BOT-MANAGER] ⚠️ Failed to destroy upload machine: ${errorText}`);
-      }
-      
-      // Wait for machine to be fully destroyed
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      
-    } catch (destroyError) {
-      console.error(`[BOT-MANAGER] Error destroying upload machine:`, destroyError);
-    }
-    
-    // Create the main bot machine that uses the volume
-    console.log(`[BOT-MANAGER] Creating main bot machine with volume...`);
-    
-    const botToken = extractTokenFromEnv(files['.env']) || '';
-    
-    const botRunScript = `#!/bin/bash
-set -e
-echo "=== Bot Startup from Volume ==="
-cd /data/bot
-
-echo "=== Volume Contents ==="
-ls -la /data/bot/
-
-echo "=== Installing Python Dependencies ==="
-pip install --no-cache-dir python-telegram-bot python-dotenv requests aiohttp || {
-    echo "ERROR: Failed to install base dependencies"
-    exit 1
-}
-
-echo "=== Installing Additional Requirements ==="
-if [ -s requirements.txt ]; then
-    pip install --no-cache-dir -r requirements.txt || {
-        echo "ERROR: Failed to install requirements from requirements.txt"
-        exit 1
-    }
-else
-    echo "No additional requirements found"
-fi
-
-echo "=== Validating Python Syntax ==="
-python -m py_compile main.py || {
-    echo "SYNTAX_ERROR: Python syntax validation failed in main.py"
-    python -c "
-import sys
-try:
-    with open('main.py', 'r') as f:
-        compile(f.read(), 'main.py', 'exec')
-    print('Syntax validation passed')
-except SyntaxError as e:
-    print(f'SYNTAX_ERROR: {e.msg} at line {e.lineno}')
-    sys.exit(1)
-except Exception as e:
-    print(f'SYNTAX_ERROR: {str(e)}')
-    sys.exit(1)
-"
-    exit 1
-}
-
-echo "=== Starting Bot from Volume ==="
-python main.py || {
-    echo "RUNTIME_ERROR: Bot failed to start"
-    exit 1
-}`;
-
-    const botMachineConfig = {
-      config: {
-        image: 'python:3.11-slim',
-        init: {
-          cmd: ['/bin/bash', '-c', botRunScript]
-        },
-        env: {
-          PYTHONUNBUFFERED: '1',
-          BOT_TOKEN: botToken
-        },
-        mounts: [
-          {
-            volume: volume.id,
-            path: '/data'
-          }
-        ],
-        guest: {
-          cpu_kind: 'shared',
-          cpus: 1,
-          memory_mb: 512
-        },
-        restart: {
-          policy: 'no'  // Don't auto-restart on failure
-        },
-        auto_destroy: false
-      },
-      region: 'iad'
-    };
-
-    // Create bot machine
-    const botMachineResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(botMachineConfig)
-    });
-
-    if (!botMachineResponse.ok) {
-      const errorText = await botMachineResponse.text();
-      console.error(`[BOT-MANAGER] Bot machine creation failed: ${errorText}`);
-      throw new Error(`Failed to create bot machine: ${errorText}`);
-    }
-
-    const botMachine = await botMachineResponse.json();
-    console.log(`[BOT-MANAGER] Bot machine created: ${botMachine.id}`);
-
-    // Wait for machine to be ready
-    await new Promise(resolve => setTimeout(resolve, 3000));
-
-    console.log(`[BOT-MANAGER] Volume-based deployment completed for machine: ${botMachine.id}`);
-    
-    return {
-      id: botMachine.id,
-      appName,
-      volumeId: volume.id,
-      status: 'deployed',
-      machine: botMachine
-    };
-    
-  } catch (error) {
-    console.error(`[BOT-MANAGER] Volume-based deployment failed:`, error);
-    throw error;
-  }
-}
-
-async function cleanupExistingVolumes(appName: string, token: string): Promise<void> {
-  console.log(`[BOT-MANAGER] Cleaning up existing volumes for app ${appName}`);
-  
-  try {
-    // Get all volumes for this app
-    const volumesResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/volumes`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!volumesResponse.ok) {
-      if (volumesResponse.status === 404) {
-        console.log(`[BOT-MANAGER] App ${appName} not found, no volume cleanup needed`);
-        return;
-      }
-      console.log(`[BOT-MANAGER] Failed to list volumes: ${volumesResponse.status}`);
-      return;
-    }
-
-    const volumes = await volumesResponse.json();
-    console.log(`[BOT-MANAGER] Found ${volumes.length} existing volumes to cleanup`);
-
-    // Delete all existing volumes
-    for (const volume of volumes) {
-      console.log(`[BOT-MANAGER] Deleting volume ${volume.id}`);
-      
-      try {
-        const deleteResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/volumes/${volume.id}`, {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        if (deleteResponse.ok) {
-          console.log(`[BOT-MANAGER] Deleted volume ${volume.id}`);
-        } else {
-          console.log(`[BOT-MANAGER] Failed to delete volume ${volume.id}: ${deleteResponse.status}`);
-        }
-      } catch (error) {
-        console.log(`[BOT-MANAGER] Failed to delete volume ${volume.id}: ${error.message}`);
-      }
-    }
-
-    console.log(`[BOT-MANAGER] Volume cleanup completed for app ${appName}`);
-  } catch (error) {
-    console.error(`[BOT-MANAGER] Volume cleanup failed:`, error);
-    // Don't throw the error, just log it
-  }
+  console.log(`[BOT-MANAGER] App created successfully: ${appName} in org ${org}`);
 }
 
 async function deployBotToFly(appName: string, files: Record<string, string>, token: string): Promise<any> {
-  console.log(`[BOT-MANAGER] Starting real deployment for ${appName}`);
+  console.log(`[BOT-MANAGER] Starting direct machine deployment for ${appName}`);
   
-  try {
-    // First, cleanup any existing machines for this app
-    console.log(`[BOT-MANAGER] Checking for existing machines in app ${appName}`);
-    await cleanupExistingMachines(appName, token);
-    
-    // Create machine config with embedded setup script
-    console.log(`[BOT-MANAGER] Creating machine with bot setup for ${appName}`);
-    
-    // Extract bot token from .env file and convert webhook code to polling
-    const botToken = extractTokenFromEnv(files['.env']) || '';
-    
-    // Convert webhook code to polling mode
-    const convertedMainPy = convertWebhookToPolling(files['main.py'] || '');
-    console.log(`[BOT-MANAGER] Bot code converted from webhook to polling mode`);
-    
-    // Create setup script that installs dependencies and sets up the bot
-    // Use proper UTF-8 to base64 encoding to handle Unicode characters
-    const encoder = new TextEncoder();
-    const mainPyBytes = encoder.encode(convertedMainPy);
-    const envBytes = encoder.encode(files['.env'] || '');
-    const requirementsBytes = encoder.encode(files['requirements.txt'] || '');
-    
-    // Convert to base64 using proper UTF-8 encoding
-    const mainPyBase64 = btoa(String.fromCharCode(...mainPyBytes));
-    const envBase64 = btoa(String.fromCharCode(...envBytes));
-    const requirementsBase64 = btoa(String.fromCharCode(...requirementsBytes));
-    
-    const setupScript = `#!/bin/bash
+  // Extract bot token from .env file
+  const botToken = extractTokenFromEnv(files['.env'] || '');
+  if (!botToken) {
+    throw new Error('Bot token not found in .env file');
+  }
+  
+  // Prepare the startup script that will install dependencies and run the bot
+  const startupScript = `#!/bin/bash
 set -e
-echo "=== Bot Setup Started ==="
-mkdir -p /app
+
+echo "Setting up bot environment..."
 cd /app
 
-echo "=== Installing Python Dependencies ==="
-pip install --no-cache-dir python-telegram-bot python-dotenv requests aiohttp || {
-    echo "ERROR: Failed to install base dependencies"
-    exit 1
-}
+# Create bot files
+cat > main.py << 'EOF'
+${files['main.py']}
+EOF
 
-echo "=== Creating Bot Files ==="
-echo "${mainPyBase64}" | base64 -d > main.py || {
-    echo "ERROR: Failed to create main.py"
-    exit 1
-}
-echo "${envBase64}" | base64 -d > .env || {
-    echo "ERROR: Failed to create .env"
-    exit 1
-}
-echo "${requirementsBase64}" | base64 -d > requirements.txt || {
-    echo "ERROR: Failed to create requirements.txt"
-    exit 1
-}
+cat > requirements.txt << 'EOF'
+${files['requirements.txt']}
+EOF
 
-echo "=== Installing Additional Requirements ==="
-if [ -s requirements.txt ]; then
-    pip install --no-cache-dir -r requirements.txt || {
-        echo "ERROR: Failed to install requirements from requirements.txt"
-        exit 1
-    }
-else
-    echo "No additional requirements found"
-fi
+cat > .env << 'EOF'
+${files['.env']}
+EOF
 
-echo "=== Validating Python Syntax ==="
-python -m py_compile main.py || {
-    echo "SYNTAX_ERROR: Python syntax validation failed in main.py"
-    python -c "
-import sys
-try:
-    with open('main.py', 'r') as f:
-        compile(f.read(), 'main.py', 'exec')
-    print('Syntax validation passed')
-except SyntaxError as e:
-    print(f'SYNTAX_ERROR: {e.msg} at line {e.lineno}')
-    sys.exit(1)
-except Exception as e:
-    print(f'SYNTAX_ERROR: {str(e)}')
-    sys.exit(1)
-"
-    exit 1
-}
+# Install dependencies
+echo "Installing Python dependencies..."
+pip install -r requirements.txt
 
-echo "=== Files Created Successfully ==="
-ls -la /app/
-
-echo "=== Starting Bot ==="
-python main.py || {
-    echo "RUNTIME_ERROR: Bot failed to start"
-    exit 1
-}`;
-
-    const machineConfig = {
-      config: {
-        image: 'python:3.11-slim',
-        init: {
-          cmd: ['/bin/bash', '-c', setupScript]
-        },
-        env: {
-          PYTHONUNBUFFERED: '1',
-          BOT_TOKEN: botToken
-        },
-        guest: {
-          cpu_kind: 'shared',
-          cpus: 1,
-          memory_mb: 256
-        },
-        restart: {
-          policy: 'no'  // Don't auto-restart on failure to avoid error loops
-        },
-        auto_destroy: false
-      },
-      region: 'iad'
-    };
-
-    // Create machine
-    const createResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(machineConfig)
-    });
-
-    if (!createResponse.ok) {
-      const errorText = await createResponse.text();
-      console.error(`[BOT-MANAGER] Machine creation failed: ${errorText}`);
-      throw new Error(`Failed to create machine: ${errorText}`);
-    }
-
-    const machine = await createResponse.json();
-    console.log(`[BOT-MANAGER] Machine created: ${machine.id}`);
-
-    // Wait for machine to be ready
-    await new Promise(resolve => setTimeout(resolve, 3000));
-
-    // Check machine status
-    const statusResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${machine.id}`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    });
-
-    if (statusResponse.ok) {
-      const status = await statusResponse.json();
-      console.log(`[BOT-MANAGER] Machine ${machine.id} current state: ${status.state}`);
-      
-      // Only try to start if the machine is stopped or created
-      if (status.state === 'stopped' || status.state === 'created') {
-        console.log(`[BOT-MANAGER] Starting machine ${machine.id}...`);
-        
-        const startResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${machine.id}/start`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        if (!startResponse.ok) {
-          const errorText = await startResponse.text();
-          console.log(`[BOT-MANAGER] Start attempt result: ${errorText}`);
-          // Don't throw error here, the machine might start on its own
-        } else {
-          console.log(`[BOT-MANAGER] Machine ${machine.id} start command sent successfully`);
-        }
-      } else {
-        console.log(`[BOT-MANAGER] Machine ${machine.id} is in ${status.state} state - no start needed`);
-      }
-    }
-
-    console.log(`[BOT-MANAGER] Deployment process completed for machine: ${machine.id}`);
-    
-    return {
-      id: machine.id,
-      appName,
-      status: 'deployed',
-      machine: machine
-    };
-    
-  } catch (error) {
-    console.error(`[BOT-MANAGER] Deployment failed:`, error);
-    throw error;
-  }
-}
-
-function generateFlyConfig(appName: string, botToken: string): string {
-  return `
-app = "${appName}"
-primary_region = "iad"
-
-[build]
-  dockerfile = "Dockerfile"
-
-[env]
-  BOT_TOKEN = "${botToken}"
-
-[[services]]
-  protocol = "tcp"
-  internal_port = 8080
-
-  [[services.ports]]
-    port = 80
-    handlers = ["http"]
-
-  [[services.ports]]
-    port = 443
-    handlers = ["tls", "http"]
+# Run the bot
+echo "Starting bot..."
+python main.py
 `;
+
+  // Create machine configuration
+  const machineConfig = {
+    config: {
+      image: 'python:3.11-slim',
+      env: {
+        'BOT_TOKEN': botToken,
+        'PYTHONUNBUFFERED': '1'
+      },
+      init: {
+        exec: ['/bin/bash', '-c', startupScript]
+      },
+      restart: {
+        policy: 'always'
+      },
+      size: 'shared-cpu-1x'
+    }
+  };
+  
+  // Create the machine
+  const createResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(machineConfig)
+  });
+  
+  if (!createResponse.ok) {
+    const errorText = await createResponse.text();
+    throw new Error(`Failed to create machine: ${errorText}`);
+  }
+  
+  const machine = await createResponse.json();
+  console.log(`[BOT-MANAGER] Bot machine created: ${machine.id}`);
+  
+  return {
+    machineId: machine.id,
+    appName: appName,
+    status: 'deployed'
+  };
 }
 
 async function cleanupExistingMachines(appName: string, token: string): Promise<void> {
   console.log(`[BOT-MANAGER] Cleaning up existing machines for app ${appName}`);
   
   try {
-    // Get all machines for this app
     const machinesResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines`, {
       method: 'GET',
       headers: {
@@ -1653,42 +696,12 @@ async function cleanupExistingMachines(appName: string, token: string): Promise<
       }
     });
 
-    if (!machinesResponse.ok) {
-      if (machinesResponse.status === 404) {
-        console.log(`[BOT-MANAGER] App ${appName} not found, no cleanup needed`);
-        return;
-      }
-      throw new Error(`Failed to list machines: ${machinesResponse.status}`);
-    }
-
-    const machines = await machinesResponse.json();
-    console.log(`[BOT-MANAGER] Found ${machines.length} existing machines to cleanup`);
-
-    // Stop and destroy all existing machines
-    for (const machine of machines) {
-      console.log(`[BOT-MANAGER] Cleaning up machine ${machine.id} (state: ${machine.state})`);
+    if (machinesResponse.ok) {
+      const machines = await machinesResponse.json();
+      console.log(`[BOT-MANAGER] Found ${machines.length} existing machines to cleanup`);
       
-      // Stop the machine first if it's running
-      if (machine.state === 'started' || machine.state === 'starting') {
-        try {
-          await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${machine.id}/stop`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          });
-          console.log(`[BOT-MANAGER] Stopped machine ${machine.id}`);
-          
-          // Wait for machine to stop
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        } catch (error) {
-          console.log(`[BOT-MANAGER] Failed to stop machine ${machine.id}: ${error.message}`);
-        }
-      }
-
-      // Destroy the machine
-      try {
+      for (const machine of machines) {
+        console.log(`[BOT-MANAGER] Destroying machine: ${machine.id}`);
         const destroyResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${machine.id}`, {
           method: 'DELETE',
           headers: {
@@ -1696,135 +709,81 @@ async function cleanupExistingMachines(appName: string, token: string): Promise<
             'Content-Type': 'application/json'
           }
         });
-
+        
         if (destroyResponse.ok) {
-          console.log(`[BOT-MANAGER] Destroyed machine ${machine.id}`);
+          console.log(`[BOT-MANAGER] ✅ Machine ${machine.id} destroyed successfully`);
         } else {
-          console.log(`[BOT-MANAGER] Failed to destroy machine ${machine.id}: ${destroyResponse.status}`);
+          console.log(`[BOT-MANAGER] ⚠️ Failed to destroy machine ${machine.id}`);
         }
-      } catch (error) {
-        console.log(`[BOT-MANAGER] Failed to destroy machine ${machine.id}: ${error.message}`);
       }
+    } else {
+      console.log(`[BOT-MANAGER] No machines found or error retrieving machines for app ${appName}`);
     }
-
-    console.log(`[BOT-MANAGER] Machine cleanup completed for app ${appName}`);
   } catch (error) {
-    console.error(`[BOT-MANAGER] Machine cleanup failed:`, error);
-    // Don't throw the error, just log it - we still want to proceed with deployment
+    console.log(`[BOT-MANAGER] Error during machine cleanup: ${error}`);
   }
+  
+  console.log(`[BOT-MANAGER] Machine cleanup completed for app ${appName}`);
 }
 
-function convertWebhookToPolling(pythonCode: string): string {
-  console.log(`[BOT-MANAGER] Converting webhook code to polling mode`);
+async function getUserOrganizations(token: string): Promise<any[]> {
+  console.log(`[BOT-MANAGER] Retrieving user organizations...`);
   
-  // Replace webhook-related imports and functions
-  let convertedCode = pythonCode
-    // Remove webhook-related imports
-    .replace(/from\s+flask\s+import.*?\n/g, '')
-    .replace(/import\s+flask.*?\n/g, '')
-    .replace(/from\s+aiohttp\s+import.*?\n/g, '')
-    .replace(/import\s+aiohttp.*?\n/g, '')
-    
-    // Remove all webhook-related comments - this is key!
-    .replace(/.*webhook.*$/gmi, '# Using polling mode for containerized deployment')
-    .replace(/.*set.*webhook.*URL.*$/gmi, '# Bot configured for polling mode')
-    .replace(/.*replace.*webhook.*$/gmi, '# Polling mode configured automatically')
-    .replace(/.*production.*environment.*$/gmi, '# Production-ready polling configuration')
-    
-    // Replace webhook setup with polling
-    .replace(/application\.updater\.start_webhook\([^)]*\)/g, 'application.run_polling()')
-    .replace(/await\s+application\.updater\.start_webhook\([^)]*\)/g, 'application.run_polling()')
-    .replace(/application\.bot\.set_webhook\([^)]*\)/g, '# Using polling instead of webhooks')
-    .replace(/await\s+application\.bot\.set_webhook\([^)]*\)/g, '# Using polling instead of webhooks')
-    .replace(/application\.run_webhook\([^)]*\)/g, 'application.run_polling()')
-    .replace(/await\s+application\.run_webhook\([^)]*\)/g, 'application.run_polling()')
-    
-    // Remove webhook URL setup
-    .replace(/webhook_url\s*=.*?\n/g, '# Polling mode - no URL needed\n')
-    .replace(/url_path\s*=.*?\n/g, '# Polling mode - no path needed\n')
-    
-    // Replace any async main functions that use webhooks
-    .replace(/async def main\(\)[^}]*?start_webhook.*?$/gm, `def main() -> None:
-    logger.info('========== BOT STARTUP ==========')
-    token = os.getenv('BOT_TOKEN')
-    if not token:
-        logger.error('BOT_TOKEN not found in environment variables')
-        return
-        
-    logger.info('Bot token loaded successfully')
-    logger.info('Creating Telegram Application...')
-    application = Application.builder().token(token).build()
-    
-    logger.info('Starting bot in polling mode...')
-    logger.info('🤖 Bot is now running and ready to receive messages!')
-    application.run_polling()`)
-    
-    // Fix async main that might call polling incorrectly
-    .replace(/async def main\(\).*?application\.run_polling\(\)/gms, 
-             `def main() -> None:
-    logger.info('========== BOT STARTUP ==========')
-    token = os.getenv('BOT_TOKEN')
-    if not token:
-        logger.error('BOT_TOKEN not found in environment variables')
-        return
-        
-    logger.info('Bot token loaded successfully')
-    logger.info('Creating Telegram Application...')
-    application = Application.builder().token(token).build()
-    
-    logger.info('Starting bot in polling mode...')
-    logger.info('🤖 Bot is now running and ready to receive messages!')
-    application.run_polling()`)
-    
-    // Replace asyncio.run(main()) with main() since we're not using async
-    .replace(/asyncio\.run\(main\(\)\)/g, 'main()')
-    
-    // Fix any remaining async/await patterns that shouldn't be there
-    .replace(/await\s+application\.start_polling\(\)/g, 'application.run_polling()')
-    .replace(/await\s+application\.initialize\(\)/g, '# Application automatically initializes with run_polling()')
-    
-    // Clean up any duplicate polling calls
-    .replace(/(application\.run_polling\(\)\s*){2,}/g, 'application.run_polling()')
-    
-    // Remove any port or listen configurations
-    .replace(/listen\s*=\s*['"][^'"]*['"]/g, '')
-    .replace(/port\s*=\s*\d+/g, '')
-    
-    // Add proper main function if missing
-    if (!convertedCode.includes('def main') && !convertedCode.includes('application.run_polling')) {
-      convertedCode += `
-
-def main() -> None:
-    logger.info('========== BOT STARTUP ==========')
-    token = os.getenv('BOT_TOKEN')
-    if not token:
-        logger.error('BOT_TOKEN not found in environment variables')
-        return
-        
-    logger.info('Bot token loaded successfully')
-    logger.info('Creating Telegram Application...')
-    application = Application.builder().token(token).build()
-    
-    logger.info('Starting bot in polling mode...')
-    logger.info('🤖 Bot is now running and ready to receive messages!')
-    application.run_polling()
-
-if __name__ == '__main__':
-    main()`;
+  const response = await fetch(`${FLYIO_API_BASE}/orgs`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
     }
-    
-    // Final cleanup - remove any remaining webhook references
-    convertedCode = convertedCode
-      .replace(/webhook/gi, 'polling')
-      .replace(/# Using polling mode for containerized deployment/g, '# Using polling mode for containerized deployment')
-      .replace(/# Bot configured for polling mode/g, '# Bot configured for polling mode')
-      .replace(/# Polling mode configured automatically/g, '# Polling mode configured automatically');
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to retrieve organizations');
+  }
+
+  const orgs = await response.json();
+  console.log(`[BOT-MANAGER] Found ${orgs.length} organizations`);
   
-  console.log(`[BOT-MANAGER] Code conversion completed - all webhook references removed`);
-  return convertedCode;
+  return orgs;
 }
 
-function extractTokenFromEnv(envContent: string): string | null {
-  const match = envContent.match(/BOT_TOKEN\s*=\s*(.+)/);
-  return match ? match[1].trim().replace(/["']/g, '') : null;
+function convertWebhookToPolling(code: string): string {
+  // Remove webhook-related imports and code
+  let modifiedCode = code;
+  
+  // Remove webhook-specific imports
+  modifiedCode = modifiedCode.replace(/from\s+telegram\.ext\s+import.*?WebhookHandler.*?\n/gs, '');
+  modifiedCode = modifiedCode.replace(/import.*?webhook.*?\n/gi, '');
+  
+  // Remove webhook setup calls
+  modifiedCode = modifiedCode.replace(/\.set_webhook\(.*?\)/gs, '');
+  modifiedCode = modifiedCode.replace(/\.delete_webhook\(\)/gs, '');
+  modifiedCode = modifiedCode.replace(/\.start_webhook\(.*?\)/gs, '');
+  
+  // Replace webhook polling with simple polling
+  modifiedCode = modifiedCode.replace(
+    /application\.run_webhook\(.*?\)/gs,
+    'application.run_polling(drop_pending_updates=True)'
+  );
+  
+  // Ensure we're using polling
+  if (!modifiedCode.includes('run_polling')) {
+    // Add run_polling at the end if not present
+    modifiedCode = modifiedCode.replace(
+      /(if\s+__name__\s*==\s*['"']__main__['"']\s*:\s*\n)/,
+      '$1    application.run_polling(drop_pending_updates=True)\n'
+    );
+  }
+  
+  return modifiedCode;
+}
+
+function extractTokenFromEnv(envContent: string): string {
+  const lines = envContent.split('\n');
+  for (const line of lines) {
+    if (line.startsWith('BOT_TOKEN=')) {
+      return line.split('=')[1];
+    }
+  }
+  return '';
 }
