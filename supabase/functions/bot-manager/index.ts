@@ -732,37 +732,7 @@ async function debugVolumeContents(botId: string, machineId: string, token: stri
   try {
     const appName = `telegram-bot-${botId.substring(0, 8)}`;
     
-    // Execute a command inside the machine to list volume contents
-    const debugScript = `#!/bin/bash
-echo "=== VOLUME DEBUG REPORT ==="
-echo "Current directory: $(pwd)"
-echo "Volume mount status:"
-df -h | grep /data || echo "No /data mount found"
-echo ""
-echo "Contents of /data:"
-ls -la /data/ || echo "Cannot access /data"
-echo ""
-echo "Contents of /data/bot:"
-ls -la /data/bot/ || echo "Cannot access /data/bot"
-echo ""
-echo "File details:"
-if [ -d "/data/bot" ]; then
-  cd /data/bot
-  for file in main.py .env requirements.txt; do
-    if [ -f "$file" ]; then
-      echo "$file: $(wc -c < "$file") bytes"
-      echo "First 3 lines of $file:"
-      head -n 3 "$file"
-      echo "---"
-    else
-      echo "$file: NOT FOUND"
-    fi
-  done
-else
-  echo "/data/bot directory does not exist"
-fi
-echo "=== END DEBUG REPORT ==="`;
-
+    // Execute a simple command inside the machine to list volume contents
     const execResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${machineId}/exec`, {
       method: 'POST',
       headers: {
@@ -770,7 +740,7 @@ echo "=== END DEBUG REPORT ==="`;
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        cmd: ['/bin/bash', '-c', debugScript],
+        cmd: "ls -la /data && echo '---' && ls -la /data/bot 2>/dev/null || echo 'No /data/bot found' && echo '---' && df -h | grep /data || echo 'No /data mount'",
         timeout: 30
       })
     });
