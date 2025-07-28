@@ -75,117 +75,285 @@ async function deployBotToFlyWithVolume(appName: string, files: Record<string, s
     const envBase64 = btoa(String.fromCharCode(...encoder.encode(files['.env'] || '')));
     const requirementsBase64 = btoa(String.fromCharCode(...encoder.encode(files['requirements.txt'] || '')));
     
-    // Single machine script that handles both file setup and bot execution
+    // Enhanced script with comprehensive volume verification and error handling
     const singleMachineScript = `#!/bin/bash
 set -e
-echo "=== Single Machine: File Setup + Bot Execution ==="
+echo "=== ENHANCED Single Machine: Volume Verification + File Setup + Bot Execution ==="
 
-# DEBUG: Check initial state
-echo "🔍 DEBUG: Initial filesystem state"
+# STEP 1: Volume Mount Verification
+echo "🔍 STEP 1: Volume Mount Verification"
 echo "Current directory: $(pwd)"
-echo "Volume mount: /data exists? $(test -d /data && echo 'YES' || echo 'NO')"
-echo "Volume writable? $(test -w /data && echo 'YES' || echo 'NO')"
-df -h | grep /data || echo "No /data mount found"
 
-# Create bot directory in volume
+# Wait for volume to be mounted (retry logic)
+for attempt in {1..5}; do
+    echo "Attempt $attempt/5: Checking /data mount..."
+    if mountpoint -q /data 2>/dev/null; then
+        echo "✅ /data is properly mounted as a volume"
+        break
+    elif [ -d /data ]; then
+        echo "⚠️  /data exists but not mounted as volume (attempt $attempt)"
+        if [ $attempt -eq 5 ]; then
+            echo "❌ Volume mount failed after 5 attempts"
+            echo "Mount info:"
+            mount | grep /data || echo "No /data mount found"
+            df -h
+            exit 1
+        fi
+        sleep 2
+    else
+        echo "❌ /data directory does not exist"
+        mkdir -p /data
+        sleep 2
+    fi
+done
+
+# Verify volume is writable
+if [ ! -w /data ]; then
+    echo "❌ Volume /data is not writable"
+    ls -ld /data
+    exit 1
+fi
+
+echo "✅ Volume mount verification passed"
+df -h | grep /data
+
+# STEP 2: Create bot directory with verification
+echo "🔍 STEP 2: Bot Directory Setup"
 mkdir -p /data/bot
 cd /data/bot
 
-echo "🔍 DEBUG: After creating /data/bot"
-echo "Current directory: $(pwd)"
+if [ "$(pwd)" != "/data/bot" ]; then
+    echo "❌ Failed to change to /data/bot directory"
+    exit 1
+fi
+
+echo "✅ Bot directory ready: $(pwd)"
 echo "Directory permissions: $(ls -ld /data/bot)"
 
-# File setup: Only create files if they don't exist (first run)
+# STEP 3: File setup with verification
+echo "🔍 STEP 3: File Creation and Verification"
+
+# Check if this is first run or if files need updating
+NEEDS_FILE_SETUP=false
 if [ ! -f "main.py" ] || [ ! -f ".env" ] || [ ! -f "requirements.txt" ]; then
-    echo "=== First run: Creating bot files in persistent volume ==="
+    NEEDS_FILE_SETUP=true
+    echo "📝 First run or missing files: Creating bot files in persistent volume"
+else
+    echo "📁 Files exist: Checking if update needed..."
+    # For now, always recreate files to ensure latest version
+    NEEDS_FILE_SETUP=true
+    echo "🔄 Updating files with latest version"
+fi
+
+if [ "$NEEDS_FILE_SETUP" = true ]; then
+    echo "🔍 File data validation:"
+    echo "main.py base64 length: ${mainPyBase64:0:50}... (${#mainPyBase64} chars)"
+    echo ".env base64 length: ${envBase64:0:30}... (${#envBase64} chars)" 
+    echo "requirements.txt base64 length: ${requirementsBase64:0:30}... (${#requirementsBase64} chars)"
     
-    echo "🔍 DEBUG: About to decode and write files"
-    echo "main.py base64 length: ${#mainPyBase64}"
-    echo ".env base64 length: ${#envBase64}"
-    echo "requirements.txt base64 length: ${#requirementsBase64}"
+    # Validate base64 data before proceeding
+    if [ ${#mainPyBase64} -lt 10 ] || [ ${#envBase64} -lt 10 ]; then
+        echo "❌ Invalid file data detected (too short)"
+        exit 1
+    fi
     
+    # Enhanced Python file creation with comprehensive error handling
     python3 -c "
 import base64
 import os
+import sys
 
-print(f'🔍 DEBUG: Python working directory: {os.getcwd()}')
-print(f'🔍 DEBUG: /data/bot exists: {os.path.exists(\"/data/bot\")}')
-print(f'🔍 DEBUG: /data/bot writable: {os.access(\"/data/bot\", os.W_OK)}')
+print(f'🔍 Python environment check:')
+print(f'  Working directory: {os.getcwd()}')
+print(f'  /data/bot exists: {os.path.exists(\"/data/bot\")}')
+print(f'  /data/bot writable: {os.access(\"/data/bot\", os.W_OK)}')
+print(f'  Python version: {sys.version}')
 
-# Create main.py
+files_created = 0
+total_bytes = 0
+
+# Create main.py with enhanced error handling
 try:
+    decoded_main = base64.b64decode('${mainPyBase64}').decode('utf-8')
+    if len(decoded_main) < 50:
+        raise ValueError(f'main.py content too short: {len(decoded_main)} chars')
+    
     with open('main.py', 'w', encoding='utf-8') as f:
-        decoded = base64.b64decode('${mainPyBase64}').decode('utf-8')
-        f.write(decoded)
+        f.write(decoded_main)
         f.flush()
         os.fsync(f.fileno())
-    print(f'✅ main.py created ({os.path.getsize(\"main.py\")} bytes)')
+    
+    size = os.path.getsize('main.py')
+    total_bytes += size
+    files_created += 1
+    print(f'✅ main.py created successfully ({size} bytes)')
+    
+    # Verify file content
+    with open('main.py', 'r') as f:
+        first_line = f.readline().strip()
+        print(f'   First line: {first_line[:60]}...')
+        
 except Exception as e:
-    print(f'❌ Failed to create main.py: {e}')
+    print(f'❌ CRITICAL: Failed to create main.py: {e}')
+    sys.exit(1)
 
-# Create .env
+# Create .env with validation
 try:
+    decoded_env = base64.b64decode('${envBase64}').decode('utf-8')
+    if 'BOT_TOKEN' not in decoded_env:
+        raise ValueError('.env missing BOT_TOKEN')
+    
     with open('.env', 'w', encoding='utf-8') as f:
-        decoded = base64.b64decode('${envBase64}').decode('utf-8')
-        f.write(decoded)
+        f.write(decoded_env)
         f.flush()
         os.fsync(f.fileno())
-    print(f'✅ .env created ({os.path.getsize(\".env\")} bytes)')
+    
+    size = os.path.getsize('.env')
+    total_bytes += size
+    files_created += 1
+    print(f'✅ .env created successfully ({size} bytes)')
+    print(f'   Contains BOT_TOKEN: {\"BOT_TOKEN\" in decoded_env}')
+    
 except Exception as e:
-    print(f'❌ Failed to create .env: {e}')
+    print(f'❌ CRITICAL: Failed to create .env: {e}')
+    sys.exit(1)
 
 # Create requirements.txt
 try:
+    decoded_req = base64.b64decode('${requirementsBase64}').decode('utf-8')
+    
     with open('requirements.txt', 'w', encoding='utf-8') as f:
-        decoded = base64.b64decode('${requirementsBase64}').decode('utf-8')
-        f.write(decoded)
+        f.write(decoded_req)
         f.flush()
         os.fsync(f.fileno())
-    print(f'✅ requirements.txt created ({os.path.getsize(\"requirements.txt\")} bytes)')
+    
+    size = os.path.getsize('requirements.txt')
+    total_bytes += size
+    files_created += 1
+    print(f'✅ requirements.txt created successfully ({size} bytes)')
+    
 except Exception as e:
-    print(f'❌ Failed to create requirements.txt: {e}')
+    print(f'❌ WARNING: Failed to create requirements.txt: {e}')
+    # This is not critical, we can continue
 
-# Final verification
-print(f'🔍 DEBUG: Files after creation:')
+# Final comprehensive verification
+print(f'\\n🔍 VERIFICATION REPORT:')
+print(f'  Files created: {files_created}/3')
+print(f'  Total size: {total_bytes} bytes')
+
+all_files_ok = True
 for file in ['main.py', '.env', 'requirements.txt']:
     if os.path.exists(file):
-        print(f'  {file}: {os.path.getsize(file)} bytes')
+        size = os.path.getsize(file)
+        readable = os.access(file, os.R_OK)
+        print(f'  ✅ {file}: {size} bytes, readable: {readable}')
+        if not readable or size == 0:
+            all_files_ok = False
     else:
-        print(f'  {file}: NOT FOUND')
+        print(f'  ❌ {file}: NOT FOUND')
+        if file in ['main.py', '.env']:  # Critical files
+            all_files_ok = False
+
+if not all_files_ok:
+    print('❌ CRITICAL: File verification failed')
+    sys.exit(1)
+else:
+    print('✅ All files verified successfully')
 "
-    echo "📁 Files created in persistent volume /data/bot/"
-else
-    echo "=== Reusing existing files from persistent volume ==="
-    echo "📁 Files found in volume: $(ls -1 | wc -l)"
+    echo "✅ Files created successfully in persistent volume /data/bot/"
 fi
 
-echo "=== Volume contents after file creation ==="
+# STEP 4: Post-creation verification and volume status
+echo "🔍 STEP 4: Post-Creation Verification"
+echo "=== Volume Status ==="
+df -h /data
+echo "Total files in /data/bot: $(ls -1 /data/bot | wc -l)"
+echo "Volume contents:"
 ls -la /data/bot/
-echo "=== File sizes ==="
-du -h /data/bot/* 2>/dev/null || echo "No files found"
-echo "=== File content samples ==="
+
+echo "=== File Integrity Check ==="
+for file in main.py .env requirements.txt; do
+    if [ -f "/data/bot/$file" ]; then
+        size=$(wc -c < "/data/bot/$file")
+        echo "✅ $file: $size bytes"
+        if [ "$file" = "main.py" ] && [ $size -lt 100 ]; then
+            echo "❌ WARNING: main.py seems too small ($size bytes)"
+        fi
+    else
+        echo "❌ MISSING: $file"
+        if [ "$file" = "main.py" ] || [ "$file" = ".env" ]; then
+            echo "❌ CRITICAL FILE MISSING: $file"
+            exit 1
+        fi
+    fi
+done
+
+echo "=== File Content Validation ==="
 echo "main.py first 3 lines:"
-head -n 3 /data/bot/main.py 2>/dev/null || echo "Cannot read main.py"
-echo ".env contents:"
-cat /data/bot/.env 2>/dev/null || echo "Cannot read .env"
+head -n 3 /data/bot/main.py 2>/dev/null || echo "❌ Cannot read main.py"
 
-echo "=== Installing Dependencies ==="
-pip install --no-cache-dir python-telegram-bot python-dotenv requests aiohttp
-
-if [ -s requirements.txt ]; then
-    pip install --no-cache-dir -r requirements.txt
+echo ".env validation:"
+if grep -q "BOT_TOKEN" /data/bot/.env 2>/dev/null; then
+    echo "✅ .env contains BOT_TOKEN"
+else
+    echo "❌ .env missing BOT_TOKEN"
+    exit 1
 fi
 
-echo "=== Validating Bot Code ==="
-python -m py_compile main.py || {
-    echo "SYNTAX_ERROR: Bot code has syntax errors"
+# STEP 5: Dependency Installation with error handling
+echo "🔍 STEP 5: Installing Dependencies"
+echo "=== Core Dependencies ==="
+pip install --no-cache-dir python-telegram-bot python-dotenv requests aiohttp || {
+    echo "❌ Failed to install core dependencies"
     exit 1
 }
 
+if [ -s requirements.txt ]; then
+    echo "=== Custom Dependencies ==="
+    pip install --no-cache-dir -r requirements.txt || {
+        echo "⚠️  Some custom dependencies failed to install, continuing..."
+    }
+else
+    echo "ℹ️  No additional requirements.txt found"
+fi
+
+# STEP 6: Code Validation
+echo "🔍 STEP 6: Code Validation"
+python -m py_compile main.py || {
+    echo "❌ SYNTAX_ERROR: Bot code has syntax errors"
+    python -c "
+import ast
+try:
+    with open('main.py', 'r') as f:
+        ast.parse(f.read())
+    print('Code parsed successfully by AST')
+except SyntaxError as e:
+    print(f'Syntax error at line {e.lineno}: {e.msg}')
+except Exception as e:
+    print(f'Parse error: {e}')
+"
+    exit 1
+}
+
+echo "✅ Code validation passed"
+
+# STEP 7: Final Status and Bot Launch
+echo "🔍 STEP 7: Final Status Check"
+echo "=== Pre-launch Summary ==="
+echo "📁 Working directory: $(pwd)"
+echo "📊 Disk usage: $(df -h /data | tail -1)"
+echo "🐍 Python version: $(python --version)"
+echo "📦 Installed packages: $(pip list | wc -l) packages"
+
 echo "=== Starting Bot from Persistent Volume ==="
-echo "🤖 Running bot from /data/bot/ (files persist across deployments)"
+echo "🤖 Bot launching from /data/bot/ (files persist across deployments)"
+echo "🔄 Bot will restart automatically on crashes"
+
+# Set up error handling for bot execution
 python main.py || {
-    echo "RUNTIME_ERROR: Bot failed to start"
+    echo "❌ RUNTIME_ERROR: Bot failed to start"
+    echo "Last 20 lines of any error output:"
+    tail -20 /var/log/bot_error.log 2>/dev/null || echo "No error log available"
     exit 1
 }`;
 

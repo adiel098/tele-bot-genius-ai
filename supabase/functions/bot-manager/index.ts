@@ -113,8 +113,20 @@ async function startBotInFlyio(botId: string, userId: string, token: string, org
     
     // Deploy the bot using volume-based storage
     logs.push(`[BOT-MANAGER] Creating volume and deploying bot...`);
+    
+    // Pre-deployment validation
+    logs.push(`[BOT-MANAGER] Validating bot files before deployment...`);
+    if (!mainPy || mainPy.length < 50) {
+      throw new Error('Invalid main.py file: too short or empty');
+    }
+    if (!envFile || !envFile.includes('BOT_TOKEN')) {
+      throw new Error('Invalid .env file: missing BOT_TOKEN');
+    }
+    logs.push(`[BOT-MANAGER] File validation passed`);
+    
     // Convert webhook code to polling mode
     const convertedMainPy = convertWebhookToPolling(mainPy);
+    logs.push(`[BOT-MANAGER] Code converted from webhook to polling mode`);
     
     const deployResult = await deployBotToFlyWithVolume(appName, {
       'main.py': convertedMainPy,
@@ -732,7 +744,49 @@ async function debugVolumeContents(botId: string, machineId: string, token: stri
   try {
     const appName = `telegram-bot-${botId.substring(0, 8)}`;
     
-    // Execute a simple command inside the machine to list volume contents
+    // Enhanced debug command with better error handling and comprehensive checks
+    const debugCommand = `
+echo "=== VOLUME DEBUG REPORT FOR ${appName} ===";
+echo "Timestamp: $(date)";
+echo "Machine ID: ${machineId}";
+echo "";
+echo "1. VOLUME MOUNT STATUS:";
+mountpoint -q /data && echo "✅ /data is mounted" || echo "❌ /data not mounted";
+df -h | grep /data || echo "❌ No /data volume found";
+echo "";
+echo "2. DIRECTORY STRUCTURE:";
+ls -la /data/ 2>/dev/null || echo "❌ Cannot access /data";
+echo "";
+echo "3. BOT DIRECTORY:";
+if [ -d "/data/bot" ]; then
+  echo "✅ /data/bot exists";
+  ls -la /data/bot/;
+  echo "File count: $(ls -1 /data/bot | wc -l)";
+else
+  echo "❌ /data/bot does not exist";
+fi;
+echo "";
+echo "4. FILE VERIFICATION:";
+cd /data/bot 2>/dev/null || { echo "❌ Cannot cd to /data/bot"; exit 1; };
+for file in main.py .env requirements.txt; do
+  if [ -f "$file" ]; then
+    size=$(wc -c < "$file");
+    echo "✅ $file: $size bytes";
+    if [ "$file" = "main.py" ]; then
+      echo "   First line: $(head -n 1 "$file" 2>/dev/null)";
+    fi;
+  else
+    echo "❌ $file: NOT FOUND";
+  fi;
+done;
+echo "";
+echo "5. SYSTEM STATUS:";
+echo "Current directory: $(pwd)";
+echo "Disk usage: $(df -h /data | tail -1)";
+echo "Process count: $(ps aux | wc -l)";
+echo "=== END DEBUG REPORT ===";
+`;
+
     const execResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${machineId}/exec`, {
       method: 'POST',
       headers: {
@@ -740,7 +794,7 @@ async function debugVolumeContents(botId: string, machineId: string, token: stri
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        cmd: "ls -la /data && echo '---' && ls -la /data/bot 2>/dev/null || echo 'No /data/bot found' && echo '---' && df -h | grep /data || echo 'No /data mount'",
+        cmd: debugCommand.trim(),
         timeout: 30
       })
     });
