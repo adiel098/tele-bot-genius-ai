@@ -961,81 +961,61 @@ async function deployBotToFlyWithVolume(appName: string, files: Record<string, s
       console.log(`[BOT-MANAGER] Volume created: ${volume.id}`);
     }
     
-    // Create a temporary machine to upload files to the volume
-    console.log(`[BOT-MANAGER] Creating file upload machine...`);
+    // Create a robust file upload approach using here documents
+    console.log(`[BOT-MANAGER] Writing files to volume using here-doc approach...`);
     
-    // Create a simpler, more reliable file upload approach
-    console.log(`[BOT-MANAGER] Uploading files to volume using direct approach...`);
-    
-    // Create individual file write commands using Deno's base64 encoding
-    const fileCommands = Object.entries(files).map(([filename, content]) => {
-      // Use Deno's built-in btoa for base64 encoding (encode UTF-8 to base64)
-      const encoder = new TextEncoder();
-      const bytes = encoder.encode(content);
-      const base64Content = btoa(String.fromCharCode(...bytes));
+    // Create individual file write commands using here documents (more reliable)
+    const fileWriteCommands = Object.entries(files).map(([filename, content]) => {
+      // Use a unique delimiter for each file
+      const delimiter = `EOF_${filename.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
       
-      const pythonScript = `
-import os
-import base64
-import sys
+      return `echo "Writing ${filename}..."
+cat > "/data/bot/${filename}" << '${delimiter}'
+${content}
+${delimiter}
+echo "✅ Successfully wrote ${filename} ($(wc -c < "/data/bot/${filename}") bytes)"
+ls -la "/data/bot/${filename}"`;
+    }).join('\n\n');
 
-# Create bot directory
-os.makedirs('/data/bot', exist_ok=True)
-os.chdir('/data/bot')
-
-# File content (base64 encoded)
-file_content = '''${base64Content}'''
-
-# Decode and write file
-try:
-    with open('${filename}', 'w', encoding='utf-8') as f:
-        import base64
-        decoded_content = base64.b64decode(file_content).decode('utf-8')
-        f.write(decoded_content)
-    print(f"✅ Successfully wrote ${filename}")
-    print(f"📏 File size: {len(decoded_content)} characters")
-except Exception as e:
-    print(f"❌ Error writing ${filename}: {e}")
-    sys.exit(1)
-`;
-      return pythonScript;
-    });
-    
-    // Create the upload script that writes all files
     const uploadScript = `#!/bin/bash
-set -e
+set -euo pipefail  # Strict error handling
 echo "=== Volume File Upload Started ==="
 
-# Install Python if needed (Alpine comes with Python)
-which python3 || apk add --no-cache python3
-
-# Create bot directory
+# Create bot directory with proper permissions
 mkdir -p /data/bot
+chmod 755 /data/bot
 cd /data/bot
 
-echo "=== Writing files to volume ==="
-${fileCommands.map((pythonScript, index) => `
-echo "Writing file ${index + 1}/${fileCommands.length}..."
-python3 -c "${pythonScript.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"
-`).join('')}
+echo "=== Available disk space ==="
+df -h /data
 
-echo "=== Verifying files in volume ==="
+echo "=== Writing files to volume ==="
+${fileWriteCommands}
+
+echo "=== Final verification ==="
+echo "Files in /data/bot/:"
 ls -la /data/bot/
-echo "=== File contents verification ==="
-for file in *.py *.txt *.env; do
+echo ""
+echo "Total files: $(ls -1 /data/bot/ | wc -l)"
+echo "Total size: $(du -sh /data/bot 2>/dev/null | cut -f1 || echo 'unknown')"
+echo ""
+
+echo "=== File content samples ==="
+for file in /data/bot/*; do
   if [ -f "$file" ]; then
-    echo "--- $file (first 5 lines) ---"
-    head -5 "$file" || echo "Could not read $file"
+    echo "--- $(basename "$file") ($(wc -c < "$file") bytes) ---"
+    head -3 "$file" 2>/dev/null || echo "Could not read $file"
+    echo ""
   fi
 done
 
 echo "=== Volume upload completed successfully ==="
-echo "Total files: $(ls -1 /data/bot/ | wc -l)"
+echo "SUCCESS: All files written to volume"
 `;
 
     const uploadMachineConfig = {
       config: {
-        image: 'python:3.11-alpine',  // Use Python Alpine for better file handling
+        image: 'alpine:latest',  // Use simple Alpine for better bash support
         init: {
           cmd: ['/bin/sh', '-c', uploadScript]
         },
@@ -1053,7 +1033,7 @@ echo "Total files: $(ls -1 /data/bot/ | wc -l)"
         restart: {
           policy: 'no'
         },
-        auto_destroy: false  // Keep for debugging
+        auto_destroy: true  // Auto-destroy after completion
       },
       region: 'iad'
     };
@@ -1076,28 +1056,39 @@ echo "Total files: $(ls -1 /data/bot/ | wc -l)"
     const uploadMachine = await uploadMachineResponse.json();
     console.log(`[BOT-MANAGER] Upload machine created: ${uploadMachine.id}`);
     
-    // Wait longer for upload to complete and verify
+    // Wait for upload to complete
     console.log(`[BOT-MANAGER] Waiting for file upload to complete...`);
     
-    // Wait and check upload progress
-    for (let i = 0; i < 12; i++) { // Check for 2 minutes
+    // Wait for upload machine to finish (it will auto-destroy)
+    for (let i = 0; i < 30; i++) { // Check for 5 minutes
       await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds each iteration
       
       // Check upload machine status
-      const statusResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${uploadMachine.id}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (statusResponse.ok) {
-        const machineStatus = await statusResponse.json();
-        console.log(`[BOT-MANAGER] Upload machine status: ${machineStatus.state}`);
+      try {
+        const statusResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}/machines/${uploadMachine.id}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
         
-        if (machineStatus.state === 'stopped') {
-          console.log(`[BOT-MANAGER] Upload machine completed`);
+        if (statusResponse.ok) {
+          const machineStatus = await statusResponse.json();
+          console.log(`[BOT-MANAGER] Upload machine status: ${machineStatus.state}`);
+          
+          if (machineStatus.state === 'stopped' || machineStatus.state === 'destroyed') {
+            console.log(`[BOT-MANAGER] Upload machine completed`);
+            break;
+          }
+        } else if (statusResponse.status === 404) {
+          // Machine was auto-destroyed, which means it completed
+          console.log(`[BOT-MANAGER] Upload machine auto-destroyed (upload completed)`);
           break;
+        }
+      } catch (error) {
+        console.log(`[BOT-MANAGER] Upload machine likely completed and destroyed: ${error.message}`);
+        break;
+      }
         }
       }
       
