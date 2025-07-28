@@ -48,6 +48,8 @@ serve(async (req) => {
         return await modifyBot(botId, userId, modificationPrompt || instruction, flyioToken, flyioOrg);
       case 'fix-bot':
         return await fixBot(botId, userId, flyioToken, flyioOrg);
+      case 'delete-bot':
+        return await deleteBotFromFlyio(botId, flyioToken, flyioOrg);
       case 'health-check':
         return await performHealthCheck(flyioToken);
       default:
@@ -242,6 +244,57 @@ async function stopBotInFlyio(botId: string, token: string, org: string): Promis
   } catch (error) {
     console.error(`[BOT-MANAGER] Stop failed:`, error);
     throw new Error(`Failed to stop bot: ${error.message}`);
+  }
+}
+
+async function deleteBotFromFlyio(botId: string, token: string, org: string): Promise<Response> {
+  console.log(`[BOT-MANAGER] Deleting bot ${botId} and its Fly.io app`);
+  
+  const appName = `telegram-bot-${botId.slice(0, 8)}`;
+  
+  try {
+    // First cleanup all machines
+    await cleanupExistingMachines(appName, token);
+    
+    // Then cleanup all volumes  
+    await cleanupExistingVolumes(appName, token);
+    
+    // Finally, delete the entire app
+    console.log(`[BOT-MANAGER] Deleting Fly.io app: ${appName}`);
+    const deleteResponse = await fetch(`${FLYIO_API_BASE}/apps/${appName}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (deleteResponse.ok) {
+      console.log(`[BOT-MANAGER] Fly.io app ${appName} deleted successfully`);
+    } else {
+      const errorText = await deleteResponse.text();
+      console.log(`[BOT-MANAGER] Failed to delete app ${appName}: ${errorText}`);
+    }
+    
+    return new Response(
+      JSON.stringify({ 
+        success: true,
+        message: `Bot ${botId} and Fly.io app deleted successfully`
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  } catch (error) {
+    console.error(`[BOT-MANAGER] Delete failed:`, error);
+    return new Response(
+      JSON.stringify({ 
+        success: false,
+        error: `Failed to delete bot: ${error.message}`
+      }),
+      { 
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      }
+    );
   }
 }
 
