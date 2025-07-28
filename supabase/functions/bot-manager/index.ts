@@ -896,9 +896,13 @@ async function deployBotToFlyWithVolume(appName: string, files: Record<string, s
     // Create a simpler, more reliable file upload approach
     console.log(`[BOT-MANAGER] Uploading files to volume using direct approach...`);
     
-    // Create individual file write commands to avoid escaping issues
+    // Create individual file write commands using Deno's base64 encoding
     const fileCommands = Object.entries(files).map(([filename, content]) => {
-      // Use Python to write files safely, avoiding shell escaping issues
+      // Use Deno's built-in btoa for base64 encoding (encode UTF-8 to base64)
+      const encoder = new TextEncoder();
+      const bytes = encoder.encode(content);
+      const base64Content = btoa(String.fromCharCode(...bytes));
+      
       const pythonScript = `
 import os
 import base64
@@ -908,8 +912,8 @@ import sys
 os.makedirs('/data/bot', exist_ok=True)
 os.chdir('/data/bot')
 
-# File content (base64 encoded to avoid escaping issues)
-file_content = '''${Buffer.from(content, 'utf8').toString('base64')}'''
+# File content (base64 encoded)
+file_content = '''${base64Content}'''
 
 # Decode and write file
 try:
